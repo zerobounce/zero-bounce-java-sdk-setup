@@ -1,1 +1,1 @@
-ZeroBounceSDKSample
+Zero Bounce Java SDK Setup
