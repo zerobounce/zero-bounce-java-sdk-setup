@@ -1,4 +1,4 @@
-## Zero Bounce Java SDK
+## ZeroBounce Java SDK
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).
 
