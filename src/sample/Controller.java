@@ -1,5 +1,7 @@
 package sample;
 
+import com.zerobounce.ZBCreditsResponse;
+import com.zerobounce.ZBValidateResponse;
 import com.zerobounce.ZeroBounceSDK;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -42,17 +44,33 @@ public class Controller {
     }
 
     private void validate(String email) {
-        ZeroBounceSDK.getInstance().validate(
-                email,
-                null,
-                response -> System.out.println("Controller::validate response=" + response.toString()),
-                errorMessage -> System.out.println("Controller::validate error=" + errorMessage));
+        ZeroBounceSDK.getInstance().validate(email, null,
+                new ZeroBounceSDK.OnSuccessCallback<ZBValidateResponse>() {
+                    @Override
+                    public void onSuccess(ZBValidateResponse response) {
+                        System.out.println("validate response=" + response.toString());
+                    }
+                }, new ZeroBounceSDK.OnFailureCallback() {
+                    @Override
+                    public void onError(String errorMessage) {
+                        System.out.println("validate error=" + errorMessage);
+                    }
+                });
     }
 
     private void getCredits() {
         ZeroBounceSDK.getInstance().getCredits(
-                response -> System.out.println("Controller::getCredits response=" + response.toString()),
-                errorMessage -> System.out.println("Controller::getCredits error=" + errorMessage));
+                new ZeroBounceSDK.OnSuccessCallback<ZBCreditsResponse>() {
+                    @Override
+                    public void onSuccess(ZBCreditsResponse response) {
+                        System.out.println("getCredits response=" + response.toString());
+                    }
+                }, new ZeroBounceSDK.OnFailureCallback() {
+                    @Override
+                    public void onError(String errorMessage) {
+                        System.out.println("getCredits error=" + errorMessage);
+                    }
+                });
     }
 
     private void getApiUsage() {

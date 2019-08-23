@@ -10,37 +10,44 @@ More information about ZeroBounce you can find in the [official documentation](h
 ## USAGE
 Import the sdk in your file:
 ```java
-import com.zerobounce;
+import com.zerobounce.ZeroBounceSDK;
 ``` 
 
 Initialize the sdk with your api key:
 ```java 
-ZeroBounceSDK zeroBounce = new ZeroBounceSDK();
-zeroBounce.initialize("<YOUR_API_KEY>");
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
 ```
 
 ## Examples
-Then you can use any of the SDK methods:
+Then you can use any of the SDK methods, for example:
+- Validate an email address
 ```java
-# Validate an email address
-zeroBounce.validate(
-        "<ANY_EMAIL_ADDRESS>",
-        "<OPTIONAL_IP_ADDRESS>",
-        <SUCCESS_CALLBACK>,
-        <FAILURE_CALLBACK>
+ZeroBounceSDK.getInstance().validate("<ANY_EMAIL_ADDRESS>", "<OPTIONAL_IP_ADDRESS>",
+    new ZeroBounceSDK.OnSuccessCallback<ZBValidateResponse>() {
+        @Override
+        public void onSuccess(ZBValidateResponse response) {
+            System.out.println("validate response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("validate error=" + errorMessage);
+        }
+    });
 );
-
-# Check how many credits you have left on your account
-zeroBounce.get_credits(
-        <SUCCESS_CALLBACK>,
-        <FAILURE_CALLBACK>
-);
-
-# Send a file for bulk email validation
-zerobouncesdk.send_file(
-        <FILE_TO_SEND>,
-        <EMAIL_ADDRESS_COLUMN>,
-        <SUCCESS_CALLBACK>,
-        <FAILURE_CALLBACK>
-);
-```  
+```
+- Check how many credits you have left on your account
+```java
+ZeroBounceSDK.getInstance().getCredits(
+    new ZeroBounceSDK.OnSuccessCallback<ZBCreditsResponse>() {
+        @Override
+        public void onSuccess(ZBCreditsResponse response) {
+            System.out.println("getCredits response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("getCredits error=" + errorMessage);
+        }
+    });
+```
