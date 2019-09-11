@@ -10,7 +10,7 @@ More information about ZeroBounce you can find in the [official documentation](h
 ## USAGE
 Import the sdk in your file:
 ```java
-import com.zerobounce.ZeroBounceSDK;
+
 ``` 
 
 Initialize the sdk with your api key:

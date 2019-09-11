@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.zerobounce</groupId>
+    <groupId>net.zerobounce</groupId>
     <artifactId>zerobouncesdk</artifactId>
     <version>1.0</version>
     <packaging>jar</packaging>
+
     <name>ZeroBounceSDK</name>
     <description>The ZeroBounce SDK for Java</description>
     <url>https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup</url>
+
     <developers>
         <developer>
             <name>Zero Bounce</name>
@@ -15,6 +17,7 @@
             <url>https://www.zerobounce.net/</url>
         </developer>
     </developers>
+
     <licenses>
         <license>
             <name>MIT License</name>
@@ -22,16 +25,19 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+
     <scm>
         <url>https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup</url>
         <connection>scm:git:git@github.com:zerobounce-llc/zero-bounce-java-sdk-setup.git</connection>
         <developerConnection>scm:git:git@github.com:zerobounce-llc/zero-bounce-java-sdk-setup.git</developerConnection>
     </scm>
+
     <properties>
         <java.version>1.8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
+
     <profiles>
         <profile>
             <id>release</id>
@@ -41,26 +47,21 @@
                     <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
                 </repository>
             </distributionManagement>
+
             <build>
+                <resources>
+                    <resource>
+                        <directory>src/</directory>
+                    </resource>
+                </resources>
+
                 <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-gpg-plugin</artifactId>
-                        <version>1.5</version>
-                        <executions>
-                            <execution>
-                                <id>sign-artifacts</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
                         <version>3.0.1</version>
+
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -83,6 +84,22 @@
                             </execution>
                         </executions>
                     </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>1.5</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
                 </plugins>
             </build>
         </profile>

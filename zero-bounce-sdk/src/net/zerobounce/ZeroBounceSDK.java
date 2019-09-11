@@ -1,4 +1,4 @@
-package com.zerobounce;
+package net.zerobounce;
 
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;

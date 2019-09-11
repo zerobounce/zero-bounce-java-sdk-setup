@@ -1,8 +1,8 @@
 package sample;
 
-import com.zerobounce.ZBCreditsResponse;
-import com.zerobounce.ZBValidateResponse;
-import com.zerobounce.ZeroBounceSDK;
+import net.zerobounce.ZBCreditsResponse;
+import net.zerobounce.ZBValidateResponse;
+import net.zerobounce.ZeroBounceSDK;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 
