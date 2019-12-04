@@ -60,6 +60,7 @@ ZeroBounceSDK.getInstance().getApiUsage(
             System.out.println("getCredits error=" + errorMessage);
         }
     });
+
 ```
 * ##### The sendfile API allows user to send a file for bulk email validation
 ```java
@@ -124,6 +125,85 @@ ZeroBounceSDK.getInstance().fileStatus(
 String fileId = "<FILE_ID>";    // The returned file ID when calling sendfile API
 
 ZeroBounceSDK.getInstance().deleteFile(
+    fileId,
+    new ZeroBounceSDK.OnSuccessCallback<ZBDeleteFileResponse>() {
+        @Override
+        public void onSuccess(ZBDeleteFileResponse response) {
+            System.out.println("deleteFile response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("getCredits error=" + errorMessage);
+        }
+    });
+```
+
+### AI Scoring API
+
+* ##### The scoringSendfile API allows user to send a file for bulk email validation
+```java
+File myFile = new File("<FILE_PATH>");  // The csv or txt file
+int emailAddressColumn = 3;             // The column index of the email address in the file. Index starts at 1
+
+ZeroBounceSDK.getInstance().scoringSendFile(
+    myFile,
+    emailAddressColumn,
+    new ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse>() {
+        @Override
+        public void onSuccess(ZBSendFileResponse response) {
+            System.out.println("sendFile response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("getCredits error=" + errorMessage);
+        }
+    });
+```
+* ##### The scoringGetFile API allows users to get the validation results file for the file been submitted using sendfile API
+```java
+String fileId = "<FILE_ID>";                    // The returned file ID when calling scoringSendfile API
+String downloadPath = "<FILE_DOWNLOAD_PATH>";   // The path where the file will be downloaded
+
+ZeroBounceSDK.getInstance().scoringGetfile(
+    fileId,
+    downloadPath,
+    new ZeroBounceSDK.OnSuccessCallback<ZBGetFileResponse>() {
+        @Override
+        public void onSuccess(ZBGetFileResponse response) {
+            System.out.println("getfile response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("getCredits error=" + errorMessage);
+        }
+    });
+```
+* ##### Check the status of a file uploaded via "scoringSendfile" method
+```java
+String fileId = "<FILE_ID>";    // The returned file ID when calling scoringSendfile API
+
+ZeroBounceSDK.getInstance().scoringFileStatus(
+    fileId,
+    new ZeroBounceSDK.OnSuccessCallback<ZBFileStatusResponse>() {
+        @Override
+        public void onSuccess(ZBFileStatusResponse response) {
+            System.out.println("fileStatus response=" + response.toString());
+        }
+    }, new ZeroBounceSDK.OnFailureCallback() {
+        @Override
+        public void onError(String errorMessage) {
+            System.out.println("getCredits error=" + errorMessage);
+        }
+    });
+```
+* ##### Deletes the file that was submitted using scoring scoringSendfile API. File can be deleted only when its status is _`Complete`_
+```java
+String fileId = "<FILE_ID>";    // The returned file ID when calling scoringSendfile API
+
+ZeroBounceSDK.getInstance().scoringDeleteFile(
     fileId,
     new ZeroBounceSDK.OnSuccessCallback<ZBDeleteFileResponse>() {
         @Override

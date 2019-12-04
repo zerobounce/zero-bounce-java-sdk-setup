@@ -87,35 +87,6 @@ public class ZeroBounceSDK {
     }
 
     /**
-     * @param fileId The returned file ID when calling sendFile API.
-     */
-    public void fileStatus(
-            String fileId,
-            OnSuccessCallback<ZBFileStatusResponse> successCallback,
-            OnFailureCallback failureCallback) {
-        if (invalidApiKey(failureCallback)) return;
-
-        sendRequest(
-                bulkApiBaseUrl + "/filestatus?api_key=" + apiKey + "&file_id=" + fileId,
-                successCallback, failureCallback,
-                new TypeToken<ZBFileStatusResponse>() {
-                });
-    }
-
-    /**
-     * @param fileId The returned file ID when calling sendfile API.
-     */
-    public void deleteFile(String fileId, OnSuccessCallback<ZBDeleteFileResponse> successCallback, OnFailureCallback failureCallback) {
-        if (invalidApiKey(failureCallback)) return;
-
-        sendRequest(
-                bulkApiBaseUrl + "/deletefile?api_key=" + apiKey + "&file_id=" + fileId,
-                successCallback,
-                failureCallback, new TypeToken<ZBDeleteFileResponse>() {
-                });
-    }
-
-    /**
      * @param startDate The start date of when you want to view API usage
      * @param endDate   The end date of when you want to view API usage
      */
@@ -132,6 +103,64 @@ public class ZeroBounceSDK {
                 successCallback,
                 failureCallback,
                 new TypeToken<ZBGetApiUsageResponse>() {
+                });
+    }
+
+    /**
+     * @param fileId The returned file ID when calling sendFile API.
+     */
+    public void fileStatus(
+            String fileId,
+            OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            OnFailureCallback failureCallback) {
+        _fileStatus(false, fileId, successCallback, failureCallback);
+    }
+
+    /**
+     * @param fileId The returned file ID when calling sendFile API.
+     */
+    public void scoringFileStatus(
+            String fileId,
+            OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            OnFailureCallback failureCallback) {
+        _fileStatus(true, fileId, successCallback, failureCallback);
+    }
+
+    private void _fileStatus(
+            Boolean scoring,
+            String fileId,
+            OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            OnFailureCallback failureCallback) {
+        if (invalidApiKey(failureCallback)) return;
+
+        sendRequest(
+                bulkApiBaseUrl + (scoring ? "/scoring" : "") + "/filestatus?api_key=" + apiKey + "&file_id=" + fileId,
+                successCallback, failureCallback,
+                new TypeToken<ZBFileStatusResponse>() {
+                });
+    }
+
+    /**
+     * @param fileId The returned file ID when calling sendfile API.
+     */
+    public void deleteFile(String fileId, OnSuccessCallback<ZBDeleteFileResponse> successCallback, OnFailureCallback failureCallback) {
+        _deleteFile(false, fileId, successCallback, failureCallback);
+    }
+
+    /**
+     * @param fileId The returned file ID when calling sendfile API.
+     */
+    public void scoringDeleteFile(String fileId, OnSuccessCallback<ZBDeleteFileResponse> successCallback, OnFailureCallback failureCallback) {
+        _deleteFile(true, fileId, successCallback, failureCallback);
+    }
+
+    private void _deleteFile(Boolean scoring, String fileId, OnSuccessCallback<ZBDeleteFileResponse> successCallback, OnFailureCallback failureCallback) {
+        if (invalidApiKey(failureCallback)) return;
+
+        sendRequest(
+                bulkApiBaseUrl + (scoring ? "/scoring" : "") + "/deletefile?api_key=" + apiKey + "&file_id=" + fileId,
+                successCallback,
+                failureCallback, new TypeToken<ZBDeleteFileResponse>() {
                 });
     }
 
@@ -174,6 +203,21 @@ public class ZeroBounceSDK {
         }
     }
 
+    public static class ScoringSendFileOptions {
+        String returnUrl;
+        boolean hasHeaderRow;
+
+        public ScoringSendFileOptions withReturnUrl(String returnUrl) {
+            this.returnUrl = returnUrl;
+            return this;
+        }
+
+        public ScoringSendFileOptions setHasHeaderRow(boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+    }
+
     /**
      * The sendfile API allows user to send a file for bulk email validation
      */
@@ -190,11 +234,39 @@ public class ZeroBounceSDK {
             File file, int emailAddressColumn,
             OnSuccessCallback<ZBSendFileResponse> successCallback,
             OnFailureCallback failureCallback, SendFileOptions options) {
+        _sendFile(false, file, emailAddressColumn, successCallback, failureCallback, options);
+    }
+
+    /**
+     * The scoringSendfile API allows user to send a file for bulk email validation
+     */
+    public void scoringSendFile(
+            File file, int emailAddressColumn,
+            OnSuccessCallback<ZBSendFileResponse> successCallback,
+            OnFailureCallback failureCallback) {
+        scoringSendFile(file, emailAddressColumn, successCallback, failureCallback, null);
+    }
+
+    /**
+     * The scoringSendfile API allows user to send a file for bulk email validation
+     */
+    public void scoringSendFile(
+            File file, int emailAddressColumn,
+            OnSuccessCallback<ZBSendFileResponse> successCallback,
+            OnFailureCallback failureCallback, ScoringSendFileOptions options) {
+        _sendFile(true, file, emailAddressColumn, successCallback, failureCallback,
+                options != null ? new SendFileOptions().withReturnUrl(options.returnUrl).setHasHeaderRow(options.hasHeaderRow) : null);
+    }
+
+    private void _sendFile(Boolean scoring,
+                           File file, int emailAddressColumn,
+                           OnSuccessCallback<ZBSendFileResponse> successCallback,
+                           OnFailureCallback failureCallback, SendFileOptions options) {
         if (invalidApiKey(failureCallback)) return;
 
         try {
             CloseableHttpClient httpClient = HttpClients.createDefault();
-            HttpPost uploadFile = new HttpPost(bulkApiBaseUrl + "/sendFile");
+            HttpPost uploadFile = new HttpPost(bulkApiBaseUrl + (scoring ? "/scoring" : "") + "/sendFile");
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
 
             builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
@@ -251,29 +323,46 @@ public class ZeroBounceSDK {
             String fileId, String downloadPath,
             OnSuccessCallback<ZBGetFileResponse> successCallback,
             OnFailureCallback failureCallback) {
+        _getFile(false, fileId, downloadPath, successCallback, failureCallback);
+    }
+
+    /**
+     * The scoringGetFile API allows users to get the validation results file for the file been submitted using scoringSendfile API
+     */
+    public void scoringGetFile(
+            String fileId, String downloadPath,
+            OnSuccessCallback<ZBGetFileResponse> successCallback,
+            OnFailureCallback failureCallback) {
+        _getFile(true, fileId, downloadPath, successCallback, failureCallback);
+    }
+
+    private void _getFile(Boolean scoring,
+                          String fileId, String downloadPath,
+                          OnSuccessCallback<ZBGetFileResponse> successCallback,
+                          OnFailureCallback failureCallback) {
         try {
             File file = new File(downloadPath);
-            if(file.isFile()) {
-                if(failureCallback != null) failureCallback.onError("Invalid file path");
+            if (file.isFile()) {
+                if (failureCallback != null) failureCallback.onError("Invalid file path");
                 return;
             }
             file.getParentFile().mkdirs();
             CloseableHttpClient client = HttpClients.createDefault();
-            HttpGet downloadFile = new HttpGet(bulkApiBaseUrl + "/getFile?api_key="+apiKey+"&file_id="+fileId);
+            HttpGet downloadFile = new HttpGet(bulkApiBaseUrl + (scoring ? "/scoring" : "") + "/getFile?api_key=" + apiKey + "&file_id=" + fileId);
             CloseableHttpResponse response = client.execute(downloadFile);
             HttpEntity entity = response.getEntity();
             if (entity != null) {
                 FileOutputStream outStream = new FileOutputStream(file);
                 entity.writeTo(outStream);
             }
-            if(successCallback != null) {
+            if (successCallback != null) {
                 ZBGetFileResponse rsp = new ZBGetFileResponse();
                 rsp.localFilePath = downloadPath;
                 successCallback.onSuccess(rsp);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            if(failureCallback != null) failureCallback.onError(e.getMessage());
+            if (failureCallback != null) failureCallback.onError(e.getMessage());
         }
     }
 
