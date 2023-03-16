@@ -1,4 +1,4 @@
-package sample;
+package com.zerobounceexample.zerobouncejavasdksetupmaster;
 
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -7,6 +7,9 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.stage.Stage;
 
+/**
+ * The main JavaFX application that will load the *sample.fxml* file.
+ */
 public class Main extends Application {
 
     @Override
