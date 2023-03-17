@@ -7,7 +7,7 @@
 
 <GridPane alignment="center" hgap="10" prefHeight="94.0" prefWidth="222.0" vgap="10"
           xmlns="http://javafx.com/javafx/8.0.172-ea" xmlns:fx="http://javafx.com/fxml/1"
-          fx:controller="sample.Controller">
+          fx:controller="com.zerobounceexample.zerobouncejavasdksetupmaster.Controller">
     <columnConstraints>
         <ColumnConstraints/>
         <ColumnConstraints/>
@@ -18,9 +18,14 @@
 
     </rowConstraints>
     <children>
-        <Button fx:id="validateButton" mnemonicParsing="false" text="Validate" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-        <Button fx:id="creditsButton" mnemonicParsing="false" text="Get Credits" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-        <Button fx:id="apiUsageButton" mnemonicParsing="false" text="Api Usages" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+        <Button fx:id="validateButton" mnemonicParsing="false" text="Validate" GridPane.columnIndex="1"
+                GridPane.rowIndex="1"/>
+        <Button fx:id="creditsButton" mnemonicParsing="false" text="Get Credits" GridPane.columnIndex="1"
+                GridPane.rowIndex="2"/>
+        <Button fx:id="apiUsageButton" mnemonicParsing="false" text="Api Usages" GridPane.columnIndex="1"
+                GridPane.rowIndex="3"/>
+        <Button fx:id="activityDataButton" mnemonicParsing="false" text="Get Activity Data" GridPane.columnIndex="1"
+                GridPane.rowIndex="4"/>
 
         <Button fx:id="pickFileButton" mnemonicParsing="false" text="Send File" GridPane.columnIndex="2"
                 GridPane.rowIndex="1"/>
@@ -30,5 +35,6 @@
                 GridPane.rowIndex="3"/>
         <Button fx:id="deleteFileButton" mnemonicParsing="false" text="Delete File" GridPane.columnIndex="2"
                 GridPane.rowIndex="4"/>
+
     </children>
 </GridPane>
