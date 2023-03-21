@@ -3,9 +3,9 @@ name: Publish
 on: push
 
 jobs:
-  build:
+  publish:
+    name: Test, release build and publish
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out code  
         uses: actions/checkout@v3
@@ -15,15 +15,15 @@ jobs:
           java-version: 8
           distribution: 'temurin'
           server-id: ossrh
-          server-username: OSSRH_USERNAME
-          server-password: OSSRH_PASSWORD
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.SIGNING_KEY }}
-          gpg-passphrase: SIGNING_PASSWORD
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
       - name: Publish to MavenCentral
         run: mvn clean deploy -Prelease
         env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
