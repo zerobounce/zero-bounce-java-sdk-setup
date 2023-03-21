@@ -1,8 +1,8 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.NotNull;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -18,19 +18,19 @@ public class ZBActivityDataResponse {
     @Nullable
     private Integer activeInDays = null;
 
-    public Boolean getFound() {
+    public @NotNull Boolean getFound() {
         return found;
     }
 
-    public void setFound(Boolean found) {
+    public void setFound(@NotNull Boolean found) {
         this.found = found;
     }
 
-    public Integer getActiveInDays() {
+    public @Nullable Integer getActiveInDays() {
         return activeInDays;
     }
 
-    public void setActiveInDays(Integer activeInDays) {
+    public void setActiveInDays(@Nullable Integer activeInDays) {
         this.activeInDays = activeInDays;
     }
 

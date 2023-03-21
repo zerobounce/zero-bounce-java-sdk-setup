@@ -1,7 +1,7 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Date;
 import java.util.Objects;
@@ -101,163 +101,163 @@ public class ZBValidateResponse {
     @Nullable
     private String error = null;
 
-    public String getAddress() {
+    public @Nullable String getAddress() {
         return address;
     }
 
-    public void setAddress(String address) {
+    public void setAddress(@Nullable String address) {
         this.address = address;
     }
 
-    public ZBValidateStatus getStatus() {
+    public @Nullable ZBValidateStatus getStatus() {
         return status;
     }
 
-    public void setStatus(ZBValidateStatus status) {
+    public void setStatus(@Nullable ZBValidateStatus status) {
         this.status = status;
     }
 
-    public ZBValidateSubStatus getSubStatus() {
+    public @Nullable ZBValidateSubStatus getSubStatus() {
         return subStatus;
     }
 
-    public void setSubStatus(ZBValidateSubStatus subStatus) {
+    public void setSubStatus(@Nullable ZBValidateSubStatus subStatus) {
         this.subStatus = subStatus;
     }
 
-    public String getAccount() {
+    public @Nullable String getAccount() {
         return account;
     }
 
-    public void setAccount(String account) {
+    public void setAccount(@Nullable String account) {
         this.account = account;
     }
 
-    public String getDomain() {
+    public @Nullable String getDomain() {
         return domain;
     }
 
-    public void setDomain(String domain) {
+    public void setDomain(@Nullable String domain) {
         this.domain = domain;
     }
 
-    public String getDidYouMean() {
+    public @Nullable String getDidYouMean() {
         return didYouMean;
     }
 
-    public void setDidYouMean(String didYouMean) {
+    public void setDidYouMean(@Nullable String didYouMean) {
         this.didYouMean = didYouMean;
     }
 
-    public String getDomainAgeDays() {
+    public @Nullable String getDomainAgeDays() {
         return domainAgeDays;
     }
 
-    public void setDomainAgeDays(String domainAgeDays) {
+    public void setDomainAgeDays(@Nullable String domainAgeDays) {
         this.domainAgeDays = domainAgeDays;
     }
 
-    public Boolean getFreeEmail() {
+    public @Nullable Boolean getFreeEmail() {
         return freeEmail;
     }
 
-    public void setFreeEmail(Boolean freeEmail) {
+    public void setFreeEmail(@Nullable Boolean freeEmail) {
         this.freeEmail = freeEmail;
     }
 
-    public Boolean getMxFound() {
+    public @Nullable Boolean getMxFound() {
         return mxFound;
     }
 
-    public void setMxFound(Boolean mxFound) {
+    public void setMxFound(@Nullable Boolean mxFound) {
         this.mxFound = mxFound;
     }
 
-    public String getMxRecord() {
+    public @Nullable String getMxRecord() {
         return mxRecord;
     }
 
-    public void setMxRecord(String mxRecord) {
+    public void setMxRecord(@Nullable String mxRecord) {
         this.mxRecord = mxRecord;
     }
 
-    public String getSmtpProvider() {
+    public @Nullable String getSmtpProvider() {
         return smtpProvider;
     }
 
-    public void setSmtpProvider(String smtpProvider) {
+    public void setSmtpProvider(@Nullable String smtpProvider) {
         this.smtpProvider = smtpProvider;
     }
 
-    public String getFirstName() {
+    public @Nullable String getFirstName() {
         return firstName;
     }
 
-    public void setFirstName(String firstName) {
+    public void setFirstName(@Nullable String firstName) {
         this.firstName = firstName;
     }
 
-    public String getLastName() {
+    public @Nullable String getLastName() {
         return lastName;
     }
 
-    public void setLastName(String lastName) {
+    public void setLastName(@Nullable String lastName) {
         this.lastName = lastName;
     }
 
-    public String getGender() {
+    public @Nullable String getGender() {
         return gender;
     }
 
-    public void setGender(String gender) {
+    public void setGender(@Nullable String gender) {
         this.gender = gender;
     }
 
-    public String getCity() {
+    public @Nullable String getCity() {
         return city;
     }
 
-    public void setCity(String city) {
+    public void setCity(@Nullable String city) {
         this.city = city;
     }
 
-    public String getRegion() {
+    public @Nullable String getRegion() {
         return region;
     }
 
-    public void setRegion(String region) {
+    public void setRegion(@Nullable String region) {
         this.region = region;
     }
 
-    public String getZipCode() {
+    public @Nullable String getZipCode() {
         return zipCode;
     }
 
-    public void setZipCode(String zipCode) {
+    public void setZipCode(@Nullable String zipCode) {
         this.zipCode = zipCode;
     }
 
-    public String getCountry() {
+    public @Nullable String getCountry() {
         return country;
     }
 
-    public void setCountry(String country) {
+    public void setCountry(@Nullable String country) {
         this.country = country;
     }
 
-    public Date getProcessedAt() {
+    public @Nullable Date getProcessedAt() {
         return processedAt;
     }
 
-    public void setProcessedAt(Date processedAt) {
+    public void setProcessedAt(@Nullable Date processedAt) {
         this.processedAt = processedAt;
     }
 
-    public String getError() {
+    public @Nullable String getError() {
         return error;
     }
 
-    public void setError(String error) {
+    public void setError(@Nullable String error) {
         this.error = error;
     }
 

@@ -3,7 +3,7 @@ package net.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.sun.istack.internal.NotNull;
+import org.jetbrains.annotations.NotNull;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.StatusLine;
@@ -28,8 +28,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
 
 @RunWith(PowerMockRunner.class)
@@ -274,6 +273,8 @@ public class ZeroBounceSDKTest {
         String fileStatusUrlPath = "https://bulkapi.zerobounce.net/v2/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
         mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
 
+        assertNotNull(fileId);
+
         ZeroBounceSDK.getInstance().fileStatus(
                 fileId,
                 response -> {
@@ -367,6 +368,8 @@ public class ZeroBounceSDKTest {
         String fileId = expectedResponse.getFileId();
         String fileStatusUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
         mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
+
+        assertNotNull(fileId);
 
         ZeroBounceSDK.getInstance().scoringFileStatus(
                 fileId,
