@@ -2,8 +2,8 @@ package net.zerobounce;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import com.sun.istack.internal.NotNull;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -30,19 +30,19 @@ public class ErrorResponse {
     @NotNull
     private ArrayList<String> errors = new ArrayList<>();
 
-    public Boolean getSuccess() {
+    public @Nullable Boolean getSuccess() {
         return success;
     }
 
-    public void setSuccess(Boolean success) {
+    public void setSuccess(@Nullable Boolean success) {
         this.success = success;
     }
 
-    public ArrayList<String> getErrors() {
+    public @NotNull ArrayList<String> getErrors() {
         return errors;
     }
 
-    public void setErrors(ArrayList<String> errors) {
+    public void setErrors(@NotNull ArrayList<String> errors) {
         this.errors = errors;
     }
 

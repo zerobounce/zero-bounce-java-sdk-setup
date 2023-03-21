@@ -1,8 +1,8 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.NotNull;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -25,35 +25,35 @@ public class ZBDeleteFileResponse {
     @Nullable
     private String fileId = null;
 
-    public Boolean getSuccess() {
+    public @NotNull Boolean getSuccess() {
         return success;
     }
 
-    public void setSuccess(Boolean success) {
+    public void setSuccess(@NotNull Boolean success) {
         this.success = success;
     }
 
-    public String getMessage() {
+    public @Nullable String getMessage() {
         return message;
     }
 
-    public void setMessage(String message) {
+    public void setMessage(@Nullable String message) {
         this.message = message;
     }
 
-    public String getFileName() {
+    public @Nullable String getFileName() {
         return fileName;
     }
 
-    public void setFileName(String fileName) {
+    public void setFileName(@Nullable String fileName) {
         this.fileName = fileName;
     }
 
-    public String getFileId() {
+    public @Nullable String getFileId() {
         return fileId;
     }
 
-    public void setFileId(String fileId) {
+    public void setFileId(@Nullable String fileId) {
         this.fileId = fileId;
     }
 

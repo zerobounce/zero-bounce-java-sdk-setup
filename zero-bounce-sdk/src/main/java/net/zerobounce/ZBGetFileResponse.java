@@ -1,6 +1,6 @@
 package net.zerobounce;
 
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -12,11 +12,11 @@ public class ZBGetFileResponse {
     @Nullable
     private String localFilePath = null;
 
-    public String getLocalFilePath() {
+    public @Nullable String getLocalFilePath() {
         return localFilePath;
     }
 
-    public void setLocalFilePath(String localFilePath) {
+    public void setLocalFilePath(@Nullable String localFilePath) {
         this.localFilePath = localFilePath;
     }
 

@@ -1,8 +1,8 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.NotNull;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Date;
 import java.util.Objects;
@@ -46,75 +46,75 @@ public class ZBFileStatusResponse {
     @Nullable
     private String returnUrl = null;
 
-    public Boolean getSuccess() {
+    public @NotNull Boolean getSuccess() {
         return success;
     }
 
-    public void setSuccess(Boolean success) {
+    public void setSuccess(@NotNull Boolean success) {
         this.success = success;
     }
 
-    public String getMessage() {
+    public @Nullable String getMessage() {
         return message;
     }
 
-    public void setMessage(String message) {
+    public void setMessage(@Nullable String message) {
         this.message = message;
     }
 
-    public String getFileId() {
+    public @Nullable String getFileId() {
         return fileId;
     }
 
-    public void setFileId(String fileId) {
+    public void setFileId(@Nullable String fileId) {
         this.fileId = fileId;
     }
 
-    public String getFileName() {
+    public @Nullable String getFileName() {
         return fileName;
     }
 
-    public void setFileName(String fileName) {
+    public void setFileName(@Nullable String fileName) {
         this.fileName = fileName;
     }
 
-    public Date getUploadDate() {
+    public @Nullable Date getUploadDate() {
         return uploadDate;
     }
 
-    public void setUploadDate(Date uploadDate) {
+    public void setUploadDate(@Nullable Date uploadDate) {
         this.uploadDate = uploadDate;
     }
 
-    public String getFileStatus() {
+    public @Nullable String getFileStatus() {
         return fileStatus;
     }
 
-    public void setFileStatus(String fileStatus) {
+    public void setFileStatus(@Nullable String fileStatus) {
         this.fileStatus = fileStatus;
     }
 
-    public String getCompletePercentage() {
+    public @Nullable String getCompletePercentage() {
         return completePercentage;
     }
 
-    public void setCompletePercentage(String completePercentage) {
+    public void setCompletePercentage(@Nullable String completePercentage) {
         this.completePercentage = completePercentage;
     }
 
-    public String getErrorReason() {
+    public @Nullable String getErrorReason() {
         return errorReason;
     }
 
-    public void setErrorReason(String errorReason) {
+    public void setErrorReason(@Nullable String errorReason) {
         this.errorReason = errorReason;
     }
 
-    public String getReturnUrl() {
+    public @Nullable String getReturnUrl() {
         return returnUrl;
     }
 
-    public void setReturnUrl(String returnUrl) {
+    public void setReturnUrl(@Nullable String returnUrl) {
         this.returnUrl = returnUrl;
     }
 

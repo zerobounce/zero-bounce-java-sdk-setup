@@ -1,7 +1,7 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -355,19 +355,19 @@ public class ZBGetApiUsageResponse {
         this.subStatusFailedSmtpConnection = subStatusFailedSmtpConnection;
     }
 
-    public String getStartDate() {
+    public @Nullable String getStartDate() {
         return startDate;
     }
 
-    public void setStartDate(String startDate) {
+    public void setStartDate(@Nullable String startDate) {
         this.startDate = startDate;
     }
 
-    public String getEndDate() {
+    public @Nullable String getEndDate() {
         return endDate;
     }
 
-    public void setEndDate(String endDate) {
+    public void setEndDate(@Nullable String endDate) {
         this.endDate = endDate;
     }
 

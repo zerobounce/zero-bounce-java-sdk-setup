@@ -4,8 +4,6 @@ import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import com.sun.istack.internal.NotNull;
-import com.sun.istack.internal.Nullable;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -17,6 +15,8 @@ import org.apache.http.entity.mime.content.StringBody;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -82,7 +82,7 @@ public class ZeroBounceSDK {
      */
     public void validate(
             @NotNull String email,
-            @NotNull String ipAddress,
+            @Nullable String ipAddress,
             @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
@@ -223,7 +223,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback) {
 
-        String urlPath =  (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendFile";
+        String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendFile";
         System.out.println("ZeroBounceSDK::sendFile urlPath=" + urlPath);
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
@@ -308,18 +308,14 @@ public class ZeroBounceSDK {
                 }.getType();
                 ZBSendFileResponse sendFileResponse = gson.fromJson(rsp, type);
 
-                if (successCallback != null) {
-                    successCallback.onSuccess(sendFileResponse);
-                }
+                successCallback.onSuccess(sendFileResponse);
             }
 
 
         } catch (Exception e) {
             e.printStackTrace();
-            if (errorCallback != null) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
-                errorCallback.onError(errorResponse);
-            }
+            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            errorCallback.onError(errorResponse);
         }
     }
 
@@ -433,10 +429,8 @@ public class ZeroBounceSDK {
         try {
             File file = new File(downloadPath);
             if (file.isDirectory()) {
-                if (errorCallback != null) {
-                    ErrorResponse errorResponse = ErrorResponse.parseError("Invalid file path");
-                    errorCallback.onError(errorResponse);
-                }
+                ErrorResponse errorResponse = ErrorResponse.parseError("Invalid file path");
+                errorCallback.onError(errorResponse);
                 return;
             }
             file.getParentFile().mkdirs();
@@ -455,24 +449,18 @@ public class ZeroBounceSDK {
                         FileOutputStream outStream = new FileOutputStream(file);
                         entity.writeTo(outStream);
                     }
-                    if (successCallback != null) {
-                        ZBGetFileResponse rsp = new ZBGetFileResponse();
-                        rsp.setLocalFilePath(downloadPath);
-                        successCallback.onSuccess(rsp);
-                    }
+                    ZBGetFileResponse rsp = new ZBGetFileResponse();
+                    rsp.setLocalFilePath(downloadPath);
+                    successCallback.onSuccess(rsp);
                 } else {
-                    if (errorCallback != null) {
-                        ErrorResponse errorResponse = ErrorResponse.parseError(EntityUtils.toString(entity));
-                        errorCallback.onError(errorResponse);
-                    }
+                    ErrorResponse errorResponse = ErrorResponse.parseError(EntityUtils.toString(entity));
+                    errorCallback.onError(errorResponse);
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
-            if (errorCallback != null) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
-                errorCallback.onError(errorResponse);
-            }
+            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            errorCallback.onError(errorResponse);
         }
     }
 
@@ -631,22 +619,16 @@ public class ZeroBounceSDK {
             System.out.println("ZeroBounceSDK::sendRequest rsp=" + rsp);
 
             if (status > 299) {
-                if (errorCallback != null) {
-                    ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                    errorCallback.onError(errorResponse);
-                }
+                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
+                errorCallback.onError(errorResponse);
             } else {
                 T response = gson.fromJson(rsp, typeToken.getType());
-                if (successCallback != null) {
-                    successCallback.onSuccess(response);
-                }
+                successCallback.onSuccess(response);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            if (errorCallback != null) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
-                errorCallback.onError(errorResponse);
-            }
+            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            errorCallback.onError(errorResponse);
         }
 
     }
@@ -715,10 +697,10 @@ public class ZeroBounceSDK {
     public static class ScoringSendFileOptions {
 
         @NotNull
-        String returnUrl;
+        String returnUrl = "";
 
         @NotNull
-        Boolean hasHeaderRow;
+        Boolean hasHeaderRow = false;
 
         @Nullable
         Boolean removeDuplicate = null;

@@ -1,7 +1,7 @@
 package net.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
-import com.sun.istack.internal.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -14,11 +14,11 @@ public class ZBCreditsResponse {
     @Nullable
     private String credits = null;
 
-    public String getCredits() {
+    public @Nullable String getCredits() {
         return credits;
     }
 
-    public void setCredits(String credits) {
+    public void setCredits(@Nullable String credits) {
         this.credits = credits;
     }
 
