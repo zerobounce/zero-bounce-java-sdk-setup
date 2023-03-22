@@ -321,3 +321,43 @@ Then you can use any of the SDK methods, for example:
             }
         });
     ```
+
+
+## Documentation
+You can generate the documentation using your desired IDE or using's maven's javadoc command.
+
+
+## Publication
+Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. Don't forget to update the version before doing a release!
+If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
+If you want to manually publish to the Nexus repository (and then release it to Maven Central), you should:
+
+1. Set the *autoReleaseAfterClose* inside the zero-bounce-sdk's `pom.xml` to *false*.
+2. Run the following command:
+    ```shell
+    # For publishing to the staging repository
+    mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease
+    ```
+
+You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.1)
+- 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.android/zerobouncesdk)
+
+
+## Exporting and importing PGP keys
+1. Export the keys:
+    ```shell
+    gpg --export -a <LAST_8_DIGITS> > public.key
+    gpg --export-secret-key -a <LAST_8_DIGITS> > private key
+    ```
+
+2. Import the keys:
+    ```shell
+    gpg --import public.key
+    gpg --import private.key
+    ```
+3. Check that the new keys are imported:
+    ```shell
+    gpg --list-keys
+    gpg --list-secret-keys
+    ```
