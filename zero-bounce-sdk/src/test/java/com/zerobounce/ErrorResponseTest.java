@@ -1,4 +1,4 @@
-package net.zerobounce;
+package com.zerobounce;
 
 import org.junit.Test;
 

@@ -1,4 +1,4 @@
-package net.zerobounce;
+package com.zerobounce;
 
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
