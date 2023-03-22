@@ -1,7 +1,8 @@
 package com.zerobounceexample.zerobouncejavasdksetupmaster;
 
+import com.zerobounce.ZeroBounceSDK;
 import javafx.scene.control.Button;
-import net.zerobounce.ZeroBounceSDK;
+
 
 import java.io.File;
 import java.util.Date;
