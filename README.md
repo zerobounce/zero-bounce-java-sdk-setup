@@ -1,7 +1,22 @@
 ## ZeroBounce Java SDK
+
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
+
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
 This SDK is built using the Java 1.8 version.
+
+
+### Instalation
+
+You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
+```xml
+<dependency>
+    <groupId>com.zerobounce.java</groupId>
+    <artifactId>zerobouncesdk</artifactId>
+    <version>1.1.1</version>
+</dependency>
+```
 
 
 ## How to use the sample project
@@ -12,9 +27,9 @@ This SDK is built using the Java 1.8 version.
     ```shell
     mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
-        -DgroupId=net.zerobounce \
+        -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.0 \
+        -Dversion=1.1.1 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -41,9 +56,9 @@ We highly recommend you use the latest version available on Maven. However, if y
 3. Inside the `<dependencies></dependencies>` block, paste the following code:
     ```xml
     <dependency>
-        <groupId>net.zerobounce</groupId>
+        <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.0</version>
+        <version>1.1.1</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
