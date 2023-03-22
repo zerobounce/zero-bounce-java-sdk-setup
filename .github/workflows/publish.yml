@@ -22,7 +22,7 @@ jobs:
 
       # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
       - name: Publish to MavenCentral
-        run: cd zero-bounce-sdk && mvn clean deploy -Prelease
+        run: cd zero-bounce-sdk && mvn clean deploy -Prelease -Dgpg.passphrase=MAVEN_GPG_PASSPHRASE
         env:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
