@@ -3,6 +3,7 @@ This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
 This SDK is built using the Java 1.8 version.
 
+
 ## How to use the sample project
 
 1. Build the JAR file for the SDK project.
@@ -21,6 +22,7 @@ This SDK is built using the Java 1.8 version.
 5. Run `mvn compile` in the Sample project.
 6. Rebuild the Sample project.
 7. Run & enjoy!
+
 
 ## How to use the SDK from this repository in your project
 
@@ -48,13 +50,23 @@ We highly recommend you use the latest version available on Maven. However, if y
 5. Rebuild the project.
 6. Enjoy!
 
+
+## How to deploy the SDK
+
+1. Be sure to set the *autoReleaseAfterClose* field to *false* in the `pom.xml` file of the **zero-bounce-sdk** if you don't want the artifact to be automatically deployed on Maven Central.
+2. Use the same command found in the `publish.yml` file: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
+
+
 ## USAGE
+
 Initialize the sdk with your api key:
 ```java
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
 ```
 
+
 ## Examples
+
 Then you can use any of the SDK methods, for example:
 
 * ##### Validate an email address
