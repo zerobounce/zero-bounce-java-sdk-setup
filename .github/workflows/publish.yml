@@ -20,6 +20,9 @@ jobs:
           gpg-private-key: ${{ secrets.SIGNING_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
+      - name: Export GPG tty
+        run: export GPG_TTY=$(tty)
+
       # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
       - name: Publish to MavenCentral
         run: cd zero-bounce-sdk && mvn clean deploy -Prelease -Dgpg.passphrase=MAVEN_GPG_PASSPHRASE
