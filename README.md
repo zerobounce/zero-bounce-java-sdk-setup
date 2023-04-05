@@ -359,7 +359,7 @@ If you ever change the OSSRH login credentials, you'll need to also update the r
 In order to be able to publish to the Nexus repository from you local machine, you'll need to do the following step:
 If you want to manually publish to the Nexus repository (and then release it to Maven Central), you should:
 
-1. Import the GPG private key to your local machine (see below)
+1. Import the GPG key to your local machine (see below)
 2. Set the *autoReleaseAfterClose* inside the zero-bounce-sdk's `pom.xml` to *false*.
 3. Run the following command:
     ```shell
