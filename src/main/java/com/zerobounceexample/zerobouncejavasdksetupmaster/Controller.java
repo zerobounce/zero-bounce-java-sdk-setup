@@ -1,11 +1,14 @@
 package com.zerobounceexample.zerobouncejavasdksetupmaster;
 
+import com.zerobounce.ZBValidateBatchData;
 import com.zerobounce.ZeroBounceSDK;
 import javafx.scene.control.Button;
 
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 /**
  * The controller that will handle the click events for the buttons found in the *sample.fxml* file.
@@ -19,14 +22,17 @@ public class Controller {
     public Button deleteFileButton;
     public Button activityDataButton;
     public Button validateButton;
+    public Button validateBatchButton;
     public Button pickFileButton;
 
     public void initialize() {
 
         System.out.println("Controller::initialize");
-        ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
+        ZeroBounceSDK.getInstance().initialize("dca06ad4eecb4b7fa3d188e92b4ab600");
 
         validateButton.setOnAction(event -> validate("<EMAIL_TO_TEST>"));
+
+        validateBatchButton.setOnAction(event -> validateBatch());
 
         creditsButton.setOnAction(event -> getCredits());
 
@@ -54,6 +60,22 @@ public class Controller {
                 null,
                 response -> System.out.println("Controller::validate response=" + response.toString()),
                 errorMessage -> System.out.println("Controller::validate error=" + errorMessage)
+        );
+    }
+
+    /**
+     * Calls the *validate batch* method of the [ZeroBounceSDK].
+     */
+    private void validateBatch() {
+        List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+        emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
+
+        ZeroBounceSDK.getInstance().validateBatch(
+                emailsData,
+                response -> System.out.println("Controller::validateBatch response=" + response.toString()),
+                errorMessage -> System.out.println("Controller::validateBatch error=" + errorMessage)
         );
     }
 

@@ -21,11 +21,14 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 import static org.junit.Assert.*;
@@ -106,6 +109,127 @@ public class ZeroBounceSDKTest {
         ZeroBounceSDK.getInstance().validate(
                 email,
                 null,
+                response -> {
+                    fail(response.toString());
+                }, errorResponse -> {
+                    assertEquals(expectedResponse, errorResponse);
+                });
+    }
+
+    @Test
+    public void validateBatchEmails_ReturnsSuccess() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\n" +
+                "      \"email_batch\": [\n" +
+                "          {\n" +
+                "              \"address\": \"valid@example.com\",\n" +
+                "              \"status\": \"valid\",\n" +
+                "              \"sub_status\": \"\",\n" +
+                "              \"free_email\": false,\n" +
+                "              \"did_you_mean\": null,\n" +
+                "              \"account\": null,\n" +
+                "              \"domain\": null,\n" +
+                "              \"domain_age_days\": \"9692\",\n" +
+                "              \"smtp_provider\": \"example\",\n" +
+                "              \"mx_found\": \"true\",\n" +
+                "              \"mx_record\": \"mx.example.com\",\n" +
+                "              \"firstname\": \"zero\",\n" +
+                "              \"lastname\": \"bounce\",\n" +
+                "              \"gender\": \"male\",\n" +
+                "              \"country\": null,\n" +
+                "              \"region\": null,\n" +
+                "              \"city\": null,\n" +
+                "              \"zipcode\": null,\n" +
+                "              \"processed_at\": \"2020-09-17 17:43:11.829\"\n" +
+                "          },\n" +
+                "          {\n" +
+                "              \"address\": \"invalid@example.com\",\n" +
+                "              \"status\": \"invalid\",\n" +
+                "              \"sub_status\": \"mailbox_not_found\",\n" +
+                "              \"free_email\": false,\n" +
+                "              \"did_you_mean\": null,\n" +
+                "              \"account\": null,\n" +
+                "              \"domain\": null,\n" +
+                "              \"domain_age_days\": \"9692\",\n" +
+                "              \"smtp_provider\": \"example\",\n" +
+                "              \"mx_found\": \"true\",\n" +
+                "              \"mx_record\": \"mx.example.com\",\n" +
+                "              \"firstname\": \"zero\",\n" +
+                "              \"lastname\": \"bounce\",\n" +
+                "              \"gender\": \"male\",\n" +
+                "              \"country\": null,\n" +
+                "              \"region\": null,\n" +
+                "              \"city\": null,\n" +
+                "              \"zipcode\": null,\n" +
+                "              \"processed_at\": \"2020-09-17 17:43:11.830\"\n" +
+                "          },\n" +
+                "          {\n" +
+                "              \"address\": \"disposable@example.com\",\n" +
+                "              \"status\": \"do_not_mail\",\n" +
+                "              \"sub_status\": \"disposable\",\n" +
+                "              \"free_email\": false,\n" +
+                "              \"did_you_mean\": null,\n" +
+                "              \"account\": null,\n" +
+                "              \"domain\": null,\n" +
+                "              \"domain_age_days\": \"9692\",\n" +
+                "              \"smtp_provider\": \"example\",\n" +
+                "              \"mx_found\": \"true\",\n" +
+                "              \"mx_record\": \"mx.example.com\",\n" +
+                "              \"firstname\": \"zero\",\n" +
+                "              \"lastname\": \"bounce\",\n" +
+                "              \"gender\": \"male\",\n" +
+                "              \"country\": null,\n" +
+                "              \"region\": null,\n" +
+                "              \"city\": null,\n" +
+                "              \"zipcode\": null,\n" +
+                "              \"processed_at\": \"2020-09-17 17:43:11.830\"\n" +
+                "          }\n" +
+                "      ],\n" +
+                "      \"errors\": []\n" +
+                "  }";
+        ZBValidateBatchResponse expectedResponse = gson.fromJson(responseJson, ZBValidateBatchResponse.class);
+
+        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
+        mockRequest(urlPath, 200, responseJson, "");
+
+        List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+        emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
+
+        ZeroBounceSDK.getInstance().validateBatch(
+                emailsData,
+                response -> {
+                    assertEquals(expectedResponse, response);
+                }, errorResponse -> {
+                    fail(errorResponse.toString());
+                });
+    }
+
+    @Test
+    public void validateBatchEmails_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\n" +
+                "      \"email_batch\": [],\n" +
+                "      \"errors\": [\n" +
+                "          {\n" +
+                "              \"error\": \"Invalid API Key or your account ran out of credits\",\n" +
+                "              \"email_address\": \"all\"\n" +
+                "          }\n" +
+                "      ]\n" +
+                "    }";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
+        mockRequest(urlPath, 400, "", responseJson);
+
+        List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+        emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
+        emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
+
+        ZeroBounceSDK.getInstance().validateBatch(
+                emailsData,
                 response -> {
                     fail(response.toString());
                 }, errorResponse -> {
@@ -240,7 +364,7 @@ public class ZeroBounceSDKTest {
         ZBSendFileResponse expectedResponse = gson.fromJson(responseJson, ZBSendFileResponse.class);
 
         File file = new File("../email_file.csv");
-        String urlPath = "https://bulkapi.zerobounce.net/v2/sendFile";
+        String urlPath = "https://bulkapi.zerobounce.net/v2/sendfile";
         mockMultipartRequest(urlPath, 200, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().sendFile(
@@ -289,7 +413,7 @@ public class ZeroBounceSDKTest {
         ZBGetFileResponse getFileResponse = new ZBGetFileResponse();
         getFileResponse.setLocalFilePath("./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv");
 
-        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/getFile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
         mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().getFile(
@@ -336,7 +460,7 @@ public class ZeroBounceSDKTest {
         ZBSendFileResponse expectedResponse = gson.fromJson(responseJson, ZBSendFileResponse.class);
 
         File file = new File("../email_file.csv");
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendFile";
+        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendfile";
         mockMultipartRequest(urlPath, 200, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringSendFile(
@@ -385,7 +509,7 @@ public class ZeroBounceSDKTest {
         ZBGetFileResponse getFileResponse = new ZBGetFileResponse();
         getFileResponse.setLocalFilePath("./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv");
 
-        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/getFile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
         mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringGetFile(
@@ -432,7 +556,7 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         File file = new File("../email_file.csv");
-        String urlPath = "https://bulkapi.zerobounce.net/v2/sendFile";
+        String urlPath = "https://bulkapi.zerobounce.net/v2/sendfile";
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().sendFile(
@@ -460,7 +584,7 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         File file = new File("../email_file.csv");
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendFile";
+        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendfile";
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringSendFile(
@@ -530,7 +654,7 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/getFile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = "https://bulkapi.zerobounce.net/v2/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().getFile(
@@ -553,7 +677,7 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/getFile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringGetFile(
@@ -665,6 +789,7 @@ public class ZeroBounceSDKTest {
         HttpURLConnection con = PowerMockito.mock(HttpURLConnection.class);
         PowerMockito.when(url.openConnection()).thenReturn(con);
         PowerMockito.when(con.getResponseCode()).thenReturn(statusCode);
+        PowerMockito.when(con.getOutputStream()).thenReturn(new ByteArrayOutputStream());
         PowerMockito.when(con.getInputStream()).thenReturn(new ByteArrayInputStream(response.getBytes()));
         PowerMockito.when(con.getErrorStream()).thenReturn(new ByteArrayInputStream(errorResponse.getBytes()));
     }

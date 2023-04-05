@@ -14,7 +14,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.1</version>
+    <version>1.1.3</version>
 </dependency>
 ```
 
@@ -22,14 +22,14 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ## How to use the sample project
 
 1. Build the JAR file for the SDK project.
-2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `/.m2/repository/net/zerobounce/zerobouncesdk/`
+2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `/.m2/repository/com/zerobounce/java/zerobouncesdk/`
 3. Run the following command from the root of the project:
     ```shell
     mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.1 \
+        -Dversion=1.1.3 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -58,7 +58,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.1</version>
+        <version>1.1.3</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
@@ -98,6 +98,29 @@ Then you can use any of the SDK methods, for example:
             @Override
             public void onError(String errorMessage) {
                 System.out.println("validate error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ##### Validate batch a list of email addresses
+    ```java
+    List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+    emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
+    emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
+    emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
+
+    ZeroBounceSDK.getInstance().validateBatch(
+        emailsData,
+        new ZeroBounceSDK.OnSuccessCallback<ZBValidateBatchResponse>() {
+            @Override
+            public void onSuccess(ZBValidateBatchResponse response) {
+                System.out.println("validateBatch response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("validateBatch error=" + errorMessage);
             }
         });
     );
@@ -330,17 +353,22 @@ You can generate the documentation using your desired IDE or using's maven's jav
 ## Publication
 Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. Don't forget to update the version before doing a release!
 If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
+
+
+### Local setup for manual release
+In order to be able to publish to the Nexus repository from you local machine, you'll need to do the following step:
 If you want to manually publish to the Nexus repository (and then release it to Maven Central), you should:
 
-1. Set the *autoReleaseAfterClose* inside the zero-bounce-sdk's `pom.xml` to *false*.
-2. Run the following command:
+1. Import the GPG private key to your local machine (see below)
+2. Set the *autoReleaseAfterClose* inside the zero-bounce-sdk's `pom.xml` to *false*.
+3. Run the following command:
     ```shell
     # For publishing to the staging repository
     mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease
     ```
 
 You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.1)
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.3)
 - 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.android/zerobouncesdk)
 
 

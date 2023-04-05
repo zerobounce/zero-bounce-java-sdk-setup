@@ -22,9 +22,9 @@ import java.io.*;
 import java.lang.reflect.Type;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
+import java.util.*;
 
 /**
  * The ZeroBounce main class. All the requests are implemented here.
@@ -92,7 +92,36 @@ public class ZeroBounceSDK {
                 apiBaseUrl + "/validate?api_key=" + apiKey +
                         "&email=" + email +
                         "&ip_address=" + (ipAddress != null ? ipAddress : ""),
+                null,
                 new TypeToken<ZBValidateResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
+     * Validates a batch of emails.
+     *
+     * @param emails          the email addresses you want to validate
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void validateBatch(
+            @NotNull List<ZBValidateBatchData> emails,
+            @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("api_key", apiKey);
+        body.put("email_batch", emails);
+
+        sendRequest(
+                apiBaseUrl + "/validatebatch",
+                body,
+                new TypeToken<ZBValidateBatchResponse>() {
                 },
                 successCallback,
                 errorCallback
@@ -119,6 +148,7 @@ public class ZeroBounceSDK {
                 apiBaseUrl + "/getapiusage?api_key=" + apiKey
                         + "&start_date=" + dateFormat.format(startDate)
                         + "&end_date=" + dateFormat.format(endDate),
+                null,
                 new TypeToken<ZBGetApiUsageResponse>() {
                 },
                 successCallback,
@@ -140,6 +170,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/getcredits?api_key=" + apiKey,
+                null,
                 new TypeToken<ZBCreditsResponse>() {
                 },
                 successCallback,
@@ -223,7 +254,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback) {
 
-        String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendFile";
+        String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
         System.out.println("ZeroBounceSDK::sendFile urlPath=" + urlPath);
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
@@ -311,7 +342,6 @@ public class ZeroBounceSDK {
                 successCallback.onSuccess(sendFileResponse);
             }
 
-
         } catch (Exception e) {
             e.printStackTrace();
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
@@ -367,6 +397,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus?api_key=" + apiKey + "&file_id=" + fileId,
+                null,
                 new TypeToken<ZBFileStatusResponse>() {
                 },
                 successCallback,
@@ -436,7 +467,7 @@ public class ZeroBounceSDK {
             file.getParentFile().mkdirs();
             try (CloseableHttpClient client = HttpClients.createDefault()) {
                 HttpGet downloadFile = new HttpGet(
-                        (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/getFile?api_key=" + apiKey + "&file_id=" + fileId
+                        (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/getfile?api_key=" + apiKey + "&file_id=" + fileId
                 );
                 CloseableHttpResponse response = client.execute(downloadFile);
                 HttpEntity entity = response.getEntity();
@@ -512,6 +543,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile?api_key=" + apiKey + "&file_id=" + fileId,
+                null,
                 new TypeToken<ZBDeleteFileResponse>() {
                 },
                 successCallback,
@@ -536,6 +568,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/activity?api_key=" + apiKey + "&email=" + email,
+                null,
                 new TypeToken<ZBActivityDataResponse>() {
                 },
                 successCallback,
@@ -584,6 +617,7 @@ public class ZeroBounceSDK {
      */
     private <T> void sendRequest(
             @NotNull String urlPath,
+            @Nullable Map<String, Object> body,
             @NotNull TypeToken<T> typeToken,
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
@@ -592,9 +626,25 @@ public class ZeroBounceSDK {
 
             URL url = new URL(urlPath);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestMethod("GET");
             con.setRequestProperty("Accept", "application/json");
 //            con.setRequestProperty("Content-Type", "application/json");
+
+            if (body == null) {
+                con.setRequestMethod("GET");
+            } else {
+                con.setRequestMethod("POST");
+                con.setDoOutput(true);
+
+                // Attach the body to the request
+                byte[] out = gson.toJson(body).getBytes(StandardCharsets.UTF_8);
+                int length = out.length;
+
+                con.setFixedLengthStreamingMode(length);
+                con.connect();
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(out);
+                }
+            }
 
             int status = con.getResponseCode();
             System.out.println("ZeroBounceSDK::sendRequest status: " + status);
