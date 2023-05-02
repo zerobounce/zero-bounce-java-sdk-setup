@@ -1,6 +1,6 @@
-## ZeroBounce Java SDK
+## ZeroBounce India Java SDK
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce-llc/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml)
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
@@ -12,7 +12,7 @@ This SDK is built using the Java 1.8 version.
 You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```xml
 <dependency>
-    <groupId>com.zerobounce.java</groupId>
+    <groupId>com.zerobounce.in.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
     <version>1.1.3</version>
 </dependency>
@@ -22,12 +22,12 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ## How to use the sample project
 
 1. Build the JAR file for the SDK project.
-2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `/.m2/repository/com/zerobounce/java/zerobouncesdk/`
+2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `/.m2/repository/com/zerobounce/in/java/zerobouncesdk/`
 3. Run the following command from the root of the project:
     ```shell
     mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
-        -DgroupId=com.zerobounce.java \
+        -DgroupId=com.zerobounce.in.java \
         -DartifactId=zerobouncesdk \
         -Dversion=1.1.3 \
         -Dpackaging=jar \
@@ -56,7 +56,7 @@ We highly recommend you use the latest version available on Maven. However, if y
 3. Inside the `<dependencies></dependencies>` block, paste the following code:
     ```xml
     <dependency>
-        <groupId>com.zerobounce.java</groupId>
+        <groupId>com.zerobounce.in.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
         <version>1.1.3</version>
     </dependency>
@@ -69,7 +69,7 @@ We highly recommend you use the latest version available on Maven. However, if y
 ## How to deploy the SDK
 
 1. Be sure to set the *autoReleaseAfterClose* field to *false* in the `pom.xml` file of the **zero-bounce-sdk** if you don't want the artifact to be automatically deployed on Maven Central.
-2. Use the same command found in the `publish.yml` file: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
+2. Use the command: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
 
 
 ## USAGE
@@ -375,6 +375,7 @@ You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login
 ## Exporting and importing PGP keys
 1. Export the keys:
     ```shell
+    gpg --list-keys  # In order to obtain the key hash for the next step
     gpg --export -a <LAST_8_DIGITS> > public.key
     gpg --export-secret-key -a <LAST_8_DIGITS> > private key
     ```
