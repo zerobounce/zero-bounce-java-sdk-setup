@@ -47,9 +47,9 @@ public class ZeroBounceSDK {
         return instance;
     }
 
-    private final String apiBaseUrl = "https://api.zerobounce.net/v2";
-    private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
-    private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.net/v2/scoring";
+    final String apiBaseUrl = "https://api.zerobounce.in/v2";
+    private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.in/v2";
+    private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.in/v2/scoring";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
