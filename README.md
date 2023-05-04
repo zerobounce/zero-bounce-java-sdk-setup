@@ -1,6 +1,6 @@
 ## ZeroBounce India Java SDK
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml/badge.svg)](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml)
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
