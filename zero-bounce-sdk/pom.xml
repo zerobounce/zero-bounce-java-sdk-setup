@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.zerobounce.in.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.3</version>
+    <version>1.1.4</version>
     <packaging>jar</packaging>
 
     <name>ZeroBounceSDK India</name>
@@ -14,8 +14,8 @@
     <developers>
         <developer>
             <name>Zero Bounce</name>
-            <email>integrations@zerobounce.in</email>
-            <url>https://www.zerobounce.in/</url>
+            <email>integrations@zerobounce.net</email>
+            <url>https://www.zerobounce.net/</url>
         </developer>
     </developers>
 
