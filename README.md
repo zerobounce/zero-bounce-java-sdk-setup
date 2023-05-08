@@ -1,6 +1,6 @@
 ## ZeroBounce India Java SDK
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.in.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml/badge.svg)](https://github.com/zerobounce/zero-bounce-india-java-sdk-setup/actions/workflows/publish.yml)
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
@@ -14,7 +14,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 <dependency>
     <groupId>com.zerobounce.in.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.3</version>
+    <version>1.1.4</version>
 </dependency>
 ```
 
@@ -29,7 +29,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.in.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.3 \
+        -Dversion=1.1.4 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -58,7 +58,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.in.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.3</version>
+        <version>1.1.4</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
@@ -368,7 +368,7 @@ If you want to manually publish to the Nexus repository (and then release it to 
     ```
 
 You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.3)
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.4)
 - 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.android/zerobouncesdk)
 
 
