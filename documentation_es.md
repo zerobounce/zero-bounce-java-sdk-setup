@@ -1,12 +1,4 @@
-## ZeroBounce Java SDK
-
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
-
-Este SDK contiene métodos para interactuar fácilmente con la API de ZeroBounce.
-Puedes encontrar más información sobre ZeroBounce en la [documentación oficial](https://www.zerobounce.net/docs/).
-Este SDK está construido utilizando la versión Java 1.8.
-
-### Instalación
+##### Instalación
 
 Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 ```xml
@@ -17,7 +9,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 </dependency>
 ```
 
-## Cómo utilizar el proyecto de ejemplo
+#### Cómo utilizar el proyecto de ejemplo
 
 1. Compila el archivo JAR para el proyecto SDK.
 2. Asegúrate de que no haya otros archivos JAR ubicados en la caché de Maven. En mi máquina, se encuentra aquí: `/.m2/repository/com/zerobounce/java/zerobouncesdk/`
@@ -36,7 +28,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 6. Vuelve a compilar el proyecto de ejemplo.
 7. ¡Ejecuta y disfruta!
 
-## Cómo utilizar el SDK de este repositorio en tu proyecto
+#### Cómo utilizar el SDK de este repositorio en tu proyecto
 
 Recomendamos encarecidamente que uses la última versión disponible en Maven. Sin embargo, si planeas incluir la versión del repositorio del SDK en tu proyecto, esto es lo que debes hacer:
 1. Crea una carpeta llamada *local-libs* en la raíz de tu proyecto, que actuará como un repositorio "local".
@@ -64,23 +56,23 @@ os del 1 al 5 de la sección ***Cómo utilizar el proyecto de ejemplo*** anterio
 5. Vuelve a compilar el proyecto.
 6. ¡Disfruta!
 
-## Cómo implementar el SDK
+#### Cómo implementar el SDK
 
 1. Asegúrate de establecer el campo *autoReleaseAfterClose* en *false* en el archivo `pom.xml` de **zero-bounce-sdk** si no deseas que el artefacto se implemente automáticamente en Maven Central.
 2. Utiliza el mismo comando que se encuentra en el archivo `publish.yml`: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<TU_FRASE_SECRETA> clean deploy -Prelease` desde la carpeta **zero-bounce-sdk**.
 
-## USO
+#### USO
 
 Inicializa el SDK con tu clave de API:
 ```java
 ZeroBounceSDK.getInstance().initialize("<TU_CLAVE_DE_API>");
 ```
 
-## Ejemplos
+#### Ejemplos
 
 A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo:
 
-* ##### Validar una dirección de correo electrónico
+* ####### Validar una dirección de correo electrónico
     ```java
     ZeroBounceSDK.getInstance().validate(
         "<CUALQUIER_DIRECCIÓN_DE_CORREO>",
@@ -99,7 +91,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
     );
     ```
 
-* ##### Validar un lote de una lista de direcciones de correo electrónico
+* ####### Validar un lote de una lista de direcciones de correo electrónico
     ```java
     List<ZBValidateBatchData> datosDeEmails = new ArrayList<ZBValidateBatchData>();
     datosDeEmails.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
@@ -122,7 +114,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
     );
     ```
 
-* ##### Comprobar cuántos créditos te quedan en tu cuenta
+* ####### Comprobar cuántos créditos te quedan en tu cuenta
     ```java
     ZeroBounceSDK.getInstance().getCredits(
         new ZeroBounceSDK.OnSuccessCallback<ZBCreditsResponse>() {
@@ -138,7 +130,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
         });
     ```
 
-* ##### Ver el uso de tu API durante un período de tiempo determinado
+* ####### Ver el uso de tu API durante un período de tiempo determinado
     ```java
     Date startDate = new Date();    // La fecha de inicio de cuando deseas ver el uso de la API
     Date endDate = new Date();      // La fecha de finalización de cuando deseas ver el uso de la API
@@ -161,7 +153,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
         });
     ```
 
-* ##### La API *sendFile* permite al usuario enviar un archivo para la validación masiva de correo electrónico
+* ####### La API *sendFile* permite al usuario enviar un archivo para la validación masiva de correo electrónico
     ```java
     File miArchivo = new File("<RUTA_DEL_ARCHIVO>");  // El archivo csv o txt
     int columnaDeDireccionDeCorreoElectronico = 3;             // El índice de columna de la dirección de correo electrónico en el archivo. El índice comienza en 1
@@ -183,7 +175,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
         });
     ```
 
-* ##### La API *getFile* permite a los usuarios obtener el archivo de resultados de validación para el archivo enviado mediante la API *sendFile*
+* ####### La API *getFile* permite a los usuarios obtener el archivo de resultados de validación para el archivo enviado mediante la API *sendFile*
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";                    // El ID de archivo devuelto al llamar a la API sendfile
     String rutaDeDescarga = "<RUTA_DE_DESCARGA_DEL_ARCHIVO>";   // La ruta donde se descargará el archivo
@@ -204,7 +196,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
         });
     ```
 
-* ##### Comprobar el estado de un archivo cargado mediante la API *sendFile*
+* ####### Comprobar el estado de un archivo cargado mediante la API *sendFile*
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";    // El ID de archivo devuelto al llamar a la API sendfile
     
@@ -223,7 +215,7 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
         });
     ```
 
-* ##### Eliminar el archivo que se envió utilizando la API *sendFile*. El archivo solo se puede eliminar cuando su estado es `Complete`
+* ####### Eliminar el archivo que se envió utilizando la API *sendFile*. El archivo solo se puede eliminar cuando su estado es `Complete`
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";    // El ID de archivo devuelto al llamar a la API sendfile
     
@@ -244,7 +236,7 @@ System.out.println("deleteFile error=" + errorMessage);
 });
 ```
 
-* ##### Obtener información sobre el compromiso general de correo electrónico de tus suscriptores. La solicitud devuelve datos sobre aperturas, clics, reenvíos y cancelaciones de suscripción que han ocurrido en los últimos 30, 90, 180 o 365 días.
+* ####### Obtener información sobre el compromiso general de correo electrónico de tus suscriptores. La solicitud devuelve datos sobre aperturas, clics, reenvíos y cancelaciones de suscripción que han ocurrido en los últimos 30, 90, 180 o 365 días.
     ```java
     ZeroBounceSDK.getInstance().getActivityData(
         "<CUALQUIER_DIRECCIÓN_DE_CORREO>",
@@ -261,9 +253,9 @@ System.out.println("deleteFile error=" + errorMessage);
         });
     ```
 
-### API de puntuación AI
+##### API de puntuación AI
 
-* ##### La API *scoringSendFile* permite al usuario enviar un archivo para la validación masiva de correo electrónico
+* ####### La API *scoringSendFile* permite al usuario enviar un archivo para la validación masiva de correo electrónico
     ```java
     File miArchivo = new File("<RUTA_DEL_ARCHIVO>");  // El archivo csv o txt
     int columnaDeDireccionDeCorreoElectronico = 3;             // El índice de columna de la dirección de correo electrónico en el archivo. El índice comienza en 1
@@ -285,7 +277,7 @@ System.out.println("deleteFile error=" + errorMessage);
         });
     ```
 
-* ##### La API *scoringGetFile* permite a los usuarios obtener el archivo de resultados de validación para el archivo enviado mediante la API *scoringSendFile*
+* ####### La API *scoringGetFile* permite a los usuarios obtener el archivo de resultados de validación para el archivo enviado mediante la API *scoringSendFile*
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";                    // El ID de archivo devuelto al llamar a la API scoringSendfile
     String rutaDeDescarga = "<RUTA_DE_DESCARGA_DEL_ARCHIVO>";   // La ruta donde se descargará el archivo
@@ -306,7 +298,7 @@ System.out.println("deleteFile error=" + errorMessage);
         });
     ```
 
-* ##### Comprobar el estado de un archivo cargado mediante la API *scoringSendFile*
+* ####### Comprobar el estado de un archivo cargado mediante la API *scoringSendFile*
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";    // El ID de archivo devuelto al llamar a la API scoringSendfile
     
@@ -327,7 +319,7 @@ System.out.println("scoringFileStatus error=" + errorMessage);
 });
 ```
 
-* ##### Elimina el archivo que se envió utilizando la API *scoringSendFile*. El archivo solo se puede eliminar cuando su estado es `Complete`
+* ####### Elimina el archivo que se envió utilizando la API *scoringSendFile*. El archivo solo se puede eliminar cuando su estado es `Complete`
     ```java
     String fileId = "<ID_DEL_ARCHIVO>";    // El ID de archivo devuelto al llamar a la API scoringSendfile
     
@@ -346,14 +338,14 @@ System.out.println("scoringFileStatus error=" + errorMessage);
         });
     ```
 
-## Documentación
+#### Documentación
 Puedes generar la documentación utilizando tu IDE favorito o el comando javadoc de Maven.
 
-## Publicación
+#### Publicación
 Cada vez que se crea una nueva versión, el flujo de trabajo de CI/CD se ejecutará y se lanzará un nuevo artefacto en Maven Central. ¡No olvides actualizar la versión antes de hacer un lanzamiento!
 Si cambias las credenciales de inicio de sesión de OSSRH, también deberás actualizar las variables del repositorio en Github.
 
-### Configuración local para la versión manual
+##### Configuración local para la versión manual
 Para poder publicar en el repositorio Nexus desde tu máquina local, debes seguir estos pasos:
 Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Maven Central), debes:
 
@@ -361,7 +353,7 @@ Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Ma
 2. Establecer el valor de *autoReleaseAfterClose* en el archivo `pom.xml` de zero-bounce-sdk en *false*.
 3. Ejecutar el siguiente comando:
    ```shell
-   # Para publicar en el repositorio de preparación
+   ### Para publicar en el repositorio de preparación
    mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<TU_FRASE_SECRETA> clean deploy -Prelease
    ```
 
@@ -369,10 +361,10 @@ Luego, debes ir a [Nexus Sonatype](https://s01.oss.sonatype.org/), iniciar sesi�
 - algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.4)
 - 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.android/zerobouncesdk)
 
-## Exportación e importación de claves PGP
+#### Exportación e importación de claves PGP
 1. Exporta las claves:
    ```shell
-   gpg --list-keys  # Para obtener el hash de la clave para el siguiente paso
+   gpg --list-keys  ### Para obtener el hash de la clave para el siguiente paso
    gpg --export -a <ÚLTIMOS_8_DÍGITOS> > public.key
    gpg --export-secret-key -a <ÚLTIMOS_8_DÍGITOS> > private.key
    ```
