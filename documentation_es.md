@@ -51,8 +51,7 @@ Recomendamos encarecidamente que uses la última versión disponible en Maven. S
     </dependency>
     ```
 4. Sigue los pas
-
-os del 1 al 5 de la sección ***Cómo utilizar el proyecto de ejemplo*** anteriormente.
+    os del 1 al 5 de la sección ***Cómo utilizar el proyecto de ejemplo*** anteriormente.
 5. Vuelve a compilar el proyecto.
 6. ¡Disfruta!
 
