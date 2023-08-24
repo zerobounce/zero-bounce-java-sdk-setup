@@ -2,20 +2,20 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.zerobounce.java</groupId>
+    <groupId>com.zerobounce.in.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
     <version>1.1.6</version>
     <packaging>jar</packaging>
 
-    <name>ZeroBounceSDK</name>
-    <description>The ZeroBounce SDK for Java</description>
-    <url>https://github.com/zerobounce/zero-bounce-java-sdk-setup</url>
+    <name>ZeroBounceSDK India</name>
+    <description>The ZeroBounce India SDK for Java</description>
+    <url>https://github.com/zerobounce/zero-bounce-india-java-sdk-setup</url>
 
     <developers>
         <developer>
             <name>Zero Bounce</name>
-            <email>integrations@zerobounce.net</email>
-            <url>https://www.zerobounce.net/</url>
+            <email>integrations@zerobounce.in</email>
+            <url>https://www.zerobounce.in/</url>
         </developer>
     </developers>
 
@@ -28,9 +28,9 @@
     </licenses>
 
     <scm>
-        <url>https://github.com/zerobounce/zero-bounce-java-sdk-setup</url>
-        <connection>scm:git:git@github.com:zerobounce/zero-bounce-java-sdk-setup.git</connection>
-        <developerConnection>scm:git:git@github.com:zerobounce/zero-bounce-java-sdk-setup.git</developerConnection>
+        <url>https://github.com/zerobounce/zero-bounce-india-java-sdk-setup</url>
+        <connection>scm:git:git@github.com:zerobounce/zero-bounce-india-java-sdk-setup.git</connection>
+        <developerConnection>scm:git:git@github.com:zerobounce/zero-bounce-india-java-sdk-setup.git</developerConnection>
     </scm>
 
     <properties>
