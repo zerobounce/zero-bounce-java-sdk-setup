@@ -5,7 +5,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.4</version>
+    <version>1.1.6</version>
 </dependency>
 ```
 
@@ -19,7 +19,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.4 \
+        -Dversion=1.1.6 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -47,7 +47,7 @@ Recomendamos encarecidamente que uses la última versión disponible en Maven. S
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.4</version>
+        <version>1.1.6</version>
     </dependency>
     ```
 4. Sigue los pas
@@ -108,6 +108,27 @@ A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo
             @Override
             public void onError(String errorMessage) {
                 System.out.println("validateBatch error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ####### Encuentre el correo electrónico y otros formatos de dominio según un nombre de dominio determinado
+    ```java
+    ZeroBounceSDK.getInstance().guessFormat(
+        "<DOMINIO_A_PRUEBA>",
+        null,
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBEmailFinderResponse>() {
+            @Override
+            public void onSuccess(ZBEmailFinderResponse response) {
+                System.out.println("guessFormat response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("guessFormat error=" + errorMessage);
             }
         });
     );
@@ -357,7 +378,7 @@ Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Ma
    ```
 
 Luego, debes ir a [Nexus Sonatype](https://s01.oss.sonatype.org/), iniciar sesión y luego abrir *Staging Repositories* y hacer clic en *Refresh*. Aquí verás el artefacto que acabas de cargar. Para publicarlo, debes **cerrarlo** y luego **publicarlo**. Estas acciones tardarán algunos minutos en completarse. Después de **publicar** el artefacto, llevará:
-- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.4)
+- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/android/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.android/zerobouncesdk/1.1.6)
 - 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.android/zerobouncesdk)
 
 #### Exportación e importación de claves PGP

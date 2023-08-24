@@ -22,12 +22,14 @@
                 GridPane.rowIndex="1"/>
         <Button fx:id="validateBatchButton" mnemonicParsing="false" text="Validate Batch" GridPane.columnIndex="1"
                 GridPane.rowIndex="2"/>
-        <Button fx:id="creditsButton" mnemonicParsing="false" text="Get Credits" GridPane.columnIndex="1"
+        <Button fx:id="guessFormatButton" mnemonicParsing="false" text="Guess Format" GridPane.columnIndex="1"
                 GridPane.rowIndex="3"/>
-        <Button fx:id="apiUsageButton" mnemonicParsing="false" text="Api Usages" GridPane.columnIndex="1"
+        <Button fx:id="creditsButton" mnemonicParsing="false" text="Get Credits" GridPane.columnIndex="1"
                 GridPane.rowIndex="4"/>
-        <Button fx:id="activityDataButton" mnemonicParsing="false" text="Get Activity Data" GridPane.columnIndex="1"
+        <Button fx:id="apiUsageButton" mnemonicParsing="false" text="Api Usages" GridPane.columnIndex="1"
                 GridPane.rowIndex="5"/>
+        <Button fx:id="activityDataButton" mnemonicParsing="false" text="Get Activity Data" GridPane.columnIndex="1"
+                GridPane.rowIndex="6"/>
 
         <Button fx:id="pickFileButton" mnemonicParsing="false" text="Send File" GridPane.columnIndex="2"
                 GridPane.rowIndex="1"/>

@@ -23,16 +23,19 @@ public class Controller {
     public Button activityDataButton;
     public Button validateButton;
     public Button validateBatchButton;
+    public Button guessFormatButton;
     public Button pickFileButton;
 
     public void initialize() {
 
         System.out.println("Controller::initialize");
-        ZeroBounceSDK.getInstance().initialize("dca06ad4eecb4b7fa3d188e92b4ab600");
+        ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
 
         validateButton.setOnAction(event -> validate("<EMAIL_TO_TEST>"));
 
         validateBatchButton.setOnAction(event -> validateBatch());
+
+        guessFormatButton.setOnAction(event -> guessFormat("<DOMAIN_TO_TEST>"));
 
         creditsButton.setOnAction(event -> getCredits());
 
@@ -76,6 +79,20 @@ public class Controller {
                 emailsData,
                 response -> System.out.println("Controller::validateBatch response=" + response.toString()),
                 errorMessage -> System.out.println("Controller::validateBatch error=" + errorMessage)
+        );
+    }
+
+    /**
+     * Calls the *guess format* method of the [ZeroBounceSDK].
+     */
+    private void guessFormat(String domain) {
+        ZeroBounceSDK.getInstance().guessFormat(
+                domain,
+                null,
+                null,
+                null,
+                response -> System.out.println("Controller::guessFormat response=" + response.toString()),
+                errorMessage -> System.out.println("Controller::guessFormat error=" + errorMessage)
         );
     }
 

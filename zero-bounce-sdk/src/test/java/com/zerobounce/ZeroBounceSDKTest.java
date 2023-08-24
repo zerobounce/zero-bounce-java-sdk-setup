@@ -238,6 +238,69 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void guessFormat_ReturnsSuccess() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\n" +
+                "      \"email\": \"john.doe@example.com\",\n" +
+                "      \"domain\": \"example.com\",\n" +
+                "      \"format\": \"first.last\",\n" +
+                "      \"status\": \"valid\",\n" +
+                "      \"sub_status\": \"\",\n" +
+                "      \"confidence\": \"HIGH\",\n" +
+                "      \"did_you_mean\": \"\",\n" +
+                "      \"failure_reason\": \"\",\n" +
+                "      \"other_domain_formats\": [\n" +
+                "        {\n" +
+                "            \"format\": \"first_last\",\n" +
+                "            \"confidence\": \"HIGH\"\n" +
+                "        },\n" +
+                "        {\n" +
+                "            \"format\": \"first\",\n" +
+                "            \"confidence\": \"MEDIUM\"\n" +
+                "        }\n" +
+                "      ]\n" +
+                "    }";
+        ZBEmailFinderResponse expectedResponse = gson.fromJson(responseJson, ZBEmailFinderResponse.class);
+
+        String domain = "example.com";
+        String urlPath = "https://api.zerobounce.net/v2/guessformat?api_key=" + API_KEY + "&domain=" + domain;
+        mockRequest(urlPath, 200, responseJson, "");
+
+        ZeroBounceSDK.getInstance().guessFormat(
+                domain,
+                null,
+                null,
+                null,
+                response -> {
+                    assertEquals(expectedResponse, response);
+                }, errorResponse -> {
+                    fail(errorResponse.toString());
+                });
+    }
+
+    @Test
+    public void guessFormat_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String domain = "example.com";
+        String urlPath = "https://api.zerobounce.net/v2/guessformat?api_key=" + API_KEY + "&domain=" + domain;
+        mockRequest(urlPath, 400, "", responseJson);
+
+        ZeroBounceSDK.getInstance().guessFormat(
+                domain,
+                null,
+                null,
+                null,
+                response -> {
+                    fail(response.toString());
+                }, errorResponse -> {
+                    assertEquals(expectedResponse, errorResponse);
+                });
+    }
+
+    @Test
     public void getCredits_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"Credits\":2375323}";

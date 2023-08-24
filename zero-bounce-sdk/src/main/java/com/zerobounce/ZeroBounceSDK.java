@@ -129,6 +129,47 @@ public class ZeroBounceSDK {
     }
 
     /**
+     * Tries to guess the format of the given [email].
+     *
+     * @param domain          the email domain for which to find the email format
+     * @param firstName       the first name of the person whose email format is being searched; optional
+     * @param middleName      the middle name of the person whose email format is being searched; optional
+     * @param lastName        the last name of the person whose email format is being searched; optional
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void guessFormat(
+            @NotNull String domain,
+            @Nullable String firstName,
+            @Nullable String middleName,
+            @Nullable String lastName,
+            @NotNull OnSuccessCallback<ZBEmailFinderResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        String url = apiBaseUrl + "/guessformat?api_key=" + apiKey + "&domain=" + domain;
+        if (firstName != null) {
+            url += "&first_name=" + firstName;
+        }
+        if (middleName != null) {
+            url += "&middle_name=" + middleName;
+        }
+        if (lastName != null) {
+            url += "&last_name=" + lastName;
+        }
+
+        sendRequest(
+                url,
+                null,
+                new TypeToken<ZBEmailFinderResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
      * Returns the API usage between the given dates.
      *
      * @param startDate       the start date of when you want to view API usage
