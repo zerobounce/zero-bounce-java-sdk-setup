@@ -3,7 +3,7 @@
 You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```xml
 <dependency>
-    <groupId>com.zerobounce.in.java</groupId>
+    <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
     <version>1.1.6</version>
 </dependency>
@@ -18,7 +18,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
     ```shell
     mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
-        -DgroupId=com.zerobounce.in.java \
+        -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
         -Dversion=1.1.6 \
         -Dpackaging=jar \
@@ -47,7 +47,7 @@ We highly recommend you use the latest version available on Maven. However, if y
 3. Inside the `<dependencies></dependencies>` block, paste the following code:
     ```xml
     <dependency>
-        <groupId>com.zerobounce.in.java</groupId>
+        <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
         <version>1.1.6</version>
     </dependency>
@@ -380,8 +380,8 @@ If you want to manually publish to the Nexus repository (and then release it to 
     ```
 
 You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/in/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.in.java/zerobouncesdk/1.1.6)
-- 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.in.java/zerobouncesdk)
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.1.6)
+- 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 
 #### Exporting and importing PGP keys

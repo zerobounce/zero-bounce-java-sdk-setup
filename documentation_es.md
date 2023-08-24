@@ -378,8 +378,8 @@ Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Ma
    ```
 
 Luego, debes ir a [Nexus Sonatype](https://s01.oss.sonatype.org/), iniciar sesión y luego abrir *Staging Repositories* y hacer clic en *Refresh*. Aquí verás el artefacto que acabas de cargar. Para publicarlo, debes **cerrarlo** y luego **publicarlo**. Estas acciones tardarán algunos minutos en completarse. Después de **publicar** el artefacto, llevará:
-- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/in/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.in.java/zerobouncesdk/1.1.6)
-- 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.in.java/zerobouncesdk)
+- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.1.6)
+- 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 #### Exportación e importación de claves PGP
 1. Exporta las claves:
