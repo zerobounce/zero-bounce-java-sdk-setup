@@ -5,7 +5,7 @@ import com.google.gson.annotations.SerializedName;
 /**
  * The model class that lists all the possible statuses of the email validation result.
  */
-enum ZBValidateStatus {
+public enum ZBValidateStatus {
     @SerializedName("valid")
     VALID,
 
