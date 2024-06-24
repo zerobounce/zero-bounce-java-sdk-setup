@@ -36,7 +36,7 @@ public class ZBValidateBatchResponse {
         return this.emailBatch;
     }
 
-    public List<ZBValidateResponse> getErrors() {
+    public List<LinkedHashMap<String, Object>> getErrors() {
         return this.errors;
     }
 }
