@@ -31,4 +31,12 @@ public class ZBValidateBatchResponse {
     public int hashCode() {
         return Objects.hash(emailBatch, errors);
     }
+
+    public List<ZBValidateResponse> getEmailBatch() {
+        return this.emailBatch;
+    }
+
+    public List<ZBValidateResponse> getErrors() {
+        return this.errors;
+    }
 }
