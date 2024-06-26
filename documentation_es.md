@@ -5,7 +5,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.7</version>
+    <version>1.1.8</version>
 </dependency>
 ```
 
@@ -19,7 +19,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.7 \
+        -Dversion=1.1.8 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -47,7 +47,7 @@ Recomendamos encarecidamente que uses la última versión disponible en Maven. S
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.7</version>
+        <version>1.1.8</version>
     </dependency>
     ```
 4. Sigue los pas
@@ -378,7 +378,7 @@ Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Ma
    ```
 
 Luego, debes ir a [Nexus Sonatype](https://s01.oss.sonatype.org/), iniciar sesión y luego abrir *Staging Repositories* y hacer clic en *Refresh*. Aquí verás el artefacto que acabas de cargar. Para publicarlo, debes **cerrarlo** y luego **publicarlo**. Estas acciones tardarán algunos minutos en completarse. Después de **publicar** el artefacto, llevará:
-- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.1.7)
+- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.1.8)
 - 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 #### Exportación e importación de claves PGP
