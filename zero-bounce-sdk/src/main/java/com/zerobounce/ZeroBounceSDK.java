@@ -53,6 +53,7 @@ public class ZeroBounceSDK {
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
+    private int timeoutInMillis;
     private final Gson gson;
 
     private ZeroBounceSDK() {
@@ -70,6 +71,17 @@ public class ZeroBounceSDK {
      */
     public void initialize(String apiKey) {
         this.apiKey = apiKey;
+        this.timeoutInMillis = 0;
+    }
+
+    /**
+     * Initializes the SDK.
+     *
+     * @param apiKey the API key
+     */
+    public void initialize(String apiKey, int timeoutInMillis) {
+        this.apiKey = apiKey;
+        this.timeoutInMillis = timeoutInMillis;
     }
 
     /**
@@ -686,6 +698,8 @@ public class ZeroBounceSDK {
                     os.write(out);
                 }
             }
+
+            con.setConnectTimeout(this.timeoutInMillis);
 
             int status = con.getResponseCode();
             System.out.println("ZeroBounceSDK::sendRequest status: " + status);
