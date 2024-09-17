@@ -67,7 +67,7 @@ public class ZeroBounceSDK {
     /**
      * Initializes the SDK.
      *
-     * [timeoutMillis] is set to 0 (no timeout by default)
+     * [timeoutInMillis] is set to 0 (no timeout by default)
      *
      * @param apiKey the API key
      */
@@ -80,7 +80,7 @@ public class ZeroBounceSDK {
      * Initializes the SDK.
      *
      * @param apiKey the API key
-     * @param timeoutMillis timeout in milliseconds to use for all requests (0 for no timeout)
+     * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
      */
     public void initialize(String apiKey, int timeoutInMillis) {
         this.apiKey = apiKey;
