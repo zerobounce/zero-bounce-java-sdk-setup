@@ -7,14 +7,14 @@ More information about ZeroBounce you can find in the [official documentation](h
 This SDK is built using the Java 1.8 version.
 
 
-### Instalation
+### Installation
 
 You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```xml
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.8</version>
+    <version>1.1.9</version>
 </dependency>
 ```
 
@@ -29,7 +29,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.8 \
+        -Dversion=1.1.9 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -58,7 +58,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.8</version>
+        <version>1.1.9</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
@@ -77,6 +77,9 @@ We highly recommend you use the latest version available on Maven. However, if y
 Initialize the sdk with your api key:
 ```java
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
+```
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
 
