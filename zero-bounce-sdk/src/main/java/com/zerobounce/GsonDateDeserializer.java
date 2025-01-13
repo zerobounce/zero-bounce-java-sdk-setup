@@ -1,11 +1,17 @@
 package com.zerobounce;
 
-import com.google.gson.*;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
 
 import java.lang.reflect.Type;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * A custom deserializer for transforming date Strings into Date objects.
@@ -15,9 +21,9 @@ public class GsonDateDeserializer implements JsonDeserializer<Date> {
     private static final List<SimpleDateFormat> DATE_FORMATS = Arrays.asList(
             new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT),
             new SimpleDateFormat("MM/dd/yyyy h:mm:ss a", Locale.ROOT),
-            new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX", Locale.ROOT), // ISO 8601 support (standard json)
-            new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", Locale.ROOT)); // ISO 8601 support with milliseconds
-
+            new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX", Locale.ROOT),  // ISO 8601 support (standard json)
+            new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", Locale.ROOT)  // ISO 8601 support with milliseconds
+    );
 
     @Override
     public Date deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {

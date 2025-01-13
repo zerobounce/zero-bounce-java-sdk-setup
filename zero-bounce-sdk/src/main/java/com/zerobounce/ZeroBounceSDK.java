@@ -8,6 +8,7 @@ import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.FileBody;
@@ -104,9 +105,14 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                apiBaseUrl + "/validate?api_key=" + apiKey +
-                        "&email=" + email +
-                        "&ip_address=" + (ipAddress != null ? ipAddress : ""),
+                apiBaseUrl + "/validate",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("email", email);
+                        put("ip_address", ipAddress != null ? ipAddress : "");
+                    }
+                },
                 null,
                 new TypeToken<ZBValidateResponse>() {
                 },
@@ -135,6 +141,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/validatebatch",
+                null,
                 body,
                 new TypeToken<ZBValidateBatchResponse>() {
                 },
@@ -163,19 +170,23 @@ public class ZeroBounceSDK {
     ) {
         if (invalidApiKey(errorCallback)) return;
 
-        String url = apiBaseUrl + "/guessformat?api_key=" + apiKey + "&domain=" + domain;
-        if (firstName != null) {
-            url += "&first_name=" + firstName;
-        }
-        if (middleName != null) {
-            url += "&middle_name=" + middleName;
-        }
-        if (lastName != null) {
-            url += "&last_name=" + lastName;
-        }
-
         sendRequest(
-                url,
+                apiBaseUrl + "/guessformat",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("domain", domain);
+                        if (firstName != null) {
+                            put("first_name", firstName);
+                        }
+                        if (middleName != null) {
+                            put("middle_name", middleName);
+                        }
+                        if (lastName != null) {
+                            put("last_name", lastName);
+                        }
+                    }
+                },
                 null,
                 new TypeToken<ZBEmailFinderResponse>() {
                 },
@@ -201,9 +212,14 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                apiBaseUrl + "/getapiusage?api_key=" + apiKey
-                        + "&start_date=" + dateFormat.format(startDate)
-                        + "&end_date=" + dateFormat.format(endDate),
+                apiBaseUrl + "/getapiusage",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("start_date", dateFormat.format(startDate));
+                        put("end_date", dateFormat.format(endDate));
+                    }
+                },
                 null,
                 new TypeToken<ZBGetApiUsageResponse>() {
                 },
@@ -225,7 +241,12 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                apiBaseUrl + "/getcredits?api_key=" + apiKey,
+                apiBaseUrl + "/getcredits",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                    }
+                },
                 null,
                 new TypeToken<ZBCreditsResponse>() {
                 },
@@ -452,7 +473,13 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus?api_key=" + apiKey + "&file_id=" + fileId,
+                (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("file_id", fileId);
+                    }
+                },
                 null,
                 new TypeToken<ZBFileStatusResponse>() {
                 },
@@ -598,7 +625,13 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile?api_key=" + apiKey + "&file_id=" + fileId,
+                (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("file_id", fileId);
+                    }
+                },
                 null,
                 new TypeToken<ZBDeleteFileResponse>() {
                 },
@@ -623,7 +656,13 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
-                apiBaseUrl + "/activity?api_key=" + apiKey + "&email=" + email,
+                apiBaseUrl + "/activity",
+                new HashMap<String, String>(){
+                    {
+                        put("api_key", apiKey);
+                        put("email", email);
+                    }
+                },
                 null,
                 new TypeToken<ZBActivityDataResponse>() {
                 },
@@ -668,19 +707,31 @@ public class ZeroBounceSDK {
      * The helper method that handles any type of request.
      *
      * @param urlPath         the url
+     * @param queryParameters the query parameters if the request is a GET request
+     * @param body            the body parameters if the request is a POST request
+     * @param typeToken       a [TypeToken] class that is used to convert the JSON response
+     *                        to a specific response object
      * @param successCallback the success callback
      * @param errorCallback   the error callback
      */
     private <T> void sendRequest(
             @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
             @Nullable Map<String, Object> body,
             @NotNull TypeToken<T> typeToken,
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         try {
             System.out.println("ZeroBounceSDK::sendRequest urlPath=" + urlPath);
+            URIBuilder ub = new URIBuilder(urlPath);
 
-            URL url = new URL(urlPath);
+            if (queryParameters != null) {
+                for (Map.Entry<String, String> param : queryParameters.entrySet()) {
+                    ub.addParameter(param.getKey(), param.getValue());
+                }
+            }
+
+            URL url = new URL(ub.toString());
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestProperty("Accept", "application/json");
 //            con.setRequestProperty("Content-Type", "application/json");

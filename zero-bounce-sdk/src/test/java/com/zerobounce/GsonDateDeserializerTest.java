@@ -1,9 +1,14 @@
 package com.zerobounce;
 
-import com.google.gson.*;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
 import org.junit.Test;
 
-import java.time.*;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 
@@ -13,10 +18,10 @@ import static org.junit.Assert.fail;
 public class GsonDateDeserializerTest {
 
     /**
-     * Test date deserialization with no timezone dates
+     * Test date deserialization with no timezone dates.
      */
     @Test
-    public void dateFormatDeserializationNoTimeZone() {
+    public void dateFormatDeserializationNoTimeZone_ReturnsSuccess() {
         Date verificationDate = Date.from(LocalDateTime.of(2020, 1, 1, 12, 0, 0, 0).atZone(ZoneId.systemDefault()).toInstant());
         final Gson gson = new GsonBuilder().registerTypeAdapter(Date.class, new GsonDateDeserializer()).create();
         try {
@@ -31,7 +36,7 @@ public class GsonDateDeserializerTest {
      * Test date deserialization with ISO 8601 format and UTC (Zulu) timezone.
      */
     @Test
-    public void dateFormatDeserializationZulu() {
+    public void dateFormatDeserializationZulu_ReturnsSuccess() {
         Date verificationDateZulu = Date.from(ZonedDateTime.of(2020, 1, 1, 12, 0, 0, 0, ZoneOffset.UTC).toInstant());
         final Gson gson = new GsonBuilder().registerTypeAdapter(Date.class, new GsonDateDeserializer()).create();
         try {
@@ -46,7 +51,7 @@ public class GsonDateDeserializerTest {
      * Test date deserialization with ISO 8601 format local timezone.
      */
     @Test
-    public void dateFormatDeserializationLocalTimezone() {
+    public void dateFormatDeserializationLocalTimezone_ReturnsSuccess() {
         ZonedDateTime zonedDateTime = ZonedDateTime.of(2020, 1, 1, 12, 0, 0, 0, ZoneId.systemDefault());
         Date verificationDate = Date.from(zonedDateTime.toInstant());
 
