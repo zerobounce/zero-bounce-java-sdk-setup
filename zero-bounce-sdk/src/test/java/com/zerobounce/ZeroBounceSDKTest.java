@@ -3,15 +3,17 @@ package com.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import org.jetbrains.annotations.NotNull;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.StatusLine;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -24,12 +26,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.net.HttpURLConnection;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -83,7 +83,16 @@ public class ZeroBounceSDKTest {
         ZBValidateResponse expectedResponse = gson.fromJson(responseJson, ZBValidateResponse.class);
 
         String email = "flowerjill@aol.com";
-        String urlPath = "https://api.zerobounce.net/v2/validate?api_key=" + API_KEY + "&email=" + email + "&ip_address=";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/validate",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                        put("ip_address", "");
+                    }
+                }
+        );
         mockRequest(urlPath, 200, responseJson, "");
 
         ZeroBounceSDK.getInstance().validate(
@@ -103,7 +112,16 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String email = "flowerjill@aol.com";
-        String urlPath = "https://api.zerobounce.net/v2/validate?api_key=" + API_KEY + "&email=" + email + "&ip_address=";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/validate",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                        put("ip_address", "");
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().validate(
@@ -263,7 +281,15 @@ public class ZeroBounceSDKTest {
         ZBEmailFinderResponse expectedResponse = gson.fromJson(responseJson, ZBEmailFinderResponse.class);
 
         String domain = "example.com";
-        String urlPath = "https://api.zerobounce.net/v2/guessformat?api_key=" + API_KEY + "&domain=" + domain;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                    }
+                }
+        );
         mockRequest(urlPath, 200, responseJson, "");
 
         ZeroBounceSDK.getInstance().guessFormat(
@@ -285,7 +311,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String domain = "example.com";
-        String urlPath = "https://api.zerobounce.net/v2/guessformat?api_key=" + API_KEY + "&domain=" + domain;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().guessFormat(
@@ -306,7 +340,14 @@ public class ZeroBounceSDKTest {
         String responseJson = "{\"Credits\":2375323}";
         ZBCreditsResponse expectedResponse = gson.fromJson(responseJson, ZBCreditsResponse.class);
 
-        String urlPath = "https://api.zerobounce.net/v2/getcredits?api_key=" + API_KEY;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getcredits",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                    }
+                }
+        );
         mockRequest(urlPath, 200, responseJson, "");
 
         ZeroBounceSDK.getInstance().getCredits(
@@ -323,7 +364,14 @@ public class ZeroBounceSDKTest {
         String responseJson = "{\"Credits\":-1}";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
-        String urlPath = "https://api.zerobounce.net/v2/getcredits?api_key=" + API_KEY;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getcredits",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().getCredits(
@@ -375,9 +423,16 @@ public class ZeroBounceSDKTest {
         startDate.setTime(startDate.getTime() - 5 * 24 * 60 * 60 * 1000);  // previous 5 days
         Date endDate = new Date();
 
-        String urlPath = "https://api.zerobounce.net/v2/getapiusage?api_key=" + API_KEY
-                + "&start_date=" + dateFormat.format(startDate)
-                + "&end_date=" + dateFormat.format(endDate);
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getapiusage",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("start_date", dateFormat.format(startDate));
+                        put("end_date", dateFormat.format(endDate));
+                    }
+                }
+        );
         mockRequest(urlPath, 200, responseJson, "");
 
         ZeroBounceSDK.getInstance().getApiUsage(
@@ -400,9 +455,16 @@ public class ZeroBounceSDKTest {
         startDate.setTime(startDate.getTime() - 5 * 24 * 60 * 60 * 1000);  // previous 5 days
         Date endDate = new Date();
 
-        String urlPath = "https://api.zerobounce.net/v2/getapiusage?api_key=" + API_KEY
-                + "&start_date=" + dateFormat.format(startDate)
-                + "&end_date=" + dateFormat.format(endDate);
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getapiusage",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("start_date", dateFormat.format(startDate));
+                        put("end_date", dateFormat.format(endDate));
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().getApiUsage(
@@ -457,7 +519,15 @@ public class ZeroBounceSDKTest {
         ZBFileStatusResponse fileStatusResponse = gson.fromJson(fileStatusJson, ZBFileStatusResponse.class);
 
         String fileId = expectedResponse.getFileId();
-        String fileStatusUrlPath = "https://bulkapi.zerobounce.net/v2/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
+        String fileStatusUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/filestatus",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
 
         assertNotNull(fileId);
@@ -476,7 +546,15 @@ public class ZeroBounceSDKTest {
         ZBGetFileResponse getFileResponse = new ZBGetFileResponse();
         getFileResponse.setLocalFilePath("./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv");
 
-        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String getFileUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/getfile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().getFile(
@@ -499,7 +577,15 @@ public class ZeroBounceSDKTest {
                 "}";
         ZBDeleteFileResponse deleteFileResponse = gson.fromJson(deleteFileJson, ZBDeleteFileResponse.class);
 
-        String deleteFileUrlPath = "https://bulkapi.zerobounce.net/v2/deletefile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String deleteFileUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/deletefile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(deleteFileUrlPath, 200, deleteFileJson, "");
 
         ZeroBounceSDK.getInstance().deleteFile(
@@ -553,7 +639,15 @@ public class ZeroBounceSDKTest {
         ZBFileStatusResponse fileStatusResponse = gson.fromJson(fileStatusJson, ZBFileStatusResponse.class);
 
         String fileId = expectedResponse.getFileId();
-        String fileStatusUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
+        String fileStatusUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/filestatus",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
 
         assertNotNull(fileId);
@@ -572,7 +666,15 @@ public class ZeroBounceSDKTest {
         ZBGetFileResponse getFileResponse = new ZBGetFileResponse();
         getFileResponse.setLocalFilePath("./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv");
 
-        String getFileUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String getFileUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/getfile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringGetFile(
@@ -595,7 +697,15 @@ public class ZeroBounceSDKTest {
                 "}";
         ZBDeleteFileResponse deleteFileResponse = gson.fromJson(deleteFileJson, ZBDeleteFileResponse.class);
 
-        String deleteFileUrlPath = "https://bulkapi.zerobounce.net/v2/scoring/deletefile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String deleteFileUrlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/deletefile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(deleteFileUrlPath, 200, deleteFileJson, "");
 
         ZeroBounceSDK.getInstance().scoringDeleteFile(
@@ -673,7 +783,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/filestatus",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().fileStatus(
@@ -695,7 +813,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/filestatus?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/filestatus",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().scoringFileStatus(
@@ -717,7 +843,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/getfile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().getFile(
@@ -740,7 +874,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/getfile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/getfile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
 
         ZeroBounceSDK.getInstance().scoringGetFile(
@@ -763,7 +905,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/deletefile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/deletefile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().deleteFile(
@@ -785,7 +935,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
-        String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/deletefile?api_key=" + API_KEY + "&file_id=" + fileId;
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/v2/scoring/deletefile",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("file_id", fileId);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().scoringDeleteFile(
@@ -807,7 +965,15 @@ public class ZeroBounceSDKTest {
         ZBActivityDataResponse expectedResponse = gson.fromJson(responseJson, ZBActivityDataResponse.class);
 
         String email = "flowerjill@aol.com";
-        String urlPath = "https://api.zerobounce.net/v2/activity?api_key=" + API_KEY + "&email=" + email;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/activity",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                    }
+                }
+        );
         mockRequest(urlPath, 200, responseJson, "");
 
         ZeroBounceSDK.getInstance().getActivityData(
@@ -829,7 +995,15 @@ public class ZeroBounceSDKTest {
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String email = "flowerjill@aol.com";
-        String urlPath = "https://api.zerobounce.net/v2/activity?api_key=" + API_KEY + "&email=" + email;
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/activity",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                    }
+                }
+        );
         mockRequest(urlPath, 400, "", responseJson);
 
         ZeroBounceSDK.getInstance().getActivityData(
@@ -839,6 +1013,19 @@ public class ZeroBounceSDKTest {
                 }, errorResponse -> {
                     assertEquals(expectedResponse, errorResponse);
                 });
+    }
+
+    private String getEncodedUrl(
+            String urlPath,
+            @Nullable Map<String, String> queryParameters
+    ) throws URISyntaxException {
+        URIBuilder ub = new URIBuilder(urlPath);
+        if (queryParameters != null) {
+            for (Map.Entry<String, String> param : queryParameters.entrySet()) {
+                ub.addParameter(param.getKey(), param.getValue());
+            }
+        }
+        return ub.toString();
     }
 
     private void mockRequest(

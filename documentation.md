@@ -5,7 +5,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.1.9</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -13,14 +13,14 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 #### How to use the sample project
 
 1. Build the JAR file for the SDK project.
-2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `/.m2/repository/com/zerobounce/in/java/zerobouncesdk/`
+2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `~/.m2/repository/com/zerobounce/java/zerobouncesdk/`
 3. Run the following command from the root of the project:
     ```shell
     mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.1.9 \
+        -Dversion=1.2.0 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -49,7 +49,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.1.9</version>
+        <version>1.2.0</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
@@ -383,7 +383,7 @@ If you want to manually publish to the Nexus repository (and then release it to 
     ```
 
 You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.1.9)
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.2.0)
 - 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 
