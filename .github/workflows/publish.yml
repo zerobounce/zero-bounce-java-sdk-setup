@@ -27,6 +27,6 @@ jobs:
       - name: Publish to MavenCentral
         run: cd zero-bounce-sdk && mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE} clean deploy -Prelease
         env:
-          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
