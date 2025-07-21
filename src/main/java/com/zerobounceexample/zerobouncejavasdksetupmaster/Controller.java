@@ -1,5 +1,6 @@
 package com.zerobounceexample.zerobouncejavasdksetupmaster;
 
+import com.zerobounce.ZBException;
 import com.zerobounce.ZBValidateBatchData;
 import com.zerobounce.ZeroBounceSDK;
 import javafx.scene.control.Button;
@@ -126,13 +127,17 @@ public class Controller {
      */
     private void sendFile() {
         File file = new File("./email_file.csv");
-        ZeroBounceSDK.getInstance().sendFile(
-                file,
-                1,
-                new ZeroBounceSDK.SendFileOptions().setHasHeaderRow(true).setFirstNameColumn(2).setLastNameColumn(3),
-                response -> System.out.println("Controller::sendFile response=" + response.toString()),
-                errorMessage -> System.out.println("Controller::sendFile error=" + errorMessage)
-        );
+        try {
+            ZeroBounceSDK.getInstance().sendFile(
+                    file,
+                    1,
+                    new ZeroBounceSDK.SendFileOptions().setHasHeaderRow(true).setFirstNameColumn(2).setLastNameColumn(3),
+                    response -> System.out.println("Controller::sendFile response=" + response.toString()),
+                    errorMessage -> System.out.println("Controller::sendFile error=" + errorMessage)
+            );
+        } catch (ZBException e) {
+            System.out.println("Controller::sendFile exception=" + e);
+        }
     }
 
     /**

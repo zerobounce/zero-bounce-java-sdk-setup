@@ -67,7 +67,7 @@ public class ZeroBounceSDK {
 
     /**
      * Initializes the SDK.
-     *
+     * <p>
      * [timeoutInMillis] is set to 0 (no timeout by default)
      *
      * @param apiKey the API key
@@ -80,7 +80,7 @@ public class ZeroBounceSDK {
     /**
      * Initializes the SDK.
      *
-     * @param apiKey the API key
+     * @param apiKey          the API key
      * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
      */
     public void initialize(String apiKey, int timeoutInMillis) {
@@ -106,7 +106,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/validate",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("email", email);
@@ -172,7 +172,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/guessformat",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("domain", domain);
@@ -213,7 +213,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/getapiusage",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("start_date", dateFormat.format(startDate));
@@ -242,7 +242,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/getcredits",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                     }
@@ -270,7 +270,7 @@ public class ZeroBounceSDK {
             @Nullable SendFileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
-    ) {
+    ) throws ZBException {
         if (invalidApiKey(errorCallback)) return;
 
         _sendFile(false, file, emailAddressColumnIndex, options, successCallback, errorCallback);
@@ -291,7 +291,7 @@ public class ZeroBounceSDK {
             @Nullable ScoringSendFileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
-    ) {
+    ) throws ZBException {
         if (invalidApiKey(errorCallback)) return;
 
         SendFileOptions newOptions = null;
@@ -329,10 +329,14 @@ public class ZeroBounceSDK {
             int emailAddressColumnIndex,
             @Nullable SendFileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
-            @NotNull OnErrorCallback errorCallback) {
+            @NotNull OnErrorCallback errorCallback) throws ZBException {
 
         String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
         System.out.println("ZeroBounceSDK::sendFile urlPath=" + urlPath);
+
+        if (emailAddressColumnIndex < 1) {
+            throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
+        }
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
@@ -474,7 +478,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("file_id", fileId);
@@ -626,7 +630,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("file_id", fileId);
@@ -657,7 +661,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/activity",
-                new HashMap<String, String>(){
+                new HashMap<String, String>() {
                     {
                         put("api_key", apiKey);
                         put("email", email);
