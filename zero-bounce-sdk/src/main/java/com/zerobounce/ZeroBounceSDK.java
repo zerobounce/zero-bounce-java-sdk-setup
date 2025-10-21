@@ -50,7 +50,7 @@ public class ZeroBounceSDK {
         return instance;
     }
 
-    final String apiBaseUrl = "https://api.zerobounce.net/v2";
+    String apiBaseUrl = "https://api.zerobounce.net/v2";
     private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
     private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.net/v2/scoring";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
@@ -88,6 +88,21 @@ public class ZeroBounceSDK {
     public void initialize(String apiKey, int timeoutInMillis) {
         this.apiKey = apiKey;
         this.timeoutInMillis = timeoutInMillis;
+    }
+
+    /**
+     * Initializes the SDK.
+     *
+     * @param apiKey          the API key
+     * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
+     * @param apiBaseUrl      the API base URL
+     */
+    public void initialize(String apiKey, int timeoutInMillis, @Nullable String apiBaseUrl) {
+        this.apiKey = apiKey;
+        this.timeoutInMillis = timeoutInMillis;
+        if (apiBaseUrl == null) {
+            this.apiBaseUrl = apiBaseUrl;
+        }
     }
 
     /**
