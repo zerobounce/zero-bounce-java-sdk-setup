@@ -18,6 +18,8 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import src.main.java.com.zerobounce.ZBFindDomainResponse;
+import src.main.java.com.zerobounce.ZBFindEmailResponse;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -160,6 +162,12 @@ public class ZeroBounceSDK {
      * @param successCallback the success callback
      * @param errorCallback   the error callback
      */
+    /**
+     * @deprecated The 'guessFormat' method has been split into two specific functions.
+     * If you are finding a person's email, use {@link #findEmail(String, String, String, String, String, com.zerobounce.ZeroBounceSDK.OnSuccessCallback, com.zerobounce.ZeroBounceSDK.OnErrorCallback)}.
+     * If you are only determining the domain's email pattern, use {@link #findDomain(String, String, com.zerobounce.ZeroBounceSDK.OnSuccessCallback, com.zerobounce.ZeroBounceSDK.OnErrorCallback)}.
+     */
+    @Deprecated
     public void guessFormat(
             @NotNull String domain,
             @Nullable String firstName,
@@ -189,6 +197,110 @@ public class ZeroBounceSDK {
                 },
                 null,
                 new TypeToken<ZBEmailFinderResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
+     * Finds the email based on a given [firstName], [domain] or [companyName].
+     * <p>
+     * **Note**: At least one of [domain] or [companyName] must be provided.
+     *
+     * @param firstName       the first name of the person whose email format is being searched
+     * @param domain          the email domain for which to find the email format
+     * @param companyName     the company name for which to find the email format
+     * @param middleName      the middle name of the person whose email format is being searched;
+     *                        optional
+     * @param lastName        the last name of the person whose email format is being searched; optional
+     * @param successCallback the response callback
+     * @param errorCallback   the error callback
+     */
+    public void findEmail(
+            @NotNull String firstName,
+            @Nullable String domain,
+            @Nullable String companyName,
+            @Nullable String middleName,
+            @Nullable String lastName,
+            @NotNull OnSuccessCallback<ZBFindEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        // Validate that at least one of companyName or domain is provided.
+        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+            errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
+            return;
+        }
+
+        sendRequest(
+                apiBaseUrl + "/guessformat",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", apiKey);
+                        put("first_name", firstName);
+                        if (domain != null) {
+                            put("domain", domain);
+                        }
+                        if (companyName != null) {
+                            put("company_name", companyName);
+                        }
+                        if (middleName != null) {
+                            put("middle_name", middleName);
+                        }
+                        if (lastName != null) {
+                            put("last_name", lastName);
+                        }
+                    }
+                },
+                null,
+                new TypeToken<ZBFindEmailResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
+     * Find other domain formats based on a given [domain] or [companyName].
+     * <p>
+     * **Note**: At least one of [domain] or [companyName] must be provided.
+     *
+     * @param domain           the email domain for which to find the email format
+     * @param companyName      the company name for which to find the email format
+     * @param successCallback the response callback
+     * @param errorCallback    the error callback
+     */
+    public void findDomain(
+            @Nullable String domain,
+            @Nullable String companyName,
+            @NotNull OnSuccessCallback<ZBFindDomainResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        // Validate that at least one of companyName or domain is provided.
+        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+            errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
+            return;
+        }
+
+        sendRequest(
+                apiBaseUrl + "/guessformat",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", apiKey);
+                        if (domain != null) {
+                            put("domain", domain);
+                        }
+                        if (companyName != null) {
+                            put("company_name", companyName);
+                        }
+                    }
+                },
+                null,
+                new TypeToken<ZBFindDomainResponse>() {
                 },
                 successCallback,
                 errorCallback
