@@ -88,6 +88,24 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
 
+### Controlling SDK logging
+
+By default, the SDK logs HTTP request metadata and responses to the standard output. If this
+information contains sensitive data, you can either disable logging entirely or provide your own
+logger implementation before invoking any API calls:
+
+```java
+// Disable all SDK logs
+ZeroBounceSDK.setLoggingEnabled(false);
+
+// Or forward them to your application's logger
+ZeroBounceSDK.setLogger(message -> LOGGER.info(message));
+```
+
+Passing `null` to `ZeroBounceSDK.setLogger(...)` resets the logger to a no-op implementation, which
+is equivalent to disabling logging.
+
+
 ## Examples
 
 Then you can use any of the SDK methods, for example:

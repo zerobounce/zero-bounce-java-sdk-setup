@@ -26,6 +26,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * The ZeroBounce main class. All the requests are implemented here.
@@ -33,6 +34,10 @@ import java.util.*;
 public class ZeroBounceSDK {
 
     private static volatile ZeroBounceSDK instance;
+    private static final Consumer<String> NO_OP_LOGGER = message -> {
+    };
+    private static volatile Consumer<String> logger = System.out::println;
+    private static volatile boolean loggingEnabled = true;
 
     public static ZeroBounceSDK getInstance() {
         // The implementation below uses a double-check locking mechanism to boost performance while keeping the
@@ -46,6 +51,28 @@ public class ZeroBounceSDK {
             }
         }
         return instance;
+    }
+
+    /**
+     * Sets a custom logger that will receive log messages emitted by the SDK.
+     * <p>
+     * By default the SDK logs to {@link System#out}. Passing {@code null} disables logging by
+     * falling back to a no-op logger. Combine this with {@link #setLoggingEnabled(boolean)} to
+     * toggle logging at runtime.
+     *
+     * @param logger a consumer that receives log messages
+     */
+    public static void setLogger(@Nullable Consumer<String> logger) {
+        ZeroBounceSDK.logger = logger != null ? logger : NO_OP_LOGGER;
+    }
+
+    /**
+     * Enables or disables SDK logging.
+     *
+     * @param enabled {@code true} to emit log messages, {@code false} to suppress them
+     */
+    public static void setLoggingEnabled(boolean enabled) {
+        loggingEnabled = enabled;
     }
 
     final String apiBaseUrl = "https://api.zerobounce.net/v2";
@@ -332,7 +359,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback) throws ZBException {
 
         String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
-        System.out.println("ZeroBounceSDK::sendFile urlPath=" + urlPath);
+        log("ZeroBounceSDK::sendFile urlPath=" + urlPath);
 
         if (emailAddressColumnIndex < 1) {
             throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
@@ -398,7 +425,7 @@ public class ZeroBounceSDK {
             HttpEntity responseEntity = response.getEntity();
             int status = response.getStatusLine().getStatusCode();
 
-            System.out.println("ZeroBounceSDK::sendFile status: " + status);
+            log("ZeroBounceSDK::sendFile status: " + status);
 
             StringBuilder content = new StringBuilder();
             try (BufferedReader in = new BufferedReader(new InputStreamReader(responseEntity.getContent()))) {
@@ -410,7 +437,7 @@ public class ZeroBounceSDK {
 
             String rsp = content.toString();
 
-            System.out.println("ZeroBounceSDK::sendFile rsp=" + rsp);
+            log("ZeroBounceSDK::sendFile rsp=" + rsp);
 
             if (status > 299) {
                 ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
@@ -726,7 +753,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         try {
-            System.out.println("ZeroBounceSDK::sendRequest urlPath=" + urlPath);
+            log("ZeroBounceSDK::sendRequest urlPath=" + urlPath);
             URIBuilder ub = new URIBuilder(urlPath);
 
             if (queryParameters != null) {
@@ -760,7 +787,7 @@ public class ZeroBounceSDK {
             con.setConnectTimeout(timeoutInMillis);
 
             int status = con.getResponseCode();
-            System.out.println("ZeroBounceSDK::sendRequest status: " + status);
+            log("ZeroBounceSDK::sendRequest status: " + status);
             Reader streamReader;
             if (status > 299) {
                 streamReader = new InputStreamReader(con.getErrorStream());
@@ -779,7 +806,7 @@ public class ZeroBounceSDK {
             con.disconnect();
             String rsp = content.toString();
 
-            System.out.println("ZeroBounceSDK::sendRequest rsp=" + rsp);
+            log("ZeroBounceSDK::sendRequest rsp=" + rsp);
 
             if (status > 299) {
                 ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
@@ -789,11 +816,25 @@ public class ZeroBounceSDK {
                 successCallback.onSuccess(response);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logException(e);
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
             errorCallback.onError(errorResponse);
         }
 
+    }
+
+    private static void log(String message) {
+        if (loggingEnabled && logger != null) {
+            logger.accept(message);
+        }
+    }
+
+    private static void logException(Exception exception) {
+        if (loggingEnabled && logger != null) {
+            StringWriter stringWriter = new StringWriter();
+            exception.printStackTrace(new PrintWriter(stringWriter));
+            logger.accept(stringWriter.toString());
+        }
     }
 
     /**

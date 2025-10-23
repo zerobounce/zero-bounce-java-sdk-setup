@@ -76,6 +76,23 @@ ZeroBounceSDK.getInstance().initialize("<TU_CLAVE_DE_API>");
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
+#### Control del registro del SDK
+
+De forma predeterminada, el SDK escribe los metadatos de las solicitudes HTTP y sus respuestas en la
+salida estándar. Si esos valores pueden contener datos sensibles, desactiva el registro del SDK o
+redirige los mensajes a tu propio sistema de registro antes de realizar cualquier llamada a la API:
+
+```java
+// Desactivar todos los registros del SDK
+ZeroBounceSDK.setLoggingEnabled(false);
+
+// O reenviarlos al registrador de tu aplicación
+ZeroBounceSDK.setLogger(message -> LOGGER.info(message));
+```
+
+Pasar `null` a `ZeroBounceSDK.setLogger(...)` restablece el registrador a una implementación que no
+realiza ninguna acción, lo cual equivale a desactivar el registro.
+
 #### Ejemplos
 
 A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo:
