@@ -25,6 +25,7 @@ import org.powermock.modules.junit4.PowerMockRunner;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -1013,6 +1014,81 @@ public class ZeroBounceSDKTest {
                 }, errorResponse -> {
                     assertEquals(expectedResponse, errorResponse);
                 });
+    }
+
+    @Test
+    public void defaultLoggerEmitsNoConsoleOutput() throws Exception {
+        String responseJson = "{\"Credits\":2375323}";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getcredits",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                    }
+                }
+        );
+
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream capturedOut = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(capturedOut));
+
+        ZeroBounceSDK.setLogger(null);
+        ZeroBounceSDK.setLogPayloads(false);
+
+        try {
+            mockRequest(urlPath, 200, responseJson, "");
+            ZeroBounceSDK.getInstance().getCredits(
+                    response -> {
+                    }, errorResponse -> fail(errorResponse.toString()));
+        } finally {
+            System.setOut(originalOut);
+            ZeroBounceSDK.setLogger(null);
+            ZeroBounceSDK.setLogPayloads(false);
+        }
+
+        assertEquals("", capturedOut.toString());
+    }
+
+    @Test
+    public void payloadLoggingUsesConfiguredLoggerOnly() throws Exception {
+        String responseJson = "{\"Credits\":2375323}";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/getcredits",
+                new HashMap<String, String>() {
+                    {
+                        put("api_key", API_KEY);
+                    }
+                }
+        );
+
+        List<String> debugMessages = new ArrayList<>();
+        ZBLogger testLogger = new ZBLogger() {
+            @Override
+            public void debug(String msg) {
+                debugMessages.add(msg);
+            }
+        };
+
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream capturedOut = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(capturedOut));
+
+        ZeroBounceSDK.setLogger(testLogger);
+        ZeroBounceSDK.setLogPayloads(true);
+
+        try {
+            mockRequest(urlPath, 200, responseJson, "");
+            ZeroBounceSDK.getInstance().getCredits(
+                    response -> {
+                    }, errorResponse -> fail(errorResponse.toString()));
+        } finally {
+            System.setOut(originalOut);
+            ZeroBounceSDK.setLogger(null);
+            ZeroBounceSDK.setLogPayloads(false);
+        }
+
+        assertTrue(debugMessages.stream().anyMatch(message -> message.contains("ZeroBounceSDK::sendRequest rsp=" + responseJson)));
+        assertEquals("", capturedOut.toString());
     }
 
     private String getEncodedUrl(
