@@ -14,7 +14,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.2</version>
 </dependency>
 ```
 
@@ -34,7 +34,7 @@ In order to be able to run it using a newer Java version, you have to add the fo
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.2.1 \
+        -Dversion=1.2.2 \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -63,7 +63,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.2.1</version>
+        <version>1.2.2</version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
