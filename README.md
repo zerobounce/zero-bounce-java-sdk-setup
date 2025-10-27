@@ -88,7 +88,32 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
 
+### Controlling SDK logging
+
+The SDK is silent by default so it never emits Personally Identifiable Information (PII) unless you
+explicitly opt in. To integrate the SDK with your application's logging framework, register a
+`ZBLogger` implementation before issuing any API calls. The helper class `ZBLoggers` adapts
+`java.util.logging` (JUL) out of the box:
+
+```java
+import com.zerobounce.ZBLoggers;
+
+ZeroBounceSDK.setLogger(
+    ZBLoggers.jul(java.util.logging.Logger.getLogger("ZeroBounceSDK"))
+);
+
+// Optional: enable verbose payload logging for troubleshooting only.
+ZeroBounceSDK.setLogPayloads(true);
+```
+
+Passing `null` to `ZeroBounceSDK.setLogger(...)` resets the logger to a no-op implementation, which
+disables SDK logging again.
+
+
 ## Examples
+
+> **Note:** The snippets below print responses for demonstration purposes. Avoid logging raw API
+> data that may contain PII in production systems.
 
 Then you can use any of the SDK methods, for example:
 

@@ -76,7 +76,31 @@ ZeroBounceSDK.getInstance().initialize("<TU_CLAVE_DE_API>");
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
+#### Control del registro del SDK
+
+El SDK permanece silencioso de forma predeterminada, por lo que nunca emite información personal
+identificable (PII) a menos que habilites el registro explícitamente. Para integrarlo con el sistema
+de registro de tu aplicación, registra una implementación de `ZBLogger` antes de realizar llamadas a
+la API. La clase auxiliar `ZBLoggers` adapta `java.util.logging` (JUL) sin agregar dependencias:
+
+```java
+import com.zerobounce.ZBLoggers;
+
+ZeroBounceSDK.setLogger(
+    ZBLoggers.jul(java.util.logging.Logger.getLogger("ZeroBounceSDK"))
+);
+
+// Opcional: habilita el registro detallado de cargas solo para depuración.
+ZeroBounceSDK.setLogPayloads(true);
+```
+
+Pasar `null` a `ZeroBounceSDK.setLogger(...)` restablece el registrador a una implementación que no
+realiza ninguna acción, lo cual vuelve a desactivar el registro del SDK.
+
 #### Ejemplos
+
+> **Nota:** Los siguientes fragmentos imprimen respuestas con fines demostrativos. Evita registrar
+> datos sin filtrar de la API en entornos de producción, ya que pueden contener PII.
 
 A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo:
 
