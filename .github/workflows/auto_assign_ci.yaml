@@ -9,7 +9,7 @@ on:
 
 jobs:
   add-reviewers:
-    name: Generate PR description
+    name: Auto assign reviewers
     runs-on: ubuntu-latest
     steps:
       # Set the author as the assignee of the PR.
