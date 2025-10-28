@@ -1,32 +1,152 @@
 name: Publish
 
 on:
-  release:
-    # We'll run this workflow when a new GitHub release is created
-    types: [released]
+  workflow_dispatch:
+    inputs:
+      increase-type:
+        type: choice
+        description: Version increase type (MAJOR.MINOR.PATCH or NONE)
+        options:
+          - patch
+          - minor
+          - major
+          - NONE
+        default: patch
+      auto-increase:
+        type: boolean
+        description: Auto Increase (if checked, the patch and minor won't be higher than 9; increasing the patch generates 1.0.9 -> 1.1.0, 1.9.9 -> 2.0.0)
+        default: true
 
 jobs:
+  check-version-tag:
+    name: Check version tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Bump version for deployment
+        if: inputs.increase-type != 'none'
+        run: sh ci/sdk_update_version.sh ${{ github.event.inputs.increase-type }} ${{ github.event.inputs.auto-increase }}
+
+      - name: Check if the version exists
+        run: |
+          CURRENT_VERSION=$(cd zero-bounce-sdk && mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          NEW_TAG="v$CURRENT_VERSION"
+
+          if [ $(git tag -l "$NEW_TAG") ]; then
+            echo "Error: The tag exists. Please increase the version manually."
+            exit 1
+          fi
+
   publish:
     name: Test, release build and publish
+    needs: [check-version-tag]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out code  
         uses: actions/checkout@v3
+      # - name: Set up Maven Central Repository
+      #   uses: actions/setup-java@v3
+      #   with:
+      #     java-version: 8
+      #     distribution: 'temurin'
+      #     server-id: central
+      #     server-username: MAVEN_USERNAME
+      #     server-password: MAVEN_PASSWORD
+      #     gpg-private-key: ${{ secrets.SIGNING_KEY }}
+      #     gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      # # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
+      # - name: Publish to MavenCentral
+      #   run: cd zero-bounce-sdk && mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE} clean deploy -Prelease
+      #   env:
+      #     MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+      #     MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+      #     MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+
+create-new-release:
+    name: Create new release
+    needs: [publish]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v3
         with:
           java-version: 8
           distribution: 'temurin'
-          server-id: central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.SIGNING_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
-      - name: Publish to MavenCentral
-        run: cd zero-bounce-sdk && mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE} clean deploy -Prelease
+      - name: Bump version & push to git
+        if: inputs.increase-type != 'none'
+        run: |
+          git config --global user.name "Continuous Integration"
+          git config --global user.email "username@users.noreply.github.com"
+
+          # Bump the project version based on the input
+          sh ci/sdk_update_version.sh ${{ github.event.inputs.increase-type }} ${{ github.event.inputs.auto-increase }}
+
+          # Extract the version from zero-bounce-sdk/pom.xml
+          NEW_VERSION=$(cd zero-bounce-sdk && mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+
+          # Push the commit with the new version
+          git add .
+          git commit -m "Bump version to $NEW_VERSION"
+          git push
+
+      - name: Create tag for current version
+        run: |
+          # Extract the version from zero-bounce-sdk/pom.xml
+          CURRENT_VERSION=$(cd zero-bounce-sdk && mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+
+          # Save the the new tag in env variables
+          NEW_TAG="v$CURRENT_VERSION"
+          echo "NEW_TAG=$NEW_TAG" >> "$GITHUB_ENV"
+
+          # Fetch the last used tag and save it in the env variables
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v*")
+          echo "LAST_TAG=$LAST_TAG" >> "$GITHUB_ENV"
+
+          git config --global user.name "Continuous Integration"
+          git config --global user.email "username@users.noreply.github.com"
+
+          # Create a tag for the current version
+          # Each deploy will increase the version based on the pipeline input, tag the current version and create a Github release.
+          # The version increase will happen only after the deploy is completed.
+          git tag -a $NEW_TAG -m "Version $NEW_TAG"
+          git push origin $NEW_TAG
+
+      - name: Generate release notes
+        run: |
+          # Get the generated release notes using the Github API
+          RESPONSE=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/$GITHUB_REPOSITORY/releases/generate-notes \
+            -f tag_name='${{ env.NEW_TAG }}' \
+            -f target_commitish='master' \
+            -f previous_tag_name='${{ env.LAST_TAG }}')
+
+          # Retrieve the release notes from the response and save them to a file for the next step.
+          echo $RESPONSE | jq -r ".body" >> release_notes.txt
         env:
-          MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          name: "ZeroBounce Java SDK ${{ env.NEW_TAG }}"
+          tag: ${{ env.NEW_TAG }}
+          bodyFile: release_notes.txt
+          generateReleaseNotes: false
+          prerelease: ${{ github.ref != 'refs/heads/master' }}
