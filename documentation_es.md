@@ -395,7 +395,7 @@ System.out.println("scoringFileStatus error=" + errorMessage);
 Puedes generar la documentación utilizando tu IDE favorito o el comando javadoc de Maven.
 
 #### Publicación
-Cada vez que se crea una nueva versión, el flujo de trabajo de CI/CD se ejecutará y se lanzará un nuevo artefacto en Maven Central. ¡No olvides actualizar la versión antes de hacer un lanzamiento!
+Cada vez que se crea una nueva versión, el flujo de trabajo de CI/CD se ejecutará y se lanzará un nuevo artefacto en Maven Central. **¡El pipeline actualiza la versión automáticamente!**
 Si cambias las credenciales de inicio de sesión de OSSRH, también deberás actualizar las variables del repositorio en Github.
 
 ##### Configuración local para la versión manual

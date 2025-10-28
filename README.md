@@ -1,6 +1,6 @@
 ## ZeroBounce Java SDK
 
-[![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk/badge.svg?style=flat)](https://maven-badges.herokuapp.com/maven-central/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg)](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg)](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
@@ -405,7 +405,7 @@ You can generate the documentation using your desired IDE or using's maven's jav
 
 
 ## Publication
-Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. Don't forget to update the version before doing a release!
+Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. **The pipeline updates the version automatically!**
 If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
 
 
