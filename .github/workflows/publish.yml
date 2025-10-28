@@ -56,24 +56,24 @@ jobs:
     steps:
       - name: Check out code  
         uses: actions/checkout@v3
-      # - name: Set up Maven Central Repository
-      #   uses: actions/setup-java@v3
-      #   with:
-      #     java-version: 8
-      #     distribution: 'temurin'
-      #     server-id: central
-      #     server-username: MAVEN_USERNAME
-      #     server-password: MAVEN_PASSWORD
-      #     gpg-private-key: ${{ secrets.SIGNING_KEY }}
-      #     gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      - name: Set up Maven Central Repository
+        uses: actions/setup-java@v3
+        with:
+          java-version: 8
+          distribution: 'temurin'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.SIGNING_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      # # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
-      # - name: Publish to MavenCentral
-      #   run: cd zero-bounce-sdk && mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE} clean deploy -Prelease
-      #   env:
-      #     MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-      #     MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-      #     MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
+      # Runs clean, tests, generate javadoc, upload, and then closes & releases the repository
+      - name: Publish to MavenCentral
+        run: cd zero-bounce-sdk && mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE} clean deploy -Prelease
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.SIGNING_PASSWORD }}
 
   create-new-release:
     name: Create new release
