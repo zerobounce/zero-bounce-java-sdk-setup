@@ -33,14 +33,6 @@ jobs:
         with:
           java-version: 8
           distribution: 'temurin'
-          server-id: central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.SIGNING_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
-
-      - name: Test step
-        run: cd zero-bounce-sdk && mvn -X help:evaluate -Dexpression=project.version -q -DforceStdout
 
       - name: Bump version for deployment
         if: inputs.increase-type != 'none'

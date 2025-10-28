@@ -5,7 +5,7 @@ level_change=$1
 auto_increase=$2
 
 # Extract the version from zero-bounce-sdk/pom.xml 
-version_name=$(cd zero-bounce-sdk && ./mvnw -X help:evaluate -Dexpression=project.version -q -DforceStdout)
+version_name=$(cd zero-bounce-sdk && mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
 
 major=$(echo $version_name | awk -F. '{print $1}')
 minor=$(echo $version_name | awk -F. '{print $2}')
@@ -50,4 +50,4 @@ new_version="$major.$minor.$patch"
 echo "New version: $new_version"
 
 # Update the zero-bounce-sdk/pom.xml with the new version
-cd zero-bounce-sdk && ./mvnw -X -U versions:set -DnewVersion=${new_version} -DgenerateBackupPoms=false
+cd zero-bounce-sdk && mvn -U versions:set -DnewVersion=${new_version} -DgenerateBackupPoms=false
