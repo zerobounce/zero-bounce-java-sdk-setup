@@ -1,0 +1,51 @@
+name: SDK CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  # Check for lint issues
+  lint:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the current branch
+        uses: actions/checkout@v5
+
+      - name: Set up Maven Central Repository
+        uses: actions/setup-java@v5
+        with:
+          java-version: 8
+          distribution: 'temurin'
+
+      # Execute unit tests.
+      - name: Run unit tests
+        run: cd zero-bounce-sdk && mvn test
+
+      # Compile the project to check for errors.
+      - name: Compile project
+        run: cd zero-bounce-sdk && mvn clean install
+
+  generate-pr-description:
+    name: Generate PR description
+    runs-on: ubuntu-latest
+    if: ${{ ! startsWith( github.head_ref, 'dependabot/') }}
+    steps:
+      - name: Check out the current branch
+        uses: actions/checkout@v5
+
+      - uses: octue/generate-pull-request-description@1.0.0.beta-2
+        id: pr-description
+        with:
+          pull_request_url: ${{ github.event.pull_request.url }}
+          api_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update pull request body
+        uses: riskledger/update-pr-description@v2
+        with:
+          body: ${{ steps.pr-description.outputs.pull_request_description }}
+          token: ${{ secrets.GITHUB_TOKEN }}

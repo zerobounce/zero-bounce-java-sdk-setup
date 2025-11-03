@@ -5,7 +5,7 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.2.1</version>
+    <version><latest_version></version>
 </dependency>
 ```
 
@@ -25,7 +25,7 @@ In order to be able to run it using a newer Java version, you have to add the fo
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.2.1 \
+        -Dversion=<latest_version> \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -54,7 +54,7 @@ We highly recommend you use the latest version available on Maven. However, if y
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.2.1</version>
+        <version><latest_version></version>
     </dependency>
     ```
 4. Follow steps 1-5 from the ***How to use the sample project*** above.
@@ -79,7 +79,32 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
 
+#### Controlling SDK logging
+
+The SDK is silent by default so it never emits Personally Identifiable Information (PII) unless you
+explicitly opt in. To integrate the SDK with your application's logging framework, register a
+`ZBLogger` implementation before issuing any API calls. The helper class `ZBLoggers` adapts
+`java.util.logging` (JUL) out of the box:
+
+```java
+import com.zerobounce.ZBLoggers;
+
+ZeroBounceSDK.setLogger(
+    ZBLoggers.jul(java.util.logging.Logger.getLogger("ZeroBounceSDK"))
+);
+
+// Optional: enable verbose payload logging for troubleshooting only.
+ZeroBounceSDK.setLogPayloads(true);
+```
+
+Passing `null` to `ZeroBounceSDK.setLogger(...)` resets the logger to a no-op implementation, which
+disables SDK logging again.
+
+
 #### Examples
+
+> **Note:** The snippets below print responses for demonstration purposes. Avoid logging raw API
+> data that may contain PII in production systems.
 
 Then you can use any of the SDK methods, for example:
 
@@ -371,7 +396,7 @@ You can generate the documentation using your desired IDE or using's maven's jav
 
 
 #### Publication
-Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. Don't forget to update the version before doing a release!
+Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. **The pipeline updates the version automatically!**
 If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
 
 
@@ -388,7 +413,7 @@ If you want to manually publish to the Nexus repository (and then release it to 
     ```
 
 You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.2.1)
+- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk)
 - 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 

@@ -5,7 +5,7 @@ Puedes instalar ZeroBounceSDK agregando la dependencia a tu archivo `pom.xml`:
 <dependency>
     <groupId>com.zerobounce.java</groupId>
     <artifactId>zerobouncesdk</artifactId>
-    <version>1.2.1</version>
+    <version><latest_version></version>
 </dependency>
 ```
 
@@ -25,7 +25,7 @@ Para ejecutarlo con una versión más reciente de Java, debe agregar los siguien
         -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
         -DgroupId=com.zerobounce.java \
         -DartifactId=zerobouncesdk \
-        -Dversion=1.2.1 \
+        -Dversion=<latest_version> \
         -Dpackaging=jar \
         -DlocalRepositoryPath=local-libs
     ```
@@ -53,7 +53,7 @@ Recomendamos encarecidamente que uses la última versión disponible en Maven. S
     <dependency>
         <groupId>com.zerobounce.java</groupId>
         <artifactId>zerobouncesdk</artifactId>
-        <version>1.2.1</version>
+        <version><latest_version></version>
     </dependency>
     ```
 4. Sigue los pas
@@ -76,7 +76,31 @@ ZeroBounceSDK.getInstance().initialize("<TU_CLAVE_DE_API>");
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 
+#### Control del registro del SDK
+
+El SDK permanece silencioso de forma predeterminada, por lo que nunca emite información personal
+identificable (PII) a menos que habilites el registro explícitamente. Para integrarlo con el sistema
+de registro de tu aplicación, registra una implementación de `ZBLogger` antes de realizar llamadas a
+la API. La clase auxiliar `ZBLoggers` adapta `java.util.logging` (JUL) sin agregar dependencias:
+
+```java
+import com.zerobounce.ZBLoggers;
+
+ZeroBounceSDK.setLogger(
+    ZBLoggers.jul(java.util.logging.Logger.getLogger("ZeroBounceSDK"))
+);
+
+// Opcional: habilita el registro detallado de cargas solo para depuración.
+ZeroBounceSDK.setLogPayloads(true);
+```
+
+Pasar `null` a `ZeroBounceSDK.setLogger(...)` restablece el registrador a una implementación que no
+realiza ninguna acción, lo cual vuelve a desactivar el registro del SDK.
+
 #### Ejemplos
+
+> **Nota:** Los siguientes fragmentos imprimen respuestas con fines demostrativos. Evita registrar
+> datos sin filtrar de la API en entornos de producción, ya que pueden contener PII.
 
 A continuación, puedes utilizar cualquiera de los métodos del SDK. Por ejemplo:
 
@@ -371,7 +395,7 @@ System.out.println("scoringFileStatus error=" + errorMessage);
 Puedes generar la documentación utilizando tu IDE favorito o el comando javadoc de Maven.
 
 #### Publicación
-Cada vez que se crea una nueva versión, el flujo de trabajo de CI/CD se ejecutará y se lanzará un nuevo artefacto en Maven Central. ¡No olvides actualizar la versión antes de hacer un lanzamiento!
+Cada vez que se crea una nueva versión, el flujo de trabajo de CI/CD se ejecutará y se lanzará un nuevo artefacto en Maven Central. **¡El pipeline actualiza la versión automáticamente!**
 Si cambias las credenciales de inicio de sesión de OSSRH, también deberás actualizar las variables del repositorio en Github.
 
 ##### Configuración local para la versión manual
@@ -387,7 +411,7 @@ Si deseas publicar manualmente en el repositorio Nexus (y luego publicarlo en Ma
    ```
 
 Luego, debes ir a [Nexus Sonatype](https://s01.oss.sonatype.org/), iniciar sesión y luego abrir *Staging Repositories* y hacer clic en *Refresh*. Aquí verás el artefacto que acabas de cargar. Para publicarlo, debes **cerrarlo** y luego **publicarlo**. Estas acciones tardarán algunos minutos en completarse. Después de **publicar** el artefacto, llevará:
-- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk/1.2.1)
+- algunas horas antes de que puedas verlo en el [Repositorio Maven](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) y en la [Búsqueda de Sonatype](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk)
 - 1-3 días antes de que puedas verlo en el [Repositorio MVN](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 #### Exportación e importación de claves PGP
