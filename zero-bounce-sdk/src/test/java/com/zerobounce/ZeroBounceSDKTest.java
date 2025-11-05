@@ -14,31 +14,32 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PowerMockIgnore;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.PrintStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.AssertionsKt.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({URL.class, HttpClients.class, ZeroBounceSDK.class})
-@PowerMockIgnore({"javax.net.ssl.*"})
+@ExtendWith(MockitoExtension.class)
 public class ZeroBounceSDKTest {
+
+    @Spy
+    private ZeroBounceSDK zeroBounceSDK;
 
     private Gson gson;
 
@@ -46,7 +47,7 @@ public class ZeroBounceSDKTest {
 
     private static final String API_KEY = "some-api-key";
 
-    @Before
+    @BeforeEach
     public void setUp() {
         GsonBuilder gsonBuilder = new GsonBuilder();
         gsonBuilder.setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES);
@@ -60,33 +61,34 @@ public class ZeroBounceSDKTest {
     @Test
     public void validateEmail_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "        \"address\":\"flowerjill@aol.com\",\n" +
-                "        \"status\":\"valid\",\n" +
-                "        \"sub_status\":\"\",\n" +
-                "        \"free_email\":true,\n" +
-                "        \"did_you_mean\":null,\n" +
-                "        \"account\":\"flowerjill\",\n" +
-                "        \"domain\":\"aol.com\",\n" +
-                "        \"domain_age_days\": \"8426\",\n" +
-                "        \"smtp_provider\":\"yahoo\",\n" +
-                "        \"mx_record\":\"mx-aol.mail.gm0.yahoodns.net\",\n" +
-                "        \"mx_found\": \"true\",\n" +
-                "        \"firstname\":\"Jill\",\n" +
-                "        \"lastname\":\"Stein\",\n" +
-                "        \"gender\":\"female\",\n" +
-                "        \"country\":\"United States\",\n" +
-                "        \"region\":\"Florida\",\n" +
-                "        \"city\":\"West Palm Beach\",\n" +
-                "        \"zipcode\":\"33401\",\n" +
-                "        \"processed_at\":\"2017-04-01 02:48:02.592\"\n" +
-                "        }";
+        String responseJson = """
+                {
+                        "address":"flowerjill@aol.com",
+                        "status":"valid",
+                        "sub_status":"",
+                        "free_email":true,
+                        "did_you_mean":null,
+                        "account":"flowerjill",
+                        "domain":"aol.com",
+                        "domain_age_days": "8426",
+                        "smtp_provider":"yahoo",
+                        "mx_record":"mx-aol.mail.gm0.yahoodns.net",
+                        "mx_found": "true",
+                        "firstname":"Jill",
+                        "lastname":"Stein",
+                        "gender":"female",
+                        "country":"United States",
+                        "region":"Florida",
+                        "city":"West Palm Beach",
+                        "zipcode":"33401",
+                        "processed_at":"2017-04-01 02:48:02.592"
+                        }""";
         ZBValidateResponse expectedResponse = gson.fromJson(responseJson, ZBValidateResponse.class);
 
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/validate",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("email", email);
@@ -94,16 +96,18 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().validate(
-                email,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.validate(
+                        email,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
@@ -115,7 +119,7 @@ public class ZeroBounceSDKTest {
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/validate",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("email", email);
@@ -123,186 +127,196 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().validate(
-                email,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.validate(
+                        email,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse))
+        );
     }
 
     @Test
     public void validateBatchEmails_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"email_batch\": [\n" +
-                "          {\n" +
-                "              \"address\": \"valid@example.com\",\n" +
-                "              \"status\": \"valid\",\n" +
-                "              \"sub_status\": \"\",\n" +
-                "              \"free_email\": false,\n" +
-                "              \"did_you_mean\": null,\n" +
-                "              \"account\": null,\n" +
-                "              \"domain\": null,\n" +
-                "              \"domain_age_days\": \"9692\",\n" +
-                "              \"smtp_provider\": \"example\",\n" +
-                "              \"mx_found\": \"true\",\n" +
-                "              \"mx_record\": \"mx.example.com\",\n" +
-                "              \"firstname\": \"zero\",\n" +
-                "              \"lastname\": \"bounce\",\n" +
-                "              \"gender\": \"male\",\n" +
-                "              \"country\": null,\n" +
-                "              \"region\": null,\n" +
-                "              \"city\": null,\n" +
-                "              \"zipcode\": null,\n" +
-                "              \"processed_at\": \"2020-09-17 17:43:11.829\"\n" +
-                "          },\n" +
-                "          {\n" +
-                "              \"address\": \"invalid@example.com\",\n" +
-                "              \"status\": \"invalid\",\n" +
-                "              \"sub_status\": \"mailbox_not_found\",\n" +
-                "              \"free_email\": false,\n" +
-                "              \"did_you_mean\": null,\n" +
-                "              \"account\": null,\n" +
-                "              \"domain\": null,\n" +
-                "              \"domain_age_days\": \"9692\",\n" +
-                "              \"smtp_provider\": \"example\",\n" +
-                "              \"mx_found\": \"true\",\n" +
-                "              \"mx_record\": \"mx.example.com\",\n" +
-                "              \"firstname\": \"zero\",\n" +
-                "              \"lastname\": \"bounce\",\n" +
-                "              \"gender\": \"male\",\n" +
-                "              \"country\": null,\n" +
-                "              \"region\": null,\n" +
-                "              \"city\": null,\n" +
-                "              \"zipcode\": null,\n" +
-                "              \"processed_at\": \"2020-09-17 17:43:11.830\"\n" +
-                "          },\n" +
-                "          {\n" +
-                "              \"address\": \"disposable@example.com\",\n" +
-                "              \"status\": \"do_not_mail\",\n" +
-                "              \"sub_status\": \"disposable\",\n" +
-                "              \"free_email\": false,\n" +
-                "              \"did_you_mean\": null,\n" +
-                "              \"account\": null,\n" +
-                "              \"domain\": null,\n" +
-                "              \"domain_age_days\": \"9692\",\n" +
-                "              \"smtp_provider\": \"example\",\n" +
-                "              \"mx_found\": \"true\",\n" +
-                "              \"mx_record\": \"mx.example.com\",\n" +
-                "              \"firstname\": \"zero\",\n" +
-                "              \"lastname\": \"bounce\",\n" +
-                "              \"gender\": \"male\",\n" +
-                "              \"country\": null,\n" +
-                "              \"region\": null,\n" +
-                "              \"city\": null,\n" +
-                "              \"zipcode\": null,\n" +
-                "              \"processed_at\": \"2020-09-17 17:43:11.830\"\n" +
-                "          }\n" +
-                "      ],\n" +
-                "      \"errors\": []\n" +
-                "  }";
+        String responseJson = """
+                {
+                      "email_batch": [
+                          {
+                              "address": "valid@example.com",
+                              "status": "valid",
+                              "sub_status": "",
+                              "free_email": false,
+                              "did_you_mean": null,
+                              "account": null,
+                              "domain": null,
+                              "domain_age_days": "9692",
+                              "smtp_provider": "example",
+                              "mx_found": "true",
+                              "mx_record": "mx.example.com",
+                              "firstname": "zero",
+                              "lastname": "bounce",
+                              "gender": "male",
+                              "country": null,
+                              "region": null,
+                              "city": null,
+                              "zipcode": null,
+                              "processed_at": "2020-09-17 17:43:11.829"
+                          },
+                          {
+                              "address": "invalid@example.com",
+                              "status": "invalid",
+                              "sub_status": "mailbox_not_found",
+                              "free_email": false,
+                              "did_you_mean": null,
+                              "account": null,
+                              "domain": null,
+                              "domain_age_days": "9692",
+                              "smtp_provider": "example",
+                              "mx_found": "true",
+                              "mx_record": "mx.example.com",
+                              "firstname": "zero",
+                              "lastname": "bounce",
+                              "gender": "male",
+                              "country": null,
+                              "region": null,
+                              "city": null,
+                              "zipcode": null,
+                              "processed_at": "2020-09-17 17:43:11.830"
+                          },
+                          {
+                              "address": "disposable@example.com",
+                              "status": "do_not_mail",
+                              "sub_status": "disposable",
+                              "free_email": false,
+                              "did_you_mean": null,
+                              "account": null,
+                              "domain": null,
+                              "domain_age_days": "9692",
+                              "smtp_provider": "example",
+                              "mx_found": "true",
+                              "mx_record": "mx.example.com",
+                              "firstname": "zero",
+                              "lastname": "bounce",
+                              "gender": "male",
+                              "country": null,
+                              "region": null,
+                              "city": null,
+                              "zipcode": null,
+                              "processed_at": "2020-09-17 17:43:11.830"
+                          }
+                      ],
+                      "errors": []
+                  }""";
         ZBValidateBatchResponse expectedResponse = gson.fromJson(responseJson, ZBValidateBatchResponse.class);
 
-        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
-        mockRequest(urlPath, 200, responseJson, "");
-
-        List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+        List<ZBValidateBatchData> emailsData = new ArrayList<>();
         emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
         emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
         emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
 
-        ZeroBounceSDK.getInstance().validateBatch(
-                emailsData,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.validateBatch(
+                        emailsData,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
     public void validateBatchEmails_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"email_batch\": [],\n" +
-                "      \"errors\": [\n" +
-                "          {\n" +
-                "              \"error\": \"Invalid API Key or your account ran out of credits\",\n" +
-                "              \"email_address\": \"all\"\n" +
-                "          }\n" +
-                "      ]\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "email_batch": [],
+                      "errors": [
+                          {
+                              "error": "Invalid API Key or your account ran out of credits",
+                              "email_address": "all"
+                          }
+                      ]
+                    }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
-        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
-        mockRequest(urlPath, 400, "", responseJson);
-
-        List<ZBValidateBatchData> emailsData = new ArrayList<ZBValidateBatchData>();
+        List<ZBValidateBatchData> emailsData = new ArrayList<>();
         emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
         emailsData.add(new ZBValidateBatchData("invalid@example.com", "1.1.1.1"));
         emailsData.add(new ZBValidateBatchData("disposable@example.com", null));
 
-        ZeroBounceSDK.getInstance().validateBatch(
-                emailsData,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        String urlPath = "https://api.zerobounce.net/v2/validatebatch";
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.validateBatch(
+                        emailsData,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void guessFormat_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"email\": \"john.doe@example.com\",\n" +
-                "      \"domain\": \"example.com\",\n" +
-                "      \"format\": \"first.last\",\n" +
-                "      \"status\": \"valid\",\n" +
-                "      \"sub_status\": \"\",\n" +
-                "      \"confidence\": \"HIGH\",\n" +
-                "      \"did_you_mean\": \"\",\n" +
-                "      \"failure_reason\": \"\",\n" +
-                "      \"other_domain_formats\": [\n" +
-                "        {\n" +
-                "            \"format\": \"first_last\",\n" +
-                "            \"confidence\": \"HIGH\"\n" +
-                "        },\n" +
-                "        {\n" +
-                "            \"format\": \"first\",\n" +
-                "            \"confidence\": \"MEDIUM\"\n" +
-                "        }\n" +
-                "      ]\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "email": "john.doe@example.com",
+                      "domain": "example.com",
+                      "format": "first.last",
+                      "status": "valid",
+                      "sub_status": "",
+                      "confidence": "HIGH",
+                      "did_you_mean": "",
+                      "failure_reason": "",
+                      "other_domain_formats": [
+                        {
+                            "format": "first_last",
+                            "confidence": "HIGH"
+                        },
+                        {
+                            "format": "first",
+                            "confidence": "MEDIUM"
+                        }
+                      ]
+                    }""";
         ZBEmailFinderResponse expectedResponse = gson.fromJson(responseJson, ZBEmailFinderResponse.class);
 
         String domain = "example.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().guessFormat(
-                domain,
-                null,
-                null,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.guessFormat(
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
@@ -314,45 +328,48 @@ public class ZeroBounceSDKTest {
         String domain = "example.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().guessFormat(
-                domain,
-                null,
-                null,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.guessFormat(
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void findEmail_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"email\": \"john.doe@example.com\",\n" +
-                "      \"domain\": \"example.com\",\n" +
-                "      \"company_name\": \"X company\",\n" +
-                "      \"email_confidence\": \"HIGH\",\n" +
-                "      \"did_you_mean\": \"\",\n" +
-                "      \"failure_reason\": \"\",\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "email": "john.doe@example.com",
+                      "domain": "example.com",
+                      "company_name": "X company",
+                      "email_confidence": "HIGH",
+                      "did_you_mean": "",
+                      "failure_reason": "",
+                    }""";
         ZBFindEmailResponse expectedResponse = gson.fromJson(responseJson, ZBFindEmailResponse.class);
 
         String domain = "example.com";
         String firstName = "John doe";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
@@ -360,19 +377,21 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
 
-        ZeroBounceSDK.getInstance().findEmail(
-                firstName,
-                domain,
-                null,
-                null,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString()))
+        );
     }
 
     @Test
@@ -385,7 +404,7 @@ public class ZeroBounceSDKTest {
         String firstName = "John doe";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
@@ -393,19 +412,22 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
 
-        ZeroBounceSDK.getInstance().findEmail(
-                firstName,
-                domain,
-                null,
-                null,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> fail(response.toString()), errorResponse ->
+                                assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
@@ -417,72 +439,77 @@ public class ZeroBounceSDKTest {
         String firstName = "John doe";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("firstName", firstName);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().findEmail(
-                firstName,
-                null,
-                null,
-                null,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        null,
+                        null,
+                        null,
+                        null,
+                        response -> fail(response.toString()), errorResponse ->
+                                assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void findDomain_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"email\": \"john.doe@example.com\",\n" +
-                "      \"domain\": \"example.com\",\n" +
-                "      \"company_name\": \"X company\",\n" +
-                "      \"format\": \"first.last\",\n" +
-                "      \"confidence\": \"HIGH\",\n" +
-                "      \"did_you_mean\": \"\",\n" +
-                "      \"failure_reason\": \"\",\n" +
-                "      \"other_domain_formats\": [\n" +
-                "        {\n" +
-                "            \"format\": \"first_last\",\n" +
-                "            \"confidence\": \"HIGH\"\n" +
-                "        },\n" +
-                "        {\n" +
-                "            \"format\": \"first\",\n" +
-                "            \"confidence\": \"MEDIUM\"\n" +
-                "        }\n" +
-                "      ]\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "email": "john.doe@example.com",
+                      "domain": "example.com",
+                      "company_name": "X company",
+                      "format": "first.last",
+                      "confidence": "HIGH",
+                      "did_you_mean": "",
+                      "failure_reason": "",
+                      "other_domain_formats": [
+                        {
+                            "format": "first_last",
+                            "confidence": "HIGH"
+                        },
+                        {
+                            "format": "first",
+                            "confidence": "MEDIUM"
+                        }
+                      ]
+                    }""";
         ZBFindDomainResponse expectedResponse = gson.fromJson(responseJson, ZBFindDomainResponse.class);
 
         String domain = "example.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().findDomain(
-                domain,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.findDomain(
+                        domain,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
@@ -494,23 +521,24 @@ public class ZeroBounceSDKTest {
         String domain = "example.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("domain", domain);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().findDomain(
-                domain,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "", responseJson,
+                () -> zeroBounceSDK.findDomain(
+                        domain,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
@@ -521,22 +549,23 @@ public class ZeroBounceSDKTest {
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().findDomain(
-                null,
-                null,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "", responseJson,
+                () -> zeroBounceSDK.findDomain(
+                        null,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
@@ -547,20 +576,22 @@ public class ZeroBounceSDKTest {
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().getCredits(
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.getCredits(
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
@@ -571,57 +602,60 @@ public class ZeroBounceSDKTest {
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().getCredits(
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.getCredits(
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void getApiUsage_ReturnSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"total\": 3,\n" +
-                "      \"status_valid\": 1,\n" +
-                "      \"status_invalid\": 2,\n" +
-                "      \"status_catch_all\": 0,\n" +
-                "      \"status_do_not_mail\": 0,\n" +
-                "      \"status_spamtrap\": 0,\n" +
-                "      \"status_unknown\": 0,\n" +
-                "      \"sub_status_toxic\": 0,\n" +
-                "      \"sub_status_disposable\": 0,\n" +
-                "      \"sub_status_role_based\": 0,\n" +
-                "      \"sub_status_possible_trap\": 0,\n" +
-                "      \"sub_status_global_suppression\": 0,\n" +
-                "      \"sub_status_timeout_exceeded\": 0,\n" +
-                "      \"sub_status_mail_server_temporary_error\": 0,\n" +
-                "      \"sub_status_mail_server_did_not_respond\": 0,\n" +
-                "      \"sub_status_greylisted\": 0,\n" +
-                "      \"sub_status_antispam_system\": 0,\n" +
-                "      \"sub_status_does_not_accept_mail\": 0,\n" +
-                "      \"sub_status_exception_occurred\": 0,\n" +
-                "      \"sub_status_failed_syntax_check\": 0,\n" +
-                "      \"sub_status_mailbox_not_found\": 2,\n" +
-                "      \"sub_status_unroutable_ip_address\": 0,\n" +
-                "      \"sub_status_possible_typo\": 0,\n" +
-                "      \"sub_status_no_dns_entries\": 0,\n" +
-                "      \"sub_status_role_based_catch_all\": 0,\n" +
-                "      \"sub_status_mailbox_quota_exceeded\": 0,\n" +
-                "      \"sub_status_forcible_disconnect\": 0,\n" +
-                "      \"sub_status_failed_smtp_connection\": 0,\n" +
-                "      \"start_date\": \"1/1/2018\",\n" +
-                "      \"end_date\": \"12/12/2019\"\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "total": 3,
+                      "status_valid": 1,
+                      "status_invalid": 2,
+                      "status_catch_all": 0,
+                      "status_do_not_mail": 0,
+                      "status_spamtrap": 0,
+                      "status_unknown": 0,
+                      "sub_status_toxic": 0,
+                      "sub_status_disposable": 0,
+                      "sub_status_role_based": 0,
+                      "sub_status_possible_trap": 0,
+                      "sub_status_global_suppression": 0,
+                      "sub_status_timeout_exceeded": 0,
+                      "sub_status_mail_server_temporary_error": 0,
+                      "sub_status_mail_server_did_not_respond": 0,
+                      "sub_status_greylisted": 0,
+                      "sub_status_antispam_system": 0,
+                      "sub_status_does_not_accept_mail": 0,
+                      "sub_status_exception_occurred": 0,
+                      "sub_status_failed_syntax_check": 0,
+                      "sub_status_mailbox_not_found": 2,
+                      "sub_status_unroutable_ip_address": 0,
+                      "sub_status_possible_typo": 0,
+                      "sub_status_no_dns_entries": 0,
+                      "sub_status_role_based_catch_all": 0,
+                      "sub_status_mailbox_quota_exceeded": 0,
+                      "sub_status_forcible_disconnect": 0,
+                      "sub_status_failed_smtp_connection": 0,
+                      "start_date": "1/1/2018",
+                      "end_date": "12/12/2019"
+                    }""";
         ZBGetApiUsageResponse expectedResponse = gson.fromJson(responseJson, ZBGetApiUsageResponse.class);
 
         Date startDate = new Date();
@@ -630,7 +664,7 @@ public class ZeroBounceSDKTest {
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getapiusage",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("start_date", dateFormat.format(startDate));
@@ -638,16 +672,18 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().getApiUsage(
-                startDate,
-                endDate,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.getApiUsage(
+                        startDate,
+                        endDate,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
@@ -662,7 +698,7 @@ public class ZeroBounceSDKTest {
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getapiusage",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("start_date", dateFormat.format(startDate));
@@ -670,80 +706,86 @@ public class ZeroBounceSDKTest {
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().getApiUsage(
-                startDate,
-                endDate,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.getApiUsage(
+                        startDate,
+                        endDate,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void sendFile_FileStatus_GetFile_DeleteFile_ReturnSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"success\": true,\n" +
-                "      \"message\": \"File Accepted\",\n" +
-                "      \"file_name\": \"email_file.csv\",\n" +
-                "      \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\"\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "success": true,
+                      "message": "File Accepted",
+                      "file_name": "email_file.csv",
+                      "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+                    }""";
         ZBSendFileResponse expectedResponse = gson.fromJson(responseJson, ZBSendFileResponse.class);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/sendfile";
-        mockMultipartRequest(urlPath, 200, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().sendFile(
-                file,
-                1,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                },
-                errorResponse -> {
-                    fail(errorResponse.toString());
-                }
+        mockMultipartRequest(
+                urlPath,
+                200,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.sendFile(
+                        file,
+                        1,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
         );
+
 
         // -----------------------------------
         // Prepare to check that the file status request works
 
-        String fileStatusJson = "{\n" +
-                "    \"success\": true,\n" +
-                "    \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\",\n" +
-                "    \"file_name\": \"email_file.csv\",\n" +
-                "    \"upload_date\": \"10/20/2018 4:35:58 PM\",\n" +
-                "    \"file_status\": \"Complete\",\n" +
-                "    \"complete_percentage\": \"100%\",\n" +
-                "    \"return_url\": \"Your return URL if provided when calling sendfile API\"\n" +
-                "  }";
+        String fileStatusJson = """
+                {
+                    "success": true,
+                    "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823",
+                    "file_name": "email_file.csv",
+                    "upload_date": "10/20/2018 4:35:58 PM",
+                    "file_status": "Complete",
+                    "complete_percentage": "100%",
+                    "return_url": "Your return URL if provided when calling sendfile API"
+                  }""";
         ZBFileStatusResponse fileStatusResponse = gson.fromJson(fileStatusJson, ZBFileStatusResponse.class);
 
         String fileId = expectedResponse.getFileId();
         String fileStatusUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/filestatus",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
-
         assertNotNull(fileId);
-
-        ZeroBounceSDK.getInstance().fileStatus(
-                fileId,
-                response -> {
-                    assertEquals(fileStatusResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                fileStatusUrlPath,
+                200,
+                fileStatusJson,
+                "",
+                () -> zeroBounceSDK.fileStatus(
+                        fileId,
+                        response -> assertEquals(fileStatusResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
 
         // -----------------------------------
         // Prepare to get the file we just uploaded
@@ -753,117 +795,127 @@ public class ZeroBounceSDKTest {
 
         String getFileUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/getfile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().getFile(
-                fileId,
-                "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
-                response -> {
-                    assertEquals(getFileResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockMultipartRequest(
+                getFileUrlPath,
+                200,
+                ContentType.DEFAULT_BINARY.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.getFile(
+                        fileId,
+                        "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
+                        response -> assertEquals(getFileResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
 
         // -----------------------------------
         // Prepare to delete the file we just uploaded
 
-        String deleteFileJson = "{\n" +
-                "  \"success\": true,\n" +
-                "  \"message\": \"File Deleted\",\n" +
-                "  \"file_name\": \"test2\",\n" +
-                "  \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\"\n" +
-                "}";
+        String deleteFileJson = """
+                {
+                  "success": true,
+                  "message": "File Deleted",
+                  "file_name": "test2",
+                  "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+                }""";
         ZBDeleteFileResponse deleteFileResponse = gson.fromJson(deleteFileJson, ZBDeleteFileResponse.class);
 
         String deleteFileUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/deletefile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(deleteFileUrlPath, 200, deleteFileJson, "");
-
-        ZeroBounceSDK.getInstance().deleteFile(
-                fileId,
-                response -> {
-                    assertEquals(deleteFileResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                deleteFileUrlPath,
+                200,
+                deleteFileJson,
+                "",
+                () -> zeroBounceSDK.deleteFile(
+                        fileId,
+                        response -> assertEquals(deleteFileResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
     public void scoringSendFile_ScoringFileStatus_ScoringGetFile_ScoringDeleteFile_ReturnSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"success\": true,\n" +
-                "      \"message\": \"File Accepted\",\n" +
-                "      \"file_name\": \"email_file.csv\",\n" +
-                "      \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\"\n" +
-                "    }";
+        String responseJson = """
+                {
+                      "success": true,
+                      "message": "File Accepted",
+                      "file_name": "email_file.csv",
+                      "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+                    }""";
         ZBSendFileResponse expectedResponse = gson.fromJson(responseJson, ZBSendFileResponse.class);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendfile";
-        mockMultipartRequest(urlPath, 200, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().scoringSendFile(
-                file,
-                1,
-                null,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                },
-                errorResponse -> {
-                    fail(errorResponse.toString());
-                }
+        mockMultipartRequest(
+                urlPath,
+                200,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.scoringSendFile(
+                        file,
+                        1,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
         );
+
 
         // -----------------------------------
         // Prepare to check that the file status request works
 
-        String fileStatusJson = "{\n" +
-                "    \"success\": true,\n" +
-                "    \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\",\n" +
-                "    \"file_name\": \"email_file.csv\",\n" +
-                "    \"upload_date\": \"10/20/2018 4:35:58 PM\",\n" +
-                "    \"file_status\": \"Complete\",\n" +
-                "    \"complete_percentage\": \"100%\",\n" +
-                "    \"return_url\": \"Your return URL if provided when calling sendfile API\"\n" +
-                "  }";
+        String fileStatusJson = """
+                {
+                    "success": true,
+                    "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823",
+                    "file_name": "email_file.csv",
+                    "upload_date": "10/20/2018 4:35:58 PM",
+                    "file_status": "Complete",
+                    "complete_percentage": "100%",
+                    "return_url": "Your return URL if provided when calling sendfile API"
+                  }""";
         ZBFileStatusResponse fileStatusResponse = gson.fromJson(fileStatusJson, ZBFileStatusResponse.class);
 
         String fileId = expectedResponse.getFileId();
         String fileStatusUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/filestatus",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(fileStatusUrlPath, 200, fileStatusJson, "");
-
         assertNotNull(fileId);
 
-        ZeroBounceSDK.getInstance().scoringFileStatus(
-                fileId,
-                response -> {
-                    assertEquals(fileStatusResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                fileStatusUrlPath,
+                200,
+                fileStatusJson,
+                "",
+                () -> zeroBounceSDK.scoringFileStatus(
+                        fileId,
+                        response -> assertEquals(fileStatusResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
 
         // -----------------------------------
         // Prepare to get the file we just uploaded
@@ -873,351 +925,385 @@ public class ZeroBounceSDKTest {
 
         String getFileUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/getfile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockMultipartRequest(getFileUrlPath, 200, ContentType.DEFAULT_BINARY.getMimeType(), responseJson);
+        mockMultipartRequest(
+                getFileUrlPath,
+                200,
+                ContentType.DEFAULT_BINARY.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.scoringGetFile(
+                        fileId,
+                        "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
+                        response -> assertEquals(getFileResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
 
-        ZeroBounceSDK.getInstance().scoringGetFile(
-                fileId,
-                "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
-                response -> {
-                    assertEquals(getFileResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
 
         // -----------------------------------
         // Prepare to delete the file we just uploaded
 
-        String deleteFileJson = "{\n" +
-                "  \"success\": true,\n" +
-                "  \"message\": \"File Deleted\",\n" +
-                "  \"file_name\": \"test2\",\n" +
-                "  \"file_id\": \"b222a0fd-90d5-416c-8f1a-9cc3851fc823\"\n" +
-                "}";
+        String deleteFileJson = """
+                {
+                  "success": true,
+                  "message": "File Deleted",
+                  "file_name": "test2",
+                  "file_id": "b222a0fd-90d5-416c-8f1a-9cc3851fc823"
+                }""";
         ZBDeleteFileResponse deleteFileResponse = gson.fromJson(deleteFileJson, ZBDeleteFileResponse.class);
 
         String deleteFileUrlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/deletefile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(deleteFileUrlPath, 200, deleteFileJson, "");
-
-        ZeroBounceSDK.getInstance().scoringDeleteFile(
-                fileId,
-                response -> {
-                    assertEquals(deleteFileResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                deleteFileUrlPath,
+                200,
+                deleteFileJson,
+                "",
+                () -> zeroBounceSDK.scoringDeleteFile(
+                        fileId,
+                        response -> assertEquals(deleteFileResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
     public void sendFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"success\": false,\n" +
-                "      \"message\": [\n" +
-                "          \"Error messages\"\n" +
-                "      ]\n" +
-                "  }";
+        String responseJson = """
+                {
+                      "success": false,
+                      "message": [
+                          "Error messages"
+                      ]
+                  }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/sendfile";
-        mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().sendFile(
-                file,
-                1,
-                null,
-                response -> {
-                    fail(response.toString());
-                },
-                errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                }
+        mockMultipartRequest(
+                urlPath,
+                400,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.sendFile(
+                        file,
+                        1,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
         );
+
+
     }
 
     @Test
     public void scoringSendFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "      \"success\": false,\n" +
-                "      \"message\": [\n" +
-                "          \"Error messages\"\n" +
-                "      ]\n" +
-                "  }";
+        String responseJson = """
+                {
+                      "success": false,
+                      "message": [
+                          "Error messages"
+                      ]
+                  }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendfile";
-        mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().scoringSendFile(
-                file,
-                1,
-                null,
-                response -> {
-                    fail(response.toString());
-                },
-                errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                }
+        mockMultipartRequest(
+                urlPath,
+                400,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.scoringSendFile(
+                        file,
+                        1,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
         );
     }
 
     @Test
     public void fileStatus_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "    \"success\": false,\n" +
-                "    \"message\": \"Error messages\"\n" +
-                "  }";
+        String responseJson = """
+                {
+                    "success": false,
+                    "message": "Error messages"
+                  }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/filestatus",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().fileStatus(
-                fileId,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.fileStatus(
+                        fileId,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void scoringFileStatus_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "    \"success\": false,\n" +
-                "    \"message\": \"Error messages\"\n" +
-                "  }";
+        String responseJson = """
+                {
+                    "success": false,
+                    "message": "Error messages"
+                  }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/filestatus",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().scoringFileStatus(
-                fileId,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.scoringFileStatus(
+                        fileId,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void getFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "    \"success\": false,\n" +
-                "    \"message\": \"Error messages\"\n" +
-                "}";
+        String responseJson = """
+                {
+                    "success": false,
+                    "message": "Error messages"
+                }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/getfile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().getFile(
-                fileId,
-                "./downloads/file.csv",
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockMultipartRequest(
+                urlPath,
+                400,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.getFile(
+                        fileId,
+                        "./downloads/file.csv",
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void scoringGetFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "    \"success\": false,\n" +
-                "    \"message\": \"Error messages\"\n" +
-                "}";
+        String responseJson = """
+                {
+                    "success": false,
+                    "message": "Error messages"
+                }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/getfile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockMultipartRequest(urlPath, 400, ContentType.APPLICATION_JSON.getMimeType(), responseJson);
-
-        ZeroBounceSDK.getInstance().scoringGetFile(
-                fileId,
-                "./downloads/file.csv",
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockMultipartRequest(
+                urlPath,
+                400,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                responseJson,
+                () -> zeroBounceSDK.scoringGetFile(
+                        fileId,
+                        "./downloads/file.csv",
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void deleteFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "  \"success\": false,\n" +
-                "  \"message\": \"File cannot be found.\"\n" +
-                "}";
+        String responseJson = """
+                {
+                  "success": false,
+                  "message": "File cannot be found."
+                }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/deletefile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().deleteFile(
-                fileId,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.deleteFile(
+                        fileId,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void scoringDeleteFile_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "  \"success\": false,\n" +
-                "  \"message\": \"File cannot be found.\"\n" +
-                "}";
+        String responseJson = """
+                {
+                  "success": false,
+                  "message": "File cannot be found."
+                }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
                 "https://bulkapi.zerobounce.net/v2/scoring/deletefile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("file_id", fileId);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().scoringDeleteFile(
-                fileId,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.scoringDeleteFile(
+                        fileId,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
     public void getActivityData_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "  \"found\": true,\n" +
-                "  \"active_in_days\": 60\n" +
-                "}";
+        String responseJson = """
+                {
+                  "found": true,
+                  "active_in_days": 60
+                }""";
         ZBActivityDataResponse expectedResponse = gson.fromJson(responseJson, ZBActivityDataResponse.class);
 
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/activity",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("email", email);
                     }
                 }
         );
-        mockRequest(urlPath, 200, responseJson, "");
-
-        ZeroBounceSDK.getInstance().getActivityData(
-                email,
-                response -> {
-                    assertEquals(expectedResponse, response);
-                }, errorResponse -> {
-                    fail(errorResponse.toString());
-                });
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.getActivityData(
+                        email,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
     }
 
     @Test
     public void getActivityData_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\n" +
-                "  \"found\": false,\n" +
-                "  \"active_in_days\": null\n" +
-                "}";
+        String responseJson = """
+                {
+                  "found": false,
+                  "active_in_days": null
+                }""";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
 
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/activity",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                         put("email", email);
                     }
                 }
         );
-        mockRequest(urlPath, 400, "", responseJson);
-
-        ZeroBounceSDK.getInstance().getActivityData(
-                email,
-                response -> {
-                    fail(response.toString());
-                }, errorResponse -> {
-                    assertEquals(expectedResponse, errorResponse);
-                });
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.getActivityData(
+                        email,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
     }
 
     @Test
@@ -1225,7 +1311,7 @@ public class ZeroBounceSDKTest {
         String responseJson = "{\"Credits\":2375323}";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                     }
@@ -1240,10 +1326,18 @@ public class ZeroBounceSDKTest {
         ZeroBounceSDK.setLogPayloads(false);
 
         try {
-            mockRequest(urlPath, 200, responseJson, "");
-            ZeroBounceSDK.getInstance().getCredits(
-                    response -> {
-                    }, errorResponse -> fail(errorResponse.toString()));
+            mockRequest(
+                    urlPath,
+                    200,
+                    responseJson,
+                    "",
+                    () -> zeroBounceSDK.getCredits(
+                            response -> {
+                            },
+                            errorResponse -> fail(errorResponse.toString())
+                    )
+            );
+
         } finally {
             System.setOut(originalOut);
             ZeroBounceSDK.setLogger(null);
@@ -1258,7 +1352,7 @@ public class ZeroBounceSDKTest {
         String responseJson = "{\"Credits\":2375323}";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", API_KEY);
                     }
@@ -1281,10 +1375,17 @@ public class ZeroBounceSDKTest {
         ZeroBounceSDK.setLogPayloads(true);
 
         try {
-            mockRequest(urlPath, 200, responseJson, "");
-            ZeroBounceSDK.getInstance().getCredits(
-                    response -> {
-                    }, errorResponse -> fail(errorResponse.toString()));
+            mockRequest(
+                    urlPath,
+                    200,
+                    responseJson,
+                    "",
+                    () -> zeroBounceSDK.getCredits(
+                            response -> {
+                            }, errorResponse -> fail(errorResponse.toString())
+                    )
+            );
+
         } finally {
             System.setOut(originalOut);
             ZeroBounceSDK.setLogger(null);
@@ -1312,41 +1413,50 @@ public class ZeroBounceSDKTest {
             @NotNull String urlPath,
             int statusCode,
             @NotNull String response,
-            @NotNull String errorResponse
-    ) throws Exception {
-        URL url = PowerMockito.mock(URL.class);
-        PowerMockito.whenNew(URL.class).withArguments(urlPath).thenReturn(url);
-        HttpURLConnection con = PowerMockito.mock(HttpURLConnection.class);
-        PowerMockito.when(url.openConnection()).thenReturn(con);
-        PowerMockito.when(con.getResponseCode()).thenReturn(statusCode);
-        PowerMockito.when(con.getOutputStream()).thenReturn(new ByteArrayOutputStream());
-        PowerMockito.when(con.getInputStream()).thenReturn(new ByteArrayInputStream(response.getBytes()));
-        PowerMockito.when(con.getErrorStream()).thenReturn(new ByteArrayInputStream(errorResponse.getBytes()));
+            @NotNull String errorResponse,
+            Runnable block
+    ) throws IOException {
+        URL url = mock(URL.class, withSettings().useConstructor(urlPath));
+        HttpURLConnection con = mock(HttpURLConnection.class);
+        lenient().when(url.openConnection()).thenReturn(con);
+        lenient().when(con.getResponseCode()).thenReturn(statusCode);
+        lenient().when(con.getOutputStream()).thenReturn(new ByteArrayOutputStream());
+        lenient().when(con.getInputStream()).thenReturn(new ByteArrayInputStream(response.getBytes()));
+        lenient().when(con.getErrorStream()).thenReturn(new ByteArrayInputStream(errorResponse.getBytes()));
+        lenient().doReturn(url).when(zeroBounceSDK).createUrlFrom(anyString());
+        block.run();
     }
 
     private void mockMultipartRequest(
             @NotNull String urlPath,
             int statusCode,
             String contentType,
-            @NotNull String response
+            @NotNull String response,
+            ThrowingRunnable block
     ) throws Exception {
-        HttpPost httpPost = PowerMockito.mock(HttpPost.class);
-        PowerMockito.whenNew(HttpPost.class).withArguments(urlPath).thenReturn(httpPost);
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        HttpEntity mockedEntity = mock(HttpEntity.class);
+        StatusLine statusLine = mock(StatusLine.class);
+        Header header = mock(Header.class);
 
-        CloseableHttpClient httpClient = PowerMockito.mock(CloseableHttpClient.class);
-        CloseableHttpResponse mockedResponse = PowerMockito.mock(CloseableHttpResponse.class);
-        HttpEntity mockedEntity = PowerMockito.mock(HttpEntity.class);
-        StatusLine statusLine = PowerMockito.mock(StatusLine.class);
-        Header header = PowerMockito.mock(Header.class);
+        try (
+                MockedConstruction<HttpPost> ignored = Mockito.mockConstruction(
+                        HttpPost.class,
+                        withSettings().useConstructor(urlPath)
+                );
+                MockedStatic<HttpClients> ignored1 = Mockito.mockStatic(HttpClients.class)
+        ) {
+            lenient().when(HttpClients.createDefault()).thenReturn(httpClient);
+            lenient().when(httpClient.execute(any())).thenReturn(mockedResponse);
+            lenient().when(mockedResponse.getEntity()).thenReturn(mockedEntity);
+            lenient().when(mockedResponse.getStatusLine()).thenReturn(statusLine);
+            lenient().when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
+            lenient().when(header.getValue()).thenReturn(contentType);
+            lenient().when(statusLine.getStatusCode()).thenReturn(statusCode);
+            lenient().when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream(response.getBytes()));
 
-        PowerMockito.mockStatic(HttpClients.class);
-        PowerMockito.when(HttpClients.createDefault()).thenReturn(httpClient);
-        PowerMockito.when(httpClient.execute(any())).thenReturn(mockedResponse);
-        PowerMockito.when(mockedResponse.getEntity()).thenReturn(mockedEntity);
-        PowerMockito.when(mockedResponse.getStatusLine()).thenReturn(statusLine);
-        PowerMockito.when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
-        PowerMockito.when(header.getValue()).thenReturn(contentType);
-        PowerMockito.when(statusLine.getStatusCode()).thenReturn(statusCode);
-        PowerMockito.when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream(response.getBytes()));
+            block.run();
+        }
     }
 }

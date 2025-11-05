@@ -22,6 +22,8 @@ import org.jetbrains.annotations.Nullable;
 import java.io.*;
 import java.lang.reflect.Type;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -139,7 +141,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/validate",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("email", email);
@@ -147,7 +149,7 @@ public class ZeroBounceSDK {
                     }
                 },
                 null,
-                new TypeToken<ZBValidateResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -176,23 +178,13 @@ public class ZeroBounceSDK {
                 apiBaseUrl + "/validatebatch",
                 null,
                 body,
-                new TypeToken<ZBValidateBatchResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
         );
     }
 
-    /**
-     * Tries to guess the format of the given [email].
-     *
-     * @param domain          the email domain for which to find the email format
-     * @param firstName       the first name of the person whose email format is being searched; optional
-     * @param middleName      the middle name of the person whose email format is being searched; optional
-     * @param lastName        the last name of the person whose email format is being searched; optional
-     * @param successCallback the success callback
-     * @param errorCallback   the error callback
-     */
     /**
      * @deprecated The 'guessFormat' method has been split into two specific functions.
      * If you are finding a person's email, use {@link #findEmail(String, String, String, String, String, com.zerobounce.ZeroBounceSDK.OnSuccessCallback, com.zerobounce.ZeroBounceSDK.OnErrorCallback)}.
@@ -211,7 +203,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("domain", domain);
@@ -227,7 +219,7 @@ public class ZeroBounceSDK {
                     }
                 },
                 null,
-                new TypeToken<ZBEmailFinderResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -267,7 +259,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("first_name", firstName);
@@ -286,7 +278,7 @@ public class ZeroBounceSDK {
                     }
                 },
                 null,
-                new TypeToken<ZBFindEmailResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -319,7 +311,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/guessformat",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         if (domain != null) {
@@ -331,7 +323,7 @@ public class ZeroBounceSDK {
                     }
                 },
                 null,
-                new TypeToken<ZBFindDomainResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -356,7 +348,7 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/getapiusage",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("start_date", dateFormat.format(startDate));
@@ -364,7 +356,7 @@ public class ZeroBounceSDK {
                     }
                 },
                 null,
-                new TypeToken<ZBGetApiUsageResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -385,13 +377,13 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/getcredits",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                     }
                 },
                 null,
-                new TypeToken<ZBCreditsResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -567,7 +559,7 @@ public class ZeroBounceSDK {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logError("ZeroBounceSDK::sendFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
             errorCallback.onError(errorResponse);
         }
@@ -621,14 +613,14 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("file_id", fileId);
                     }
                 },
                 null,
-                new TypeToken<ZBFileStatusResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -719,7 +711,7 @@ public class ZeroBounceSDK {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            logError("ZeroBounceSDK::getFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
             errorCallback.onError(errorResponse);
         }
@@ -773,14 +765,14 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("file_id", fileId);
                     }
                 },
                 null,
-                new TypeToken<ZBDeleteFileResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -804,14 +796,14 @@ public class ZeroBounceSDK {
 
         sendRequest(
                 apiBaseUrl + "/activity",
-                new HashMap<String, String>() {
+                new HashMap<>() {
                     {
                         put("api_key", apiKey);
                         put("email", email);
                     }
                 },
                 null,
-                new TypeToken<ZBActivityDataResponse>() {
+                new TypeToken<>() {
                 },
                 successCallback,
                 errorCallback
@@ -878,7 +870,7 @@ public class ZeroBounceSDK {
                 }
             }
 
-            URL url = new URL(ub.toString());
+            URL url = createUrlFrom(ub.toString());
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestProperty("Accept", "application/json");
 //            con.setRequestProperty("Content-Type", "application/json");
@@ -941,7 +933,16 @@ public class ZeroBounceSDK {
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
             errorCallback.onError(errorResponse);
         }
+    }
 
+    /**
+     * Creates and returns a URL object based on the given [url] parameter.
+     *
+     * @param url a url
+     * @return a URL object
+     */
+    URL createUrlFrom(String url) throws MalformedURLException {
+        return URI.create(url).toURL();
     }
 
     private static void logDebug(String message) {
