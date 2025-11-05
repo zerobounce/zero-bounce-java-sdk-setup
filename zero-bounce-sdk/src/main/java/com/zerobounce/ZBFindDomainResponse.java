@@ -8,6 +8,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * The model used for the GET /guessformat request.
+ */
 public class ZBFindDomainResponse {
 
     @NotNull

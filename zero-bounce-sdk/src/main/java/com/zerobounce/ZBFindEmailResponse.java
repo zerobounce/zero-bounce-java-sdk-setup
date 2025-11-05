@@ -5,6 +5,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
 
+/**
+ * The model used for the GET /guessformat request.
+ */
 public class ZBFindEmailResponse {
 
     @NotNull
