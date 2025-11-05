@@ -11,15 +11,15 @@ public class ZBFindEmailResponse {
     private String email = "";
 
     @NotNull
-    @SerializedName("email_confidence")
-    private String emailConfidence = "";
-
-    @NotNull
     private String domain = "";
 
     @NotNull
     @SerializedName("company_name")
     private String companyName = "";
+
+    @NotNull
+    @SerializedName("email_confidence")
+    private String emailConfidence = "";
 
     @NotNull
     @SerializedName("did_you_mean")
@@ -86,16 +86,16 @@ public class ZBFindEmailResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(email, emailConfidence, domain, companyName, didYouMean, failureReason);
+        return Objects.hash(email, domain, companyName, emailConfidence, didYouMean, failureReason);
     }
 
     @Override
     public String toString() {
         return "ZBFindEmailResponse{" +
                 "email='" + email + '\'' +
-                ", emailConfidence='" + emailConfidence + '\'' +
                 ", domain='" + domain + '\'' +
                 ", companyName='" + companyName + '\'' +
+                ", emailConfidence='" + emailConfidence + '\'' +
                 ", didYouMean='" + didYouMean + '\'' +
                 ", failureReason='" + failureReason + '\'' +
                 '}';

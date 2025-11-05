@@ -361,8 +361,9 @@ public class ZeroBounceSDKTest {
                       "company_name": "X company",
                       "email_confidence": "HIGH",
                       "did_you_mean": "",
-                      "failure_reason": "",
+                      "failure_reason": ""
                     }""";
+
         ZBFindEmailResponse expectedResponse = gson.fromJson(responseJson, ZBFindEmailResponse.class);
 
         String domain = "example.com";
