@@ -55,7 +55,7 @@ public class ZeroBounceSDKTest {
         gsonBuilder.registerTypeAdapter(Date.class, new GsonDateDeserializer());
         gson = gsonBuilder.create();
 
-        ZeroBounceSDK.getInstance().initialize(API_KEY, ZBConstants.API_DEFAULT_URL);
+        zeroBounceSDK.initialize(API_KEY);
     }
 
     @Test
@@ -355,14 +355,14 @@ public class ZeroBounceSDKTest {
     public void findEmail_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """
-                {
-                      "email": "john.doe@example.com",
-                      "domain": "example.com",
-                      "company_name": "X company",
-                      "email_confidence": "HIGH",
-                      "did_you_mean": "",
-                      "failure_reason": ""
-                    }""";
+            {
+                  "email": "john.doe@example.com",
+                  "domain": "example.com",
+                  "company_name": "X company",
+                  "email_confidence": "HIGH",
+                  "did_you_mean": "",
+                  "failure_reason": ""
+                }""";
 
         ZBFindEmailResponse expectedResponse = gson.fromJson(responseJson, ZBFindEmailResponse.class);
 
@@ -468,25 +468,25 @@ public class ZeroBounceSDKTest {
     public void findDomain_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """
-                {
-                      "email": "john.doe@example.com",
-                      "domain": "example.com",
-                      "company_name": "X company",
-                      "format": "first.last",
-                      "confidence": "HIGH",
-                      "did_you_mean": "",
-                      "failure_reason": "",
-                      "other_domain_formats": [
-                        {
-                            "format": "first_last",
-                            "confidence": "HIGH"
-                        },
-                        {
-                            "format": "first",
-                            "confidence": "MEDIUM"
-                        }
-                      ]
-                    }""";
+            {
+                  "email": "john.doe@example.com",
+                  "domain": "example.com",
+                  "company_name": "X company",
+                  "format": "first.last",
+                  "confidence": "HIGH",
+                  "did_you_mean": "",
+                  "failure_reason": "",
+                  "other_domain_formats": [
+                    {
+                        "format": "first_last",
+                        "confidence": "HIGH"
+                    },
+                    {
+                        "format": "first",
+                        "confidence": "MEDIUM"
+                    }
+                  ]
+                }""";
         ZBFindDomainResponse expectedResponse = gson.fromJson(responseJson, ZBFindDomainResponse.class);
 
         String domain = "example.com";
