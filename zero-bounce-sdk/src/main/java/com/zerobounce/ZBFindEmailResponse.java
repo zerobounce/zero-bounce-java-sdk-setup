@@ -1,4 +1,4 @@
-package src.main.java.com.zerobounce;
+package com.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.NotNull;

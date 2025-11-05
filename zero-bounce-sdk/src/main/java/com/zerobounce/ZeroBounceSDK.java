@@ -18,8 +18,6 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import src.main.java.com.zerobounce.ZBFindDomainResponse;
-import src.main.java.com.zerobounce.ZBFindEmailResponse;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -114,13 +112,11 @@ public class ZeroBounceSDK {
      * Initializes the SDK.
      *
      * @param apiKey          the API key
-     * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
      * @param apiBaseUrl      the API base URL
      */
-    public void initialize(String apiKey, int timeoutInMillis, @Nullable String apiBaseUrl) {
+    public void initialize(String apiKey, @Nullable String apiBaseUrl) {
         this.apiKey = apiKey;
-        this.timeoutInMillis = timeoutInMillis;
-        if (apiBaseUrl == null) {
+        if (apiBaseUrl != null) {
             this.apiBaseUrl = apiBaseUrl;
         }
     }

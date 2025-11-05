@@ -1,4 +1,4 @@
-package src.main.java.com.zerobounce;
+package com.zerobounce;
 
 public class ZBConstants {
 
