@@ -15,6 +15,10 @@
         <junit.version>6.0.1</junit.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <!-- The JavaFX 21 is the latest LTS version that supports Java 17+.
+        The latest JavaFX LTS version requires Java 23+.
+        For the time being, we'll use JavaFX 21. -->
+        <javafx.version>21.0.9</javafx.version>
     </properties>
 
     <repositories>
@@ -29,12 +33,12 @@
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
-            <version>26-ea+14</version>
+            <version>${javafx.version}</version>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-fxml</artifactId>
-            <version>26-ea+14</version>
+            <version>${javafx.version}</version>
         </dependency>
         <dependency>
             <groupId>org.controlsfx</groupId>
