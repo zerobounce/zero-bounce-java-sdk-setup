@@ -4,7 +4,7 @@
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
-This SDK is built using the Java 1.8 version.
+This SDK is built using the Java 21 version.
 
 
 ### Installation
