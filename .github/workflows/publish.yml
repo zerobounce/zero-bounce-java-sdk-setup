@@ -31,7 +31,7 @@ jobs:
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v5
         with:
-          java-version: 8
+          java-version: 21
           distribution: 'temurin'
 
       - name: Bump version for deployment
@@ -59,7 +59,7 @@ jobs:
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v5
         with:
-          java-version: 8
+          java-version: 21
           distribution: 'temurin'
           server-id: central
           server-username: MAVEN_USERNAME
@@ -89,7 +89,7 @@ jobs:
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v5
         with:
-          java-version: 8
+          java-version: 21
           distribution: 'temurin'
 
       - name: Bump version & push to git
