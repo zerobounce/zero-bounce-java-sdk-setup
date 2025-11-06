@@ -26,6 +26,8 @@ public class Controller {
     public Button validateBatchButton;
     public Button guessFormatButton;
     public Button pickFileButton;
+    public Button findEmailButton;
+    public Button findDomainButton;
 
     public void initialize() {
 
@@ -51,6 +53,10 @@ public class Controller {
         deleteFileButton.setOnAction(event -> deleteFile("<YOUR_FILE_ID>"));
 
         activityDataButton.setOnAction(event -> getActivityData("<EMAIL_TO_TEST>"));
+
+        findEmailButton.setOnAction(event -> findEmail("<FIRST_NAME_TO_TEST>", "<DOMAIN_TO_TEST>"));
+
+        findDomainButton.setOnAction(event -> findDomain("<DOMAIN_TO_TEST>"));
     }
 
     /**
@@ -80,6 +86,33 @@ public class Controller {
                 emailsData,
                 response -> System.out.println("Controller::validateBatch response=" + response.toString()),
                 errorMessage -> System.out.println("Controller::validateBatch error=" + errorMessage)
+        );
+    }
+
+    /**
+     * Calls the *find email* method of the [ZeroBounceSDK].
+     */
+    private void findEmail(String firstName, String domain) {
+        ZeroBounceSDK.getInstance().findEmail(
+                firstName,
+                domain,
+                null,
+                null,
+                null,
+                response -> System.out.println("Controller::guessFormat response=" + response.toString()),
+                errorMessage -> System.out.println("Controller::guessFormat error=" + errorMessage)
+        );
+    }
+
+    /**
+     * Calls the *find domain* method of the [ZeroBounceSDK].
+     */
+    private void findDomain(String domain) {
+        ZeroBounceSDK.getInstance().findDomain(
+                domain,
+                null,
+                response -> System.out.println("Controller::guessFormat response=" + response.toString()),
+                errorMessage -> System.out.println("Controller::guessFormat error=" + errorMessage)
         );
     }
 

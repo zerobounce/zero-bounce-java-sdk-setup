@@ -30,6 +30,10 @@
                 GridPane.rowIndex="5"/>
         <Button fx:id="activityDataButton" mnemonicParsing="false" text="Get Activity Data" GridPane.columnIndex="1"
                 GridPane.rowIndex="6"/>
+        <Button fx:id="findEmailButton" mnemonicParsing="false" text="Find Email" GridPane.columnIndex="1"
+                GridPane.rowIndex="7"/>
+        <Button fx:id="findDomainButton" mnemonicParsing="false" text="Find Domain" GridPane.columnIndex="1"
+                GridPane.rowIndex="8"/>
 
         <Button fx:id="pickFileButton" mnemonicParsing="false" text="Send File" GridPane.columnIndex="2"
                 GridPane.rowIndex="1"/>

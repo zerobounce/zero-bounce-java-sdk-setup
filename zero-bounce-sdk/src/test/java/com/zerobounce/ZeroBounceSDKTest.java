@@ -352,6 +352,224 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void findEmail_ReturnsSuccess() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = """
+            {
+                  "email": "john.doe@example.com",
+                  "domain": "example.com",
+                  "company_name": "X company",
+                  "email_confidence": "HIGH",
+                  "did_you_mean": "",
+                  "failure_reason": ""
+                }""";
+
+        ZBFindEmailResponse expectedResponse = gson.fromJson(responseJson, ZBFindEmailResponse.class);
+
+        String domain = "example.com";
+        String firstName = "John doe";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                        put("firstName", firstName);
+                    }
+                }
+        );
+
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString()))
+        );
+    }
+
+    @Test
+    public void findEmail_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String domain = "example.com";
+        String firstName = "John doe";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                        put("firstName", firstName);
+                    }
+                }
+        );
+
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        domain,
+                        null,
+                        null,
+                        null,
+                        response -> fail(response.toString()), errorResponse ->
+                                assertEquals(expectedResponse, errorResponse)
+                )
+        );
+    }
+
+    @Test
+    public void findEmail_NoCompanyNameNoDomain_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\"error\":[\"Either companyName or domain must be provided.\"]}";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String firstName = "John doe";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("firstName", firstName);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                400,
+                "",
+                responseJson,
+                () -> zeroBounceSDK.findEmail(
+                        firstName,
+                        null,
+                        null,
+                        null,
+                        null,
+                        response -> fail(response.toString()), errorResponse ->
+                                assertEquals(expectedResponse, errorResponse)
+                )
+        );
+    }
+
+    @Test
+    public void findDomain_ReturnsSuccess() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = """
+            {
+                  "email": "john.doe@example.com",
+                  "domain": "example.com",
+                  "company_name": "X company",
+                  "format": "first.last",
+                  "confidence": "HIGH",
+                  "did_you_mean": "",
+                  "failure_reason": "",
+                  "other_domain_formats": [
+                    {
+                        "format": "first_last",
+                        "confidence": "HIGH"
+                    },
+                    {
+                        "format": "first",
+                        "confidence": "MEDIUM"
+                    }
+                  ]
+                }""";
+        ZBFindDomainResponse expectedResponse = gson.fromJson(responseJson, ZBFindDomainResponse.class);
+
+        String domain = "example.com";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.findDomain(
+                        domain,
+                        null,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
+    public void findDomain_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String domain = "example.com";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("domain", domain);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                400,
+                "", responseJson,
+                () -> zeroBounceSDK.findDomain(
+                        domain,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
+    }
+
+    @Test
+    public void findDomain_NoCompanyNameNoDomain_ReturnsError() throws Exception {
+        // Prepare mock response and add it to the server
+        String responseJson = "{\"error\":[\"Either companyName or domain must be provided.\"]}";
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/guessformat",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                400,
+                "", responseJson,
+                () -> zeroBounceSDK.findDomain(
+                        null,
+                        null,
+                        response -> fail(response.toString()),
+                        errorResponse -> assertEquals(expectedResponse, errorResponse)
+                )
+        );
+    }
+
+    @Test
     public void getCredits_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"Credits\":2375323}";

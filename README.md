@@ -86,6 +86,9 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
 ```java
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", "<YOUR_API_BASE_URL>");
+```
 
 
 ### Controlling SDK logging
@@ -175,6 +178,88 @@ Then you can use any of the SDK methods, for example:
             @Override
             public void onError(String errorMessage) {
                 System.out.println("guessFormat error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ##### Find the email formats based on a given first name and domain
+    ```java
+    ZeroBounceSDK.getInstance().findEmail(
+        "<FIRST_NAME_TO_TEST>"
+        "<DOMAIN_TO_TEST>",
+        null,
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindEmailResponse>() {
+            @Override
+            public void onSuccess(ZBFindEmailResponse response) {
+                System.out.println("findEmail response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findEmail error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ##### Find the email formats based on a given first name and company name
+    ```java
+    ZeroBounceSDK.getInstance().findEmail(
+        "<FIRST_NAME_TO_TEST>"
+        null,
+        "<COMPANY_NAME_TO_TEST>",
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindEmailResponse>() {
+            @Override
+            public void onSuccess(ZBFindEmailResponse response) {
+                System.out.println("findEmail response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findEmail error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ##### Find other domain formats based on a given domain
+    ```java
+    ZeroBounceSDK.getInstance().findDomain(
+        "<DOMAIN_TO_TEST>",
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
+            @Override
+            public void onSuccess(ZBFindDomainResponse response) {
+                System.out.println("findDomain response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findDomain error=" + errorMessage);
+            }
+        });
+    );
+    ```
+
+* ##### Find other domain formats based on a given company name
+    ```java
+    ZeroBounceSDK.getInstance().findDomain(
+        null,
+        "COMPANY_NAME_TO_TEST",
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
+            @Override
+            public void onSuccess(ZBFindDomainResponse response) {
+                System.out.println("findDomain response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findDomain error=" + errorMessage);
             }
         });
     );
@@ -399,6 +484,149 @@ Then you can use any of the SDK methods, for example:
         });
     ```
 
+## Breaking Changes:
+**`guessFormat`** has been deprecated. To continue using your existing code, you must migrate to **`findEmail`** or **`findDomain`** .
+The change is not a simple one-to-one replacement, as the functionality has been split:
+- **If you were finding a person's email format**, use the new **`findEmail()`** method.
+- **If you were only determining the domain's general email pattern**, use the new **`findDomain()`** method.
+### Migration Example:
+- #### Old (Deprecated)
+    ```java
+    ZeroBounceSDK.getInstance().guessFormat(
+        "<DOMAIN_TO_TEST>",
+        null,
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBEmailFinderResponse>() {
+            @Override
+            public void onSuccess(ZBEmailFinderResponse response) {
+                System.out.println("guessFormat response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("guessFormat error=" + errorMessage);
+            }
+        });
+    );
+
+- #### New Methods
+  - ##### Find the email formats based on a given first name and domain
+    ```java
+    ZeroBounceSDK.getInstance().findEmail(
+        "<FIRST_NAME_TO_TEST>"
+        "<DOMAIN_TO_TEST>",
+        null,
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindEmailResponse>() {
+            @Override
+            public void onSuccess(ZBFindEmailResponse response) {
+                System.out.println("findEmail response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findEmail error=" + errorMessage);
+            }
+        });
+    );
+    ```
+ - ##### Find the email formats based on a given first name and company name
+    ```java
+    ZeroBounceSDK.getInstance().findEmail(
+        "<FIRST_NAME_TO_TEST>"
+        null,
+        "<COMPANY_NAME_TO_TEST>",
+        null,
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindEmailResponse>() {
+            @Override
+            public void onSuccess(ZBFindEmailResponse response) {
+                System.out.println("findEmail response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findEmail error=" + errorMessage);
+            }
+        });
+    );
+
+  - ##### Find other domain formats based on a given domain
+    ```java
+    ZeroBounceSDK.getInstance().findDomain(
+        "<DOMAIN_TO_TEST>",
+        null,
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
+            @Override
+            public void onSuccess(ZBFindDomainResponse response) {
+                System.out.println("findDomain response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findDomain error=" + errorMessage);
+            }
+        });
+    );
+    ```
+  - ##### Find other domain formats based on a given company name
+    ```java
+    ZeroBounceSDK.getInstance().findDomain(
+        null,
+        "COMPANY_NAME_TO_TEST",
+        new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
+            @Override
+            public void onSuccess(ZBFindDomainResponse response) {
+                System.out.println("findDomain response=" + response.toString());
+            }
+        }, new ZeroBounceSDK.OnErrorCallback() {
+            @Override
+            public void onError(String errorMessage) {
+                System.out.println("findDomain error=" + errorMessage);
+            }
+        });
+    );
+
+## New Features and Enhancements
+### Custom API URL Support
+The `ZeroBounceSDK.initialize()` method can now accepts an `apiBaseUrl` parameter.
+This allows you to specify a custom base URL for the ZeroBounce API.
+
+#### Migration / Usage
+The existing way of initializing the SDK is still valid.
+
+- Default Usage (No Change Required). If you don't provide a URL, the SDK will continue to use the standard ZeroBounce API endpoint:
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
+```
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
+```
+- Initialize the SDK with your API key and URL:
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", "<YOUR_API_BASE_URL>");
+```
+The SDK now exposes a set of predefined constants for different geographical API endpoints,
+allowing for more precise network routing.
+
+### Available API Endpoints
+You can specify a custom API base URL during initialization by using the new optional `apiBaseUrl`
+parameter in `initialize()`. For convenience, the following constants are available in the
+**`ZBConstants`** class:
+
+| Constant           | URL Value                           | Description                                                        |
+|-------------------|------------------------------------|--------------------------------------------------------------------|
+| **`API_DEFAULT_URL`** | `https://api.zerobounce.net/v2/`  | The global default endpoint.                                       |
+| **`API_USA_URL`**     | `https://api-us.zerobounce.net/v2/` | The US-specific endpoint for lower latency in the Americas.        |
+| **`API_EU_URL`**      | `https://api-eu.zerobounce.net/v2/` | The EU-specific endpoint for compliance and lower latency in Europe. |
+
+### Usage Example:
+To use the EU endpoint for initialization:
+```java
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", ZBConstants.getInstance().API_EU_URL);
+```
 
 ## Documentation
 You can generate the documentation using your desired IDE or using's maven's javadoc command.
