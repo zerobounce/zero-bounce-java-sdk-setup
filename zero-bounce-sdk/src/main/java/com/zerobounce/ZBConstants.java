@@ -1,5 +1,9 @@
 package com.zerobounce;
 
+/**
+ * Defines API endpoint constants. This object is a singleton and provides
+ * global access to the constants.
+ */
 public class ZBConstants {
 
     public static final String API_DEFAULT_URL = "https://api.zerobounce.net/v2/";

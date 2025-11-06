@@ -105,7 +105,7 @@ public class Controller {
     }
 
     /**
-     * Calls the *find email* method of the [ZeroBounceSDK].
+     * Calls the *find domain* method of the [ZeroBounceSDK].
      */
     private void findDomain(String domain) {
         ZeroBounceSDK.getInstance().findDomain(

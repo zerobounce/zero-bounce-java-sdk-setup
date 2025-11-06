@@ -86,9 +86,8 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
 ```java
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
-
 ```java
-ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis,"<YOUR_API_BASE_URL>");
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", "<YOUR_API_BASE_URL>");
 ```
 
 
@@ -594,8 +593,10 @@ The change is not a simple one-to-one replacement, as the functionality has been
 ### Custom API URL Support
 The `ZeroBounceSDK.initialize()` method can now accepts an `apiBaseUrl` parameter.
 This allows you to specify a custom base URL for the ZeroBounce API.
+
 #### Migration / Usage
 The existing way of initializing the SDK is still valid.
+
 - Default Usage (No Change Required). If you don't provide a URL, the SDK will continue to use the standard ZeroBounce API endpoint:
 ```java
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>");
@@ -605,10 +606,11 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 ```
 - Initialize the SDK with your API key and URL:
 ```java
-ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis,"<YOUR_API_BASE_URL>");
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", "<YOUR_API_BASE_URL>");
 ```
 The SDK now exposes a set of predefined constants for different geographical API endpoints,
 allowing for more precise network routing.
+
 ### Available API Endpoints
 You can specify a custom API base URL during initialization by using the new optional `apiBaseUrl`
 parameter in `initialize()`. For convenience, the following constants are available in the
@@ -623,7 +625,7 @@ parameter in `initialize()`. For convenience, the following constants are availa
 ### Usage Example:
 To use the EU endpoint for initialization:
 ```java
-ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis,ZBConstants.getInstance().API_EU_URL);
+ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", ZBConstants.getInstance().API_EU_URL);
 ```
 
 ## Documentation
