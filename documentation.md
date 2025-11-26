@@ -10,11 +10,6 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```
 
 
-#### Running the project
-
-In order to be able to run it using a newer Java version, you have to add the following parameters when you compile the code: `--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED`. In IntelliJ IDEA, you would go to `Edit Configuration` and copy-paste these parameters to the `VM Options` text field.
-
-
 #### How to use the sample project
 
 1. Build the JAR file for the SDK project.
