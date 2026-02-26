@@ -12,6 +12,7 @@ import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.FileBody;
+import org.apache.http.entity.mime.content.InputStreamBody;
 import org.apache.http.entity.mime.content.StringBody;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -412,6 +413,30 @@ public class ZeroBounceSDK {
     }
 
     /**
+     * The sendFile API allows user to send a file for bulk email validation from a stream
+     * (e.g. in-memory CSV or an uploaded file stream). The stream is not closed by the SDK.
+     *
+     * @param inputStream             the stream containing the file data
+     * @param fileName                the file name to use for the upload (e.g. "emails.csv")
+     * @param emailAddressColumnIndex the column index of the email address in the file. Index starts from 1.
+     * @param options                 the send file options
+     * @param successCallback         the success callback
+     * @param errorCallback           the error callback
+     */
+    public void sendFile(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int emailAddressColumnIndex,
+            @Nullable SendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) throws ZBException {
+        if (invalidApiKey(errorCallback)) return;
+
+        _sendFileStream(false, inputStream, fileName, emailAddressColumnIndex, options, successCallback, errorCallback);
+    }
+
+    /**
      * The scoringSendFile API allows user to send a file for bulk email validation.
      *
      * @param file                    the file to send
@@ -445,6 +470,38 @@ public class ZeroBounceSDK {
                 successCallback,
                 errorCallback
         );
+    }
+
+    /**
+     * The scoringSendFile API allows user to send a file for bulk email validation from a stream.
+     * The stream is not closed by the SDK.
+     *
+     * @param inputStream             the stream containing the file data
+     * @param fileName                the file name to use for the upload (e.g. "emails.csv")
+     * @param emailAddressColumnIndex the column index of the email address in the file. Index starts from 1.
+     * @param options                 the scoring send file options
+     * @param successCallback         the success callback
+     * @param errorCallback           the error callback
+     */
+    public void scoringSendFile(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int emailAddressColumnIndex,
+            @Nullable ScoringSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) throws ZBException {
+        if (invalidApiKey(errorCallback)) return;
+
+        SendFileOptions newOptions = null;
+        if (options != null) {
+            newOptions = new SendFileOptions()
+                    .setReturnUrl(options.returnUrl)
+                    .setHasHeaderRow(options.hasHeaderRow)
+                    .setRemoveDuplicate(options.removeDuplicate);
+        }
+
+        _sendFileStream(true, inputStream, fileName, emailAddressColumnIndex, newOptions, successCallback, errorCallback);
     }
 
     /**
@@ -525,6 +582,114 @@ public class ZeroBounceSDK {
             }
 
             builder.addPart("file", new FileBody(file));
+
+            HttpEntity multipart = builder.build();
+            uploadFile.setEntity(multipart);
+
+            CloseableHttpResponse response = httpClient.execute(uploadFile);
+            HttpEntity responseEntity = response.getEntity();
+            int status = response.getStatusLine().getStatusCode();
+
+            logDebug("ZeroBounceSDK::sendFile status: " + status);
+
+            StringBuilder content = new StringBuilder();
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(responseEntity.getContent()))) {
+                String inputLine;
+                while ((inputLine = in.readLine()) != null) {
+                    content.append(inputLine);
+                }
+            }
+
+            String rsp = content.toString();
+
+            logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
+
+            if (status > 299) {
+                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
+                errorCallback.onError(errorResponse);
+            } else {
+                Type type = new TypeToken<ZBSendFileResponse>() {
+                }.getType();
+                ZBSendFileResponse sendFileResponse = gson.fromJson(rsp, type);
+
+                successCallback.onSuccess(sendFileResponse);
+            }
+
+        } catch (Exception e) {
+            logError("ZeroBounceSDK::sendFile failed", e);
+            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            errorCallback.onError(errorResponse);
+        }
+    }
+
+    private void _sendFileStream(
+            @NotNull Boolean scoring,
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int emailAddressColumnIndex,
+            @Nullable SendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback) throws ZBException {
+
+        String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
+        logDebug("ZeroBounceSDK::sendFile urlPath=" + urlPath);
+
+        if (emailAddressColumnIndex < 1) {
+            throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
+        }
+
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpPost uploadFile = new HttpPost(urlPath);
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+
+            builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
+            builder.addPart(
+                    "email_address_column",
+                    new StringBody(String.valueOf(emailAddressColumnIndex), ContentType.TEXT_PLAIN)
+            );
+
+            if (options != null) {
+                if (options.returnUrl != null) {
+                    builder.addPart("return_url",
+                            new StringBody(options.returnUrl, ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.firstNameColumn > 0) {
+                    builder.addPart("first_name_column",
+                            new StringBody(String.valueOf(options.firstNameColumn), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.lastNameColumn > 0) {
+                    builder.addPart("last_name_column",
+                            new StringBody(String.valueOf(options.lastNameColumn), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.genderColumn > 0) {
+                    builder.addPart("gender_column",
+                            new StringBody(String.valueOf(options.genderColumn), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.ipAddressColumn > 0) {
+                    builder.addPart(
+                            "ip_address_column",
+                            new StringBody(String.valueOf(options.ipAddressColumn), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.hasHeaderRow != null) {
+                    builder.addPart(
+                            "has_header_row",
+                            new StringBody(String.valueOf(options.hasHeaderRow), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (options.removeDuplicate != null) {
+                    builder.addPart(
+                            "remove_duplicate",
+                            new StringBody(String.valueOf(options.removeDuplicate), ContentType.TEXT_PLAIN)
+                    );
+                }
+            }
+
+            builder.addPart("file", new InputStreamBody(inputStream, ContentType.create("text/csv"), fileName));
 
             HttpEntity multipart = builder.build();
             uploadFile.setEntity(multipart);

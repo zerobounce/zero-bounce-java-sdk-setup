@@ -121,6 +121,34 @@ public class ZBGetApiUsageResponse {
     @SerializedName("sub_status_failed_smtp_connection")
     private int subStatusFailedSmtpConnection = 0;
 
+    // Total number of times the API has a sub status of "accept_all"
+    @SerializedName("sub_status_accept_all")
+    private int subStatusAcceptAll = 0;
+
+    // Total number of times the API has a sub status of "mx_forward"
+    @SerializedName("sub_status_mx_forward")
+    private int subStatusMxForward = 0;
+
+    // Total number of times the API has a sub status of "alternate"
+    @SerializedName("sub_status_alternate")
+    private int subStatusAlternate = 0;
+
+    // Total number of times the API has a sub status of "allowed"
+    @SerializedName("sub_status_allowed")
+    private int subStatusAllowed = 0;
+
+    // Total number of times the API has a sub status of "blocked"
+    @SerializedName("sub_status_blocked")
+    private int subStatusBlocked = 0;
+
+    // Total number of times the API has a sub status of "gold"
+    @SerializedName("sub_status_gold")
+    private int subStatusGold = 0;
+
+    // Total number of times the API has a sub status of "role_based_accept_all"
+    @SerializedName("sub_status_role_based_accept_all")
+    private int subStatusRoleBasedAcceptAll = 0;
+
     // Start date of query
     @SerializedName("start_date")
     @Nullable
@@ -355,6 +383,62 @@ public class ZBGetApiUsageResponse {
         this.subStatusFailedSmtpConnection = subStatusFailedSmtpConnection;
     }
 
+    public int getSubStatusAcceptAll() {
+        return subStatusAcceptAll;
+    }
+
+    public void setSubStatusAcceptAll(int subStatusAcceptAll) {
+        this.subStatusAcceptAll = subStatusAcceptAll;
+    }
+
+    public int getSubStatusMxForward() {
+        return subStatusMxForward;
+    }
+
+    public void setSubStatusMxForward(int subStatusMxForward) {
+        this.subStatusMxForward = subStatusMxForward;
+    }
+
+    public int getSubStatusAlternate() {
+        return subStatusAlternate;
+    }
+
+    public void setSubStatusAlternate(int subStatusAlternate) {
+        this.subStatusAlternate = subStatusAlternate;
+    }
+
+    public int getSubStatusAllowed() {
+        return subStatusAllowed;
+    }
+
+    public void setSubStatusAllowed(int subStatusAllowed) {
+        this.subStatusAllowed = subStatusAllowed;
+    }
+
+    public int getSubStatusBlocked() {
+        return subStatusBlocked;
+    }
+
+    public void setSubStatusBlocked(int subStatusBlocked) {
+        this.subStatusBlocked = subStatusBlocked;
+    }
+
+    public int getSubStatusGold() {
+        return subStatusGold;
+    }
+
+    public void setSubStatusGold(int subStatusGold) {
+        this.subStatusGold = subStatusGold;
+    }
+
+    public int getSubStatusRoleBasedAcceptAll() {
+        return subStatusRoleBasedAcceptAll;
+    }
+
+    public void setSubStatusRoleBasedAcceptAll(int subStatusRoleBasedAcceptAll) {
+        this.subStatusRoleBasedAcceptAll = subStatusRoleBasedAcceptAll;
+    }
+
     public @Nullable String getStartDate() {
         return startDate;
     }
@@ -404,6 +488,13 @@ public class ZBGetApiUsageResponse {
                 && subStatusMailboxQuotaExceeded == that.subStatusMailboxQuotaExceeded
                 && subStatusForcibleDisconnect == that.subStatusForcibleDisconnect
                 && subStatusFailedSmtpConnection == that.subStatusFailedSmtpConnection
+                && subStatusAcceptAll == that.subStatusAcceptAll
+                && subStatusMxForward == that.subStatusMxForward
+                && subStatusAlternate == that.subStatusAlternate
+                && subStatusAllowed == that.subStatusAllowed
+                && subStatusBlocked == that.subStatusBlocked
+                && subStatusGold == that.subStatusGold
+                && subStatusRoleBasedAcceptAll == that.subStatusRoleBasedAcceptAll
                 && Objects.equals(startDate, that.startDate)
                 && Objects.equals(endDate, that.endDate);
     }
@@ -417,7 +508,8 @@ public class ZBGetApiUsageResponse {
                 subStatusDoesNotAcceptMail, subStatusExceptionOccurred, subStatusFailedSyntaxCheck,
                 subStatusMailboxNotFound, subStatusUnRoutableIpAddress, subStatusPossibleTypo, subStatusNoDnsEntries,
                 subStatusRoleBasedCatchAll, subStatusMailboxQuotaExceeded, subStatusForcibleDisconnect,
-                subStatusFailedSmtpConnection, startDate, endDate
+                subStatusFailedSmtpConnection, subStatusAcceptAll, subStatusMxForward, subStatusAlternate,
+                subStatusAllowed, subStatusBlocked, subStatusGold, subStatusRoleBasedAcceptAll, startDate, endDate
         );
     }
 
@@ -452,6 +544,13 @@ public class ZBGetApiUsageResponse {
                 ", subStatusMailboxQuotaExceeded=" + subStatusMailboxQuotaExceeded +
                 ", subStatusForcibleDisconnect=" + subStatusForcibleDisconnect +
                 ", subStatusFailedSmtpConnection=" + subStatusFailedSmtpConnection +
+                ", subStatusAcceptAll=" + subStatusAcceptAll +
+                ", subStatusMxForward=" + subStatusMxForward +
+                ", subStatusAlternate=" + subStatusAlternate +
+                ", subStatusAllowed=" + subStatusAllowed +
+                ", subStatusBlocked=" + subStatusBlocked +
+                ", subStatusGold=" + subStatusGold +
+                ", subStatusRoleBasedAcceptAll=" + subStatusRoleBasedAcceptAll +
                 ", startDate='" + startDate + '\'' +
                 ", endDate='" + endDate + '\'' +
                 '}';

@@ -623,6 +623,24 @@ To use the EU endpoint for initialization:
 ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", ZBConstants.getInstance().API_EU_URL);
 ```
 
+## Testing
+
+### Run tests with Docker
+From the **parent repository root** (the folder that contains all SDKs and `docker-compose.yml`):
+
+```bash
+docker compose build java
+docker compose run --rm java
+```
+
+### Run tests (local)
+From the `zero-bounce-sdk` module directory:
+
+```bash
+cd zero-bounce-sdk
+mvn test
+```
+
 ## Documentation
 You can generate the documentation using your desired IDE or using's maven's javadoc command.
 
