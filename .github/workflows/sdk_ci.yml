@@ -2,10 +2,7 @@ name: SDK CI
 
 on:
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
+    types: [opened, synchronize, reopened]
   push:
     branches: [main, master]
 
@@ -18,8 +15,7 @@ jobs:
     name: Test & Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the current branch
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Set up Maven Central Repository
         uses: actions/setup-java@v5
