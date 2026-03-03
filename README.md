@@ -685,3 +685,7 @@ You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login
     gpg --list-keys
     gpg --list-secret-keys
     ```
+
+## Publish
+
+See the [sdk-docs (Maven Central)](../sdk-docs/maven-central/) guide in the SDKs repo for Sonatype setup and publish steps.
