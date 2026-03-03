@@ -8,9 +8,10 @@ on:
       - reopened
 
 jobs:
-  add-reviewers:
-    name: Auto assign reviewers
+  add-assignee:
+    name: Auto assign (me only)
     runs-on: ubuntu-latest
     steps:
-      # Set the author as the assignee of the PR.
       - uses: kentaro-m/auto-assign-action@v2.0.1
+        with:
+          configuration-path: ".github/auto_assign.yml"
