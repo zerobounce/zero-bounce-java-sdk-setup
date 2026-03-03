@@ -1,6 +1,6 @@
 ## ZeroBounce Java SDK
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk) [![Build Status](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml/badge.svg)](https://github.com/zerobounce/zero-bounce-java-sdk-setup/actions/workflows/publish.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
