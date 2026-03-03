@@ -19,6 +19,12 @@ on:
   schedule:
     - cron: '24 2 * * 5'
 
+permissions:
+  security-events: write
+  packages: read
+  actions: read
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

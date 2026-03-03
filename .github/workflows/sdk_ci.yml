@@ -6,6 +6,12 @@ on:
       - opened
       - synchronize
       - reopened
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   # Check for lint issues
