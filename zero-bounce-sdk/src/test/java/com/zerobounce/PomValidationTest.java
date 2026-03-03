@@ -27,15 +27,27 @@ class PomValidationTest {
         assertTrue(Files.isRegularFile(pom.toPath()), "pom.xml not found at " + pom.getAbsolutePath());
         String content = Files.readString(pom.toPath());
 
-        // Project version is the first <version> in the POM (root element).
-        Matcher firstVersion = Pattern.compile("<version>([^<]+)</version>").matcher(content);
-        assertTrue(firstVersion.find(), "No <version> found in pom.xml");
-        String projectVersion = firstVersion.group(1).trim();
+        // Project version: root <version> (may be ${sdk.version}); resolve from properties if needed.
+        Matcher rootVersion = Pattern.compile("<version>([^<]+)</version>").matcher(content);
+        assertTrue(rootVersion.find(), "No <version> found in pom.xml");
+        String projectVersion = rootVersion.group(1).trim();
+        if (projectVersion.startsWith("${") && projectVersion.endsWith("}")) {
+            String propName = projectVersion.substring(2, projectVersion.length() - 1);
+            Matcher prop = Pattern.compile("<" + Pattern.quote(propName) + ">([^<]+)</" + Pattern.quote(propName) + ">").matcher(content);
+            assertTrue(prop.find(), "Property " + propName + " not found in pom.xml");
+            projectVersion = prop.group(1).trim();
+        }
 
-        // Collect all other <version> values (after the first).
+        // Collect any <version> (other than root) that equals the project version (copy-paste mistake).
         List<String> mistaken = new ArrayList<>();
-        while (firstVersion.find()) {
-            String v = firstVersion.group(1).trim();
+        Matcher allVersions = Pattern.compile("<version>([^<]+)</version>").matcher(content);
+        boolean first = true;
+        while (allVersions.find()) {
+            String v = allVersions.group(1).trim();
+            if (first) {
+                first = false;
+                continue; // skip root version
+            }
             if (projectVersion.equals(v)) {
                 mistaken.add(v);
             }
@@ -43,8 +55,8 @@ class PomValidationTest {
         assertTrue(
                 mistaken.isEmpty(),
                 "Plugin/dependency version must not equal project version (" + projectVersion + "). "
-                        + "That copy-paste causes PluginResolutionException (e.g. maven-surefire-plugin has no such version on Maven Central). "
-                        + "Found " + mistaken.size() + " occurrence(s). Use explicit versions per artifact."
+                        + "That copy-paste causes PluginResolutionException (e.g. maven-surefire-plugin/jacoco have no such version on Maven Central). "
+                        + "Found " + mistaken.size() + " occurrence(s). Use explicit versions per artifact; only bump <sdk.version> in <properties>."
         );
     }
 
