@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -12,10 +15,38 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Validates POM plugin/dependency versions that are easy to misversion (e.g. copy-paste).
  * Fails during {@code mvn test} so issues are caught locally before CI.
+ * (Pattern from Android SDK: project/publish version is separate from plugin/dependency versions.)
  */
 class PomValidationTest {
 
     private static final Pattern JACOCO_VERSION = Pattern.compile("0\\.8\\.\\d+");
+
+    @Test
+    void noPluginOrDependencyVersionMustEqualProjectVersion() throws Exception {
+        File pom = findPom();
+        assertTrue(Files.isRegularFile(pom.toPath()), "pom.xml not found at " + pom.getAbsolutePath());
+        String content = Files.readString(pom.toPath());
+
+        // Project version is the first <version> in the POM (root element).
+        Matcher firstVersion = Pattern.compile("<version>([^<]+)</version>").matcher(content);
+        assertTrue(firstVersion.find(), "No <version> found in pom.xml");
+        String projectVersion = firstVersion.group(1).trim();
+
+        // Collect all other <version> values (after the first).
+        List<String> mistaken = new ArrayList<>();
+        while (firstVersion.find()) {
+            String v = firstVersion.group(1).trim();
+            if (projectVersion.equals(v)) {
+                mistaken.add(v);
+            }
+        }
+        assertTrue(
+                mistaken.isEmpty(),
+                "Plugin/dependency version must not equal project version (" + projectVersion + "). "
+                        + "That copy-paste causes PluginResolutionException (e.g. maven-surefire-plugin has no such version on Maven Central). "
+                        + "Found " + mistaken.size() + " occurrence(s). Use explicit versions per artifact."
+        );
+    }
 
     @Test
     void jacocoMavenPluginVersionMustBe08x() throws Exception {
