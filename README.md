@@ -646,9 +646,14 @@ You can generate the documentation using your desired IDE or using's maven's jav
 
 
 ## Publication
-Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. **The pipeline updates the version automatically!**
-If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
 
+Publishing to Maven Central is done via the **GitHub Actions `publish` workflow**, triggered **manually per tag**. It does not run automatically on release creation.
+
+1. **Version the project** and create a **git tag** (e.g. `v1.1.6`), then push the tag.
+2. In the repo go to **Actions → Publish**, click **Run workflow**, enter the tag (e.g. `v1.1.6`), and run.
+3. The workflow runs tests and publishes to Maven Central.
+
+If you change the OSSRH/Sonatype or signing credentials, update the repository **Secrets** on GitHub.
 
 ### Local setup for manual release
 In order to be able to publish to the Nexus repository from you local machine, you'll need to do the following step:
