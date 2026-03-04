@@ -8,6 +8,9 @@ on:
         description: Tag to publish (e.g. v2.0.16)
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   validate-tag:
     name: Validate tag
