@@ -4,7 +4,7 @@
 
 If you think you've found a security issue, please report it privately instead of opening a public issue.
 
-**Email:** github@zerobounce.net (use a subject like `[zero-bounce-java-sdk-setup] Security`).
+**Email:** integrations@zerobounce.net (use a subject like `[zero-bounce-java-sdk-setup] Security`).
 
 We'll look into reports as we can. If the issue is in the Zero Bounce API or service rather than this SDK, we may forward it to the right team.
 
