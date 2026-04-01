@@ -3,7 +3,12 @@ package com.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -25,6 +30,7 @@ import java.lang.reflect.Type;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -579,6 +585,12 @@ public class ZeroBounceSDK {
                             new StringBody(String.valueOf(options.removeDuplicate), ContentType.TEXT_PLAIN)
                     );
                 }
+                if (!scoring && options.allowPhase2 != null) {
+                    builder.addPart(
+                            "allow_phase_2",
+                            new StringBody(Boolean.toString(options.allowPhase2), ContentType.TEXT_PLAIN)
+                    );
+                }
             }
 
             builder.addPart("file", new FileBody(file));
@@ -685,6 +697,12 @@ public class ZeroBounceSDK {
                     builder.addPart(
                             "remove_duplicate",
                             new StringBody(String.valueOf(options.removeDuplicate), ContentType.TEXT_PLAIN)
+                    );
+                }
+                if (!scoring && options.allowPhase2 != null) {
+                    builder.addPart(
+                            "allow_phase_2",
+                            new StringBody(Boolean.toString(options.allowPhase2), ContentType.TEXT_PLAIN)
                     );
                 }
             }
@@ -806,7 +824,20 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        _getFile(false, fileId, downloadPath, successCallback, errorCallback);
+        _getFile(false, fileId, downloadPath, null, successCallback, errorCallback);
+    }
+
+    /**
+     * Validation bulk {@code getfile} with optional {@code download_type} and {@code activity_data}.
+     */
+    public void getFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @Nullable ZBGetFileOptions options,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        _getFile(false, fileId, downloadPath, options, successCallback, errorCallback);
     }
 
     /**
@@ -824,61 +855,148 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        _getFile(true, fileId, downloadPath, successCallback, errorCallback);
+        _getFile(true, fileId, downloadPath, null, successCallback, errorCallback);
+    }
+
+    /**
+     * Scoring bulk {@code getfile} with optional {@code download_type} ({@code activityData} is ignored).
+     */
+    public void scoringGetFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @Nullable ZBGetFileOptions options,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        _getFile(true, fileId, downloadPath, options, successCallback, errorCallback);
+    }
+
+    private URI buildGetFileUri(boolean scoring, @NotNull String fileId, @Nullable ZBGetFileOptions options)
+            throws URISyntaxException {
+        String base = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/getfile";
+        URIBuilder ub = new URIBuilder(base);
+        ub.addParameter("api_key", apiKey);
+        ub.addParameter("file_id", fileId);
+        if (options != null) {
+            if (options.getDownloadType() != null) {
+                ub.addParameter("download_type", options.getDownloadType().getQueryValue());
+            }
+            if (!scoring && options.getActivityData() != null) {
+                ub.addParameter("activity_data", options.getActivityData() ? "true" : "false");
+            }
+        }
+        return ub.build();
+    }
+
+    private static boolean getFileJsonIndicatesFailure(@NotNull JsonObject o) {
+        if (o.has("success") && !o.get("success").isJsonNull()) {
+            try {
+                if (!o.get("success").getAsBoolean()) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+                // non-boolean success — treat as non-failure here; other fields may still signal error
+            }
+        }
+        return nonEmptyStringField(o, "message")
+                || nonEmptyStringField(o, "error")
+                || nonEmptyStringField(o, "error_message");
+    }
+
+    private static boolean nonEmptyStringField(@NotNull JsonObject o, @NotNull String key) {
+        if (!o.has(key) || o.get(key).isJsonNull()) {
+            return false;
+        }
+        JsonElement e = o.get(key);
+        if (e.isJsonPrimitive() && e.getAsJsonPrimitive().isString()) {
+            return !e.getAsString().trim().isEmpty();
+        }
+        if (e.isJsonArray()) {
+            JsonArray arr = e.getAsJsonArray();
+            for (JsonElement item : arr) {
+                if (item != null && item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()) {
+                    if (!item.getAsString().trim().isEmpty()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
      * The getFile API allows users to get the validation results file for the file that has  been submitted.
      * This method implements the actual request logic.
-     *
-     * @param scoring         *true* if the AI scoring should be used, or *false* otherwise
-     * @param fileId          the returned file ID when calling sendFile API
-     * @param downloadPath    the path to which to download the file
-     * @param successCallback the success callback
-     * @param errorCallback   the error callback
      */
     private void _getFile(
             @NotNull Boolean scoring,
             @NotNull String fileId,
             @NotNull String downloadPath,
+            @Nullable ZBGetFileOptions options,
             @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (fileId == null || fileId.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
         try {
             File file = new File(downloadPath);
             if (file.isDirectory()) {
-                ErrorResponse errorResponse = ErrorResponse.parseError("Invalid file path");
-                errorCallback.onError(errorResponse);
+                errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
                 return;
             }
-            file.getParentFile().mkdirs();
+            File parent = file.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
+            }
+            URI uri = buildGetFileUri(scoring, fileId, options);
             try (CloseableHttpClient client = HttpClients.createDefault()) {
-                HttpGet downloadFile = new HttpGet(
-                        (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/getfile?api_key=" + apiKey + "&file_id=" + fileId
-                );
-                CloseableHttpResponse response = client.execute(downloadFile);
-                HttpEntity entity = response.getEntity();
-                String contentType = response.getFirstHeader("Content-Type").getValue();
+                HttpGet downloadFile = new HttpGet(uri);
+                try (CloseableHttpResponse response = client.execute(downloadFile)) {
+                    int statusCode = response.getStatusLine().getStatusCode();
+                    HttpEntity entity = response.getEntity();
+                    Header ctHeader = response.getFirstHeader("Content-Type");
+                    String contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
+                    String mime = contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
 
-                // Check that the Content-Type is application/json or not. If it's not, then the response is the actual
-                // file. Otherwise, the server has returned a JSON error.
-                if (!ContentType.APPLICATION_JSON.getMimeType().equals(contentType)) {
-                    if (entity != null) {
-                        FileOutputStream outStream = new FileOutputStream(file);
-                        entity.writeTo(outStream);
+                    byte[] bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
+
+                    if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
+                        String json = new String(bodyBytes, StandardCharsets.UTF_8);
+                        try {
+                            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                            if (getFileJsonIndicatesFailure(obj)) {
+                                errorCallback.onError(ErrorResponse.parseError(json));
+                                return;
+                            }
+                            if (obj.has("success")) {
+                                errorCallback.onError(ErrorResponse.parseError(json));
+                                return;
+                            }
+                        } catch (Exception parseEx) {
+                            errorCallback.onError(ErrorResponse.parseError(json));
+                            return;
+                        }
+                    }
+
+                    if (statusCode > 299) {
+                        errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8)));
+                        return;
+                    }
+
+                    try (FileOutputStream outStream = new FileOutputStream(file)) {
+                        outStream.write(bodyBytes);
                     }
                     ZBGetFileResponse rsp = new ZBGetFileResponse();
                     rsp.setLocalFilePath(downloadPath);
                     successCallback.onSuccess(rsp);
-                } else {
-                    ErrorResponse errorResponse = ErrorResponse.parseError(EntityUtils.toString(entity));
-                    errorCallback.onError(errorResponse);
                 }
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
-            errorCallback.onError(errorResponse);
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
         }
     }
 
@@ -1146,6 +1264,12 @@ public class ZeroBounceSDK {
         @Nullable
         Boolean removeDuplicate;
 
+        /**
+         * When non-null, sent as {@code allow_phase_2} for validation bulk sendfile only (not scoring).
+         */
+        @Nullable
+        Boolean allowPhase2;
+
         public SendFileOptions setReturnUrl(@Nullable String returnUrl) {
             this.returnUrl = returnUrl;
             return this;
@@ -1178,6 +1302,11 @@ public class ZeroBounceSDK {
 
         public SendFileOptions setRemoveDuplicate(@Nullable Boolean removeDuplicate) {
             this.removeDuplicate = removeDuplicate;
+            return this;
+        }
+
+        public SendFileOptions setAllowPhase2(@Nullable Boolean allowPhase2) {
+            this.allowPhase2 = allowPhase2;
             return this;
         }
     }

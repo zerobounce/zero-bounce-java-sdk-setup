@@ -8,6 +8,7 @@ import org.apache.http.HttpEntity;
 import org.apache.http.StatusLine;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -17,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -27,6 +29,7 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -767,6 +770,7 @@ public class ZeroBounceSDKTest {
                     "file_name": "email_file.csv",
                     "upload_date": "10/20/2018 4:35:58 PM",
                     "file_status": "Complete",
+                    "file_phase_2_status": "N/A",
                     "complete_percentage": "100%",
                     "return_url": "Your return URL if provided when calling sendfile API"
                   }""";
@@ -1402,6 +1406,109 @@ public class ZeroBounceSDKTest {
 
         assertTrue(debugMessages.stream().anyMatch(message -> message.contains("ZeroBounceSDK::sendRequest rsp=" + responseJson)));
         assertEquals("", capturedOut.toString());
+    }
+
+    @Test
+    public void getFile_JsonBodyWithHttp200_InvokesErrorCallback() throws Exception {
+        String errJson = "{\"success\":false,\"message\":\"Phase 2 download types are only available when phase 2 is enabled for this file.\"}";
+        String fileId = "fid";
+        Map<String, String> query = new LinkedHashMap<>();
+        query.put("api_key", API_KEY);
+        query.put("file_id", fileId);
+        String urlPath = getEncodedUrl("https://bulkapi.zerobounce.net/v2/getfile", query);
+
+        File out = File.createTempFile("zbj-getfile-err", ".csv");
+        out.deleteOnExit();
+        mockMultipartRequest(
+                urlPath,
+                200,
+                ContentType.APPLICATION_JSON.getMimeType(),
+                errJson,
+                () -> zeroBounceSDK.getFile(
+                        fileId,
+                        out.getAbsolutePath(),
+                        r -> fail(r.toString()),
+                        err -> assertTrue(
+                                err.getErrors().stream().anyMatch(s -> s.contains("Phase 2")),
+                                err.toString()
+                        )
+                )
+        );
+    }
+
+    @Test
+    public void getFile_WithOptions_AppendsDownloadTypeAndActivityData() throws Exception {
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        HttpEntity mockedEntity = mock(HttpEntity.class);
+        StatusLine statusLine = mock(StatusLine.class);
+        Header header = mock(Header.class);
+        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
+
+        try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
+            httpClients.when(HttpClients::createDefault).thenReturn(httpClient);
+            when(httpClient.execute(captor.capture())).thenReturn(mockedResponse);
+            when(mockedResponse.getEntity()).thenReturn(mockedEntity);
+            when(mockedResponse.getStatusLine()).thenReturn(statusLine);
+            when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
+            when(header.getValue()).thenReturn("text/csv");
+            when(statusLine.getStatusCode()).thenReturn(200);
+            when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+
+            File out = File.createTempFile("zbj-getfile-opts", ".csv");
+            out.deleteOnExit();
+            ZBGetFileOptions opts = new ZBGetFileOptions()
+                    .setDownloadType(ZBDownloadType.COMBINED)
+                    .setActivityData(true);
+            zeroBounceSDK.getFile(
+                    "abc-id",
+                    out.getAbsolutePath(),
+                    opts,
+                    response -> assertEquals(out.getAbsolutePath(), response.getLocalFilePath()),
+                    err -> fail(err.toString()));
+
+            String uri = captor.getValue().getURI().toString();
+            assertTrue(uri.contains("download_type=combined"), uri);
+            assertTrue(uri.contains("activity_data=true"), uri);
+            assertTrue(uri.contains("file_id=abc-id"), uri);
+        }
+    }
+
+    @Test
+    public void scoringGetFile_WithOptions_DoesNotAppendActivityData() throws Exception {
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        HttpEntity mockedEntity = mock(HttpEntity.class);
+        StatusLine statusLine = mock(StatusLine.class);
+        Header header = mock(Header.class);
+        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
+
+        try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
+            httpClients.when(HttpClients::createDefault).thenReturn(httpClient);
+            when(httpClient.execute(captor.capture())).thenReturn(mockedResponse);
+            when(mockedResponse.getEntity()).thenReturn(mockedEntity);
+            when(mockedResponse.getStatusLine()).thenReturn(statusLine);
+            when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
+            when(header.getValue()).thenReturn("text/csv");
+            when(statusLine.getStatusCode()).thenReturn(200);
+            when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+
+            File out = File.createTempFile("zbj-scoring-opts", ".csv");
+            out.deleteOnExit();
+            ZBGetFileOptions opts = new ZBGetFileOptions()
+                    .setDownloadType(ZBDownloadType.PHASE_2)
+                    .setActivityData(true);
+            zeroBounceSDK.scoringGetFile(
+                    "id-1",
+                    out.getAbsolutePath(),
+                    opts,
+                    response -> assertEquals(out.getAbsolutePath(), response.getLocalFilePath()),
+                    err -> fail(err.toString()));
+
+            String uri = captor.getValue().getURI().toString();
+            assertTrue(uri.contains("download_type=phase_2"), uri);
+            assertFalse(uri.contains("activity_data"), uri);
+        }
     }
 
     private String getEncodedUrl(

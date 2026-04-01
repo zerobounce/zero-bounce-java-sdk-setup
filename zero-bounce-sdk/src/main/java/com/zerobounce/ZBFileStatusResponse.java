@@ -34,6 +34,10 @@ public class ZBFileStatusResponse {
     @Nullable
     private String fileStatus = null;
 
+    @SerializedName("file_phase_2_status")
+    @Nullable
+    private String filePhase2Status = null;
+
     @SerializedName("complete_percentage")
     @Nullable
     private String completePercentage = null;
@@ -94,6 +98,14 @@ public class ZBFileStatusResponse {
         this.fileStatus = fileStatus;
     }
 
+    public @Nullable String getFilePhase2Status() {
+        return filePhase2Status;
+    }
+
+    public void setFilePhase2Status(@Nullable String filePhase2Status) {
+        this.filePhase2Status = filePhase2Status;
+    }
+
     public @Nullable String getCompletePercentage() {
         return completePercentage;
     }
@@ -129,6 +141,7 @@ public class ZBFileStatusResponse {
                 && Objects.equals(fileName, that.fileName)
                 && Objects.equals(uploadDate, that.uploadDate)
                 && Objects.equals(fileStatus, that.fileStatus)
+                && Objects.equals(filePhase2Status, that.filePhase2Status)
                 && Objects.equals(completePercentage, that.completePercentage)
                 && Objects.equals(errorReason, that.errorReason)
                 && Objects.equals(returnUrl, that.returnUrl);
@@ -136,8 +149,8 @@ public class ZBFileStatusResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(success, message, fileId, fileName, uploadDate, fileStatus, completePercentage,
-                errorReason, returnUrl
+        return Objects.hash(success, message, fileId, fileName, uploadDate, fileStatus, filePhase2Status,
+                completePercentage, errorReason, returnUrl
         );
     }
 
@@ -150,6 +163,7 @@ public class ZBFileStatusResponse {
                 ", fileName='" + fileName + '\'' +
                 ", uploadDate=" + uploadDate +
                 ", fileStatus='" + fileStatus + '\'' +
+                ", filePhase2Status='" + filePhase2Status + '\'' +
                 ", completePercentage='" + completePercentage + '\'' +
                 ", errorReason='" + errorReason + '\'' +
                 ", returnUrl='" + returnUrl + '\'' +

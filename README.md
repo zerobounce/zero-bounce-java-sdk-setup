@@ -107,6 +107,12 @@ ZeroBounceSDK.setLogPayloads(true);
 Passing `null` to `ZeroBounceSDK.setLogger(...)` resets the logger to a no-op implementation, which
 disables SDK logging again.
 
+### Bulk API v2 types
+
+- **ZBFileStatusResponse** – Includes `errorReason` when present, and `filePhase2Status` (`file_phase_2_status`) when the bulk API returns it (for example after optional phase 2 processing).
+- **ZBDownloadType** – `PHASE_1`, `PHASE_2`, or `COMBINED` for bulk `getfile` query parameter `download_type` (validation and scoring).
+- **ZBGetFileOptions** – Optional `downloadType` and `activityData` for validation `getFile`; `scoringGetFile` uses `downloadType` only (`activityData` is not sent).
+
 
 ## Examples
 
@@ -319,6 +325,22 @@ Then you can use any of the SDK methods, for example:
         });
     ```
 
+    Bulk validation uses `https://bulkapi.zerobounce.net/v2`. See [v2 send file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-send-file), [v2 file status](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-file-status), and [v2 get file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-get-file).
+
+    Optional multipart field `allow_phase_2` (validation bulk only): use `ZeroBounceSDK.SendFileOptions` and `setAllowPhase2(Boolean)`:
+
+    ```java
+    ZeroBounceSDK.SendFileOptions opts = new ZeroBounceSDK.SendFileOptions()
+            .setAllowPhase2(true);
+
+    ZeroBounceSDK.getInstance().sendFile(
+        myFile,
+        emailAddressColumn,
+        opts,
+        successCallback,
+        errorCallback);
+    ```
+
 * ##### The *getFile* API allows users to get the validation results file for the file been submitted using *sendFile* API
     ```java
     String fileId = "<FILE_ID>";                    // The returned file ID when calling sendfile API
@@ -339,6 +361,33 @@ Then you can use any of the SDK methods, for example:
             }
         });
     ```
+
+    Optional query parameters (validation `getFile` only for activity data; `scoringGetFile` does not send `activity_data`):
+
+    ```java
+    import com.zerobounce.ZBDownloadType;
+    import com.zerobounce.ZBGetFileOptions;
+
+    ZBGetFileOptions getOpts = new ZBGetFileOptions()
+            .setDownloadType(ZBDownloadType.COMBINED)
+            .setActivityData(true);
+
+    ZeroBounceSDK.getInstance().getFile(
+        fileId,
+        downloadPath,
+        getOpts,
+        successCallback,
+        errorCallback);
+
+    ZeroBounceSDK.getInstance().scoringGetFile(
+        fileId,
+        downloadPath,
+        new ZBGetFileOptions().setDownloadType(ZBDownloadType.PHASE_2),
+        successCallback,
+        errorCallback);
+    ```
+
+    `phase_2` / `combined` downloads apply when phase 2 was enabled for the file and `file_phase_2_status` is `Complete`. JSON error bodies may still use HTTP 200; the SDK surfaces them via the failure callback.
 
 * ##### Check the status of a file uploaded via *sendFile* API
     ```java
@@ -633,6 +682,8 @@ docker compose build java
 docker compose run --rm java
 ```
 
+You can also build from this repository root: `docker build -t zerobounce-java-sdk:test .` (uses `.dockerignore` to exclude `target/`, IDE files, and `local-libs`).
+
 ### Run tests (local)
 From the `zero-bounce-sdk` module directory:
 
@@ -640,6 +691,8 @@ From the `zero-bounce-sdk` module directory:
 cd zero-bounce-sdk
 mvn test
 ```
+
+Or with the Maven wrapper: `./mvnw test`.
 
 ## Documentation
 You can generate the documentation using your desired IDE or using's maven's javadoc command.

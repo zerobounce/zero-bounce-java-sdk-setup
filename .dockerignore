@@ -1,0 +1,36 @@
+.git
+.gitignore
+
+# Maven build output
+**/target/
+
+# IDE & OS
+.idea/
+**/*.iml
+**/.vscode/
+**/.classpath
+**/.project
+**/.settings/
+**/.sts4-cache
+.DS_Store
+Thumbs.db
+
+# Local installs & IDE artifacts (not needed for `mvn test` in zero-bounce-sdk)
+local-libs/
+**/out/
+**/nbproject/private/
+**/nbbuild/
+**/dist/
+**/nbdist/
+
+# Secrets & env
+.env
+.env.*
+
+# Logs & temp
+**/*.log
+downloads/
+
+# Docs not required for the test image
+*.md
+!README.md
