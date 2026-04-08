@@ -71,6 +71,10 @@ We highly recommend you use the latest version available on Maven. However, if y
 1. Be sure to set the *autoReleaseAfterClose* field to *false* in the `pom.xml` file of the **zero-bounce-sdk** if you don't want the artifact to be automatically deployed on Maven Central.
 2. Use the command: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
 
+### Sample app vs. published SDK
+
+The JavaFX sample at the repository root (`pom.xml`, `com.zerobounceexample:zero-bounce-java-sdk-setup-master`) depends on **`com.zerobounce.java:zerobouncesdk` from Maven Central** with a pinned `<version>`, not on the `zero-bounce-sdk` submodule. After you publish a new SDK release, **bump that version** in the root `pom.xml` so the demo matches what users install from Central. Dependabot may open a [pull request](https://github.com/zerobounce/zero-bounce-java-sdk-setup/pulls) for that bump; if not, update the version manually so we do not forget.
+
 
 ## USAGE
 
