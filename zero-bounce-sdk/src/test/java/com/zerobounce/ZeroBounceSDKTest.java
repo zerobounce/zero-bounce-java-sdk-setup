@@ -77,6 +77,7 @@ public class ZeroBounceSDKTest {
                         "smtp_provider":"yahoo",
                         "mx_record":"mx-aol.mail.gm0.yahoodns.net",
                         "mx_found": "true",
+                        "catchall_domain": false,
                         "firstname":"Jill",
                         "lastname":"Stein",
                         "gender":"female",

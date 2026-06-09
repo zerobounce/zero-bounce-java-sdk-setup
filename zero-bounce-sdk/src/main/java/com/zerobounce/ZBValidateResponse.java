@@ -62,6 +62,11 @@ public class ZBValidateResponse {
     @Nullable
     private String smtpProvider = null;
 
+    // [true/false or null] Is the domain name a catch-all (the domain email server responds with valid to any SMTP checks and emailing to an invalid might not bounce)?
+    @SerializedName("catchall_domain")
+    @Nullable
+    private Boolean catchallDomain = null;
+
     // The first name of the owner of the email when available or [null].
     @SerializedName("firstname")
     @Nullable
@@ -189,6 +194,14 @@ public class ZBValidateResponse {
         this.smtpProvider = smtpProvider;
     }
 
+    public @Nullable Boolean getCatchallDomain() {
+        return catchallDomain;
+    }
+
+    public void setCatchallDomain(@Nullable Boolean catchallDomain) {
+        this.catchallDomain = catchallDomain;
+    }
+
     public @Nullable String getFirstName() {
         return firstName;
     }
@@ -277,6 +290,7 @@ public class ZBValidateResponse {
                 && Objects.equals(mxFound, that.mxFound)
                 && Objects.equals(mxRecord, that.mxRecord)
                 && Objects.equals(smtpProvider, that.smtpProvider)
+                && Objects.equals(catchallDomain, that.catchallDomain)
                 && Objects.equals(firstName, that.firstName)
                 && Objects.equals(lastName, that.lastName)
                 && Objects.equals(gender, that.gender)
@@ -291,8 +305,8 @@ public class ZBValidateResponse {
     @Override
     public int hashCode() {
         return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays, freeEmail,
-                mxFound, mxRecord, smtpProvider, firstName, lastName, gender, city, region, zipCode, country,
-                processedAt, error
+                mxFound, mxRecord, smtpProvider, catchallDomain, firstName, lastName, gender, city, region, zipCode,
+                country, processedAt, error
         );
     }
 
@@ -310,6 +324,7 @@ public class ZBValidateResponse {
                 ", mxFound=" + mxFound +
                 ", mxRecord='" + mxRecord + '\'' +
                 ", smtpProvider='" + smtpProvider + '\'' +
+                ", catchallDomain=" + catchallDomain +
                 ", firstName='" + firstName + '\'' +
                 ", lastName='" + lastName + '\'' +
                 ", gender='" + gender + '\'' +
