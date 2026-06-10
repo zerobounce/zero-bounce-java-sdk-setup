@@ -679,9 +679,10 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", ZBConstants.getInstance
 ## Testing
 
 ### Run tests with Docker
-From the **parent repository root** (the folder that contains all SDKs and `docker-compose.yml`):
+From the **`sdk-docs/`** folder in the SDKs monorepo:
 
 ```bash
+cd sdk-docs
 docker compose build java
 docker compose run --rm java
 ```
@@ -750,4 +751,7 @@ You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login
 
 ## Publish
 
-See the [sdk-docs (Maven Central)](../sdk-docs/maven-central/) guide in the SDKs repo for Sonatype setup and publish steps.
+1. Bump `sdk.version` in `zero-bounce-sdk/pom.xml`, commit, tag (`vX.Y.Z`), push tag.
+2. **Actions → Publish → Run workflow** with that tag.
+
+Registry: [com.zerobounce.java:zerobouncesdk on Maven Central](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk)
