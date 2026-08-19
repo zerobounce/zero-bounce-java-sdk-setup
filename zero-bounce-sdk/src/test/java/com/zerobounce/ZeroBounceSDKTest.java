@@ -62,6 +62,18 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void requireHttpsUrl_rejectsHttp() {
+        assertThrows(IllegalArgumentException.class, () -> ZeroBounceSDK.requireHttpsUrl("http://example.com"));
+        assertThrows(IllegalArgumentException.class, () -> ZeroBounceSDK.requireHttpsUrl("file:///etc/passwd"));
+        ZeroBounceSDK.requireHttpsUrl("https://api.zerobounce.net/v2");
+    }
+
+    @Test
+    public void initialize_rejectsNonHttpsBaseUrl() {
+        assertThrows(IllegalArgumentException.class, () -> zeroBounceSDK.initialize(API_KEY, "http://evil.example"));
+    }
+
+    @Test
     public void validateEmail_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """
