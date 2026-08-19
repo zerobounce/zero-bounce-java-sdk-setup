@@ -77,6 +77,8 @@ public class ZeroBounceSDK {
         logPayloads = enabled;
     }
 
+    private static final int DEFAULT_TIMEOUT_MILLIS = 120_000;
+
     String apiBaseUrl = "https://api.zerobounce.net/v2";
     private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
     private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.net/v2/scoring";
@@ -97,13 +99,13 @@ public class ZeroBounceSDK {
     /**
      * Initializes the SDK.
      * <p>
-     * [timeoutInMillis] is set to 0 (no timeout by default)
+     * [timeoutInMillis] is set to 120000 (120 seconds) by default
      *
      * @param apiKey the API key
      */
     public void initialize(String apiKey) {
         this.apiKey = apiKey;
-        timeoutInMillis = 0;
+        timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
     }
 
     /**
@@ -125,8 +127,16 @@ public class ZeroBounceSDK {
      */
     public void initialize(String apiKey, @Nullable String apiBaseUrl) {
         this.apiKey = apiKey;
+        timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
         if (apiBaseUrl != null) {
+            requireHttpsUrl(apiBaseUrl);
             this.apiBaseUrl = apiBaseUrl;
+        }
+    }
+
+    static void requireHttpsUrl(String url) {
+        if (url == null || !url.regionMatches(true, 0, "https://", 0, 8)) {
+            throw new IllegalArgumentException("apiBaseUrl must be an https:// URL");
         }
     }
 
@@ -1181,6 +1191,7 @@ public class ZeroBounceSDK {
             logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
 
             con.setConnectTimeout(timeoutInMillis);
+            con.setReadTimeout(timeoutInMillis);
 
             int status = con.getResponseCode();
             logDebug("ZeroBounceSDK::sendRequest status: " + status);
