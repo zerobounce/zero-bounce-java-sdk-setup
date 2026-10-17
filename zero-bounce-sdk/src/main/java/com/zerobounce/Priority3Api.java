@@ -389,6 +389,31 @@ final class Priority3Api {
         );
     }
 
+    void listS3Files(
+            @Nullable String bucket,
+            @Nullable String search,
+            @NotNull ZeroBounceSDK.OnSuccessCallback<java.util.List<ZBS3ListFileEntry>> successCallback,
+            @NotNull ZeroBounceSDK.OnErrorCallback errorCallback
+    ) {
+        java.util.HashMap<String, String> params = new java.util.HashMap<>();
+        params.put("api_key", sdk.priority3ApiKey());
+        if (bucket != null && !bucket.trim().isEmpty()) {
+            params.put("bucket", bucket);
+        }
+        if (search != null && !search.trim().isEmpty()) {
+            params.put("search", search);
+        }
+        sdk.priority3SendRequest(
+                sdk.priority3BulkApiRootUrl() + "/listS3files",
+                params,
+                null,
+                new TypeToken<java.util.List<ZBS3ListFileEntry>>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
     void validateS3File(
             @NotNull ZeroBounceSDK.ValidateS3FileOptions options,
             @NotNull ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse> successCallback,

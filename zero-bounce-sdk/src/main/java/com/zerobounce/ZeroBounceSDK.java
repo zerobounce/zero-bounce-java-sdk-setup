@@ -199,6 +199,18 @@ public class ZeroBounceSDK {
             }
         }
 
+        if (options != null && options.isUsePost()) {
+            sendFormPostRequest(
+                    apiBaseUrl + "/validate",
+                    params,
+                    new TypeToken<>() {
+                    },
+                    successCallback,
+                    errorCallback
+            );
+            return;
+        }
+
         sendRequest(
                 apiBaseUrl + "/validate",
                 params,
@@ -1383,6 +1395,16 @@ public class ZeroBounceSDK {
     ) {
         if (invalidApiKey(errorCallback)) return;
         priority3Api.deleteFilter(rule, target, value, successCallback, errorCallback);
+    }
+
+    public void listS3Files(
+            @Nullable String bucket,
+            @Nullable String search,
+            @NotNull OnSuccessCallback<java.util.List<ZBS3ListFileEntry>> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.listS3Files(bucket, search, successCallback, errorCallback);
     }
 
     public void validateS3File(

@@ -19,6 +19,8 @@ public class ZBValidateRequestOptions {
     @Nullable
     private Boolean verifyPlus;
 
+    private boolean usePost;
+
     @Nullable
     public String getIpAddress() {
         return ipAddress;
@@ -53,5 +55,13 @@ public class ZBValidateRequestOptions {
 
     public void setVerifyPlus(@Nullable Boolean verifyPlus) {
         this.verifyPlus = verifyPlus;
+    }
+
+    public boolean isUsePost() {
+        return usePost;
+    }
+
+    public void setUsePost(boolean usePost) {
+        this.usePost = usePost;
     }
 }
