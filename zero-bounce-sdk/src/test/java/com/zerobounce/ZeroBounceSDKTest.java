@@ -1266,6 +1266,45 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void listS3Files_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                [
+                  {
+                    "name": "uploads/list.csv",
+                    "size": 100,
+                    "last_modified": "2024-01-01T00:00:00Z"
+                  }
+                ]""";
+
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/listS3files",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("bucket", "my-bucket");
+                        put("search", "list");
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.listS3Files(
+                        "my-bucket",
+                        "list",
+                        response -> {
+                            assertEquals(1, response.size());
+                            assertEquals("uploads/list.csv", response.get(0).getName());
+                            assertEquals(100, response.get(0).getSize());
+                        },
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
     public void getActivityData_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """
