@@ -1299,6 +1299,61 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void scoreEmail_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                {
+                  "email": "mark@gmail.com",
+                  "score": 10
+                }""";
+        ZBScoreEmailResponse expectedResponse = gson.fromJson(responseJson, ZBScoreEmailResponse.class);
+
+        String email = "mark@gmail.com";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/scoring",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.scoreEmail(
+                        email,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
+    public void scoreEmailPost_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                {
+                  "email": "mark@gmail.com",
+                  "score": 10
+                }""";
+        ZBScoreEmailResponse expectedResponse = gson.fromJson(responseJson, ZBScoreEmailResponse.class);
+
+        String email = "mark@gmail.com";
+        mockRequest(
+                "https://api.zerobounce.net/v2/scoring",
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.scoreEmailPost(
+                        email,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
     public void getActivityData_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """

@@ -1156,6 +1156,57 @@ public class ZeroBounceSDK {
     }
 
     /**
+     * Real-time AI scoring for a single email (GET /scoring).
+     */
+    public void scoreEmail(
+            @NotNull String email,
+            @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        sendRequest(
+                apiBaseUrl + "/scoring",
+                new HashMap<>() {
+                    {
+                        put("api_key", apiKey);
+                        put("email", email);
+                    }
+                },
+                null,
+                new TypeToken<>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
+     * Real-time AI scoring for a single email (POST /scoring, form-encoded).
+     */
+    public void scoreEmailPost(
+            @NotNull String email,
+            @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        sendFormPostRequest(
+                apiBaseUrl + "/scoring",
+                new HashMap<>() {
+                    {
+                        put("api_key", apiKey);
+                        put("email", email);
+                    }
+                },
+                new TypeToken<>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
      * Checks if the [apiKey] is invalid or not and if it is, then it throws an error through the provided
      * [errorCallback].
      *
@@ -1278,6 +1329,71 @@ public class ZeroBounceSDK {
             logError("ZeroBounceSDK::sendRequest failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
             errorCallback.onError(errorResponse);
+        }
+    }
+
+    private <T> void sendFormPostRequest(
+            @NotNull String urlPath,
+            @NotNull Map<String, String> formFields,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        try {
+            logDebug("ZeroBounceSDK::sendFormPostRequest preparing request: " + urlPath);
+            URL url = createUrlFrom(urlPath);
+            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+            con.setRequestProperty("Accept", "application/json");
+            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            con.setConnectTimeout(timeoutInMillis);
+            con.setReadTimeout(timeoutInMillis);
+            con.setRequestMethod("POST");
+            con.setDoOutput(true);
+
+            StringBuilder formBody = new StringBuilder();
+            for (Map.Entry<String, String> entry : formFields.entrySet()) {
+                if (formBody.length() > 0) {
+                    formBody.append('&');
+                }
+                formBody.append(java.net.URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+                formBody.append('=');
+                formBody.append(java.net.URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+            }
+            byte[] out = formBody.toString().getBytes(StandardCharsets.UTF_8);
+            con.setFixedLengthStreamingMode(out.length);
+            con.connect();
+            try (OutputStream os = con.getOutputStream()) {
+                os.write(out);
+            }
+
+            int status = con.getResponseCode();
+            Reader streamReader;
+            if (status > 299) {
+                streamReader = new InputStreamReader(con.getErrorStream());
+            } else {
+                streamReader = new InputStreamReader(con.getInputStream());
+            }
+
+            StringBuilder content = new StringBuilder();
+            try (BufferedReader in = new BufferedReader(streamReader)) {
+                String inputLine;
+                while ((inputLine = in.readLine()) != null) {
+                    content.append(inputLine);
+                }
+            }
+            con.disconnect();
+            String rsp = content.toString();
+            logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
+
+            if (status > 299) {
+                errorCallback.onError(ErrorResponse.parseError(rsp));
+            } else {
+                T response = gson.fromJson(rsp, typeToken.getType());
+                successCallback.onSuccess(response);
+            }
+        } catch (Exception e) {
+            logError("ZeroBounceSDK::sendFormPostRequest failed", e);
+            errorCallback.onError(ErrorResponse.parseError(redactSecrets(e.getMessage())));
         }
     }
 
