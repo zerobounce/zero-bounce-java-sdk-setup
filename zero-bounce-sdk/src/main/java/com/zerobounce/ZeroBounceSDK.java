@@ -140,6 +140,13 @@ public class ZeroBounceSDK {
         }
     }
 
+    private String redactSecrets(@Nullable String message) {
+        if (message == null || apiKey == null || apiKey.isEmpty()) {
+            return message;
+        }
+        return message.replace(apiKey, "***");
+    }
+
     /**
      * Validates the given [email].
      *
@@ -639,7 +646,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
             errorCallback.onError(errorResponse);
         }
     }
@@ -753,7 +760,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
             errorCallback.onError(errorResponse);
         }
     }
@@ -1006,7 +1013,7 @@ public class ZeroBounceSDK {
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
-            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            errorCallback.onError(ErrorResponse.parseError(redactSecrets(e.getMessage())));
         }
     }
 
@@ -1224,7 +1231,7 @@ public class ZeroBounceSDK {
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequest failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
             errorCallback.onError(errorResponse);
         }
     }
