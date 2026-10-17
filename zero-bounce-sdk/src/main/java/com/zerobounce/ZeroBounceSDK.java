@@ -82,6 +82,11 @@ public class ZeroBounceSDK {
     String apiBaseUrl = "https://api.zerobounce.net/v2";
     private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
     private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.net/v2/scoring";
+    private final String bulkApiRootUrl = "https://bulkapi.zerobounce.net";
+    private final String emailFinderBulkBaseUrl = bulkApiRootUrl + "/email-finder";
+    private final String domainSearchBulkBaseUrl = bulkApiRootUrl + "/domain-search";
+
+    private final Priority3Api priority3Api = new Priority3Api(this);
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
@@ -1206,6 +1211,208 @@ public class ZeroBounceSDK {
         );
     }
 
+    // Priority 3 — bulk email finder, domain search, list evaluator, filters, S3
+
+    public void sendEmailFinderFile(
+            @NotNull File file,
+            int domainColumn,
+            @Nullable EmailFinderSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEmailFinderFile(file, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void sendEmailFinderFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int domainColumn,
+            @Nullable EmailFinderSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEmailFinderFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void emailFinderFileStatus(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootFileStatus(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void emailFinderGetFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootGetFile(emailFinderBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
+    }
+
+    public void emailFinderDeleteFile(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBDeleteFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootDeleteFile(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void sendDomainSearchFile(
+            @NotNull File file,
+            int domainColumn,
+            @Nullable DomainSearchSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendDomainSearchFile(file, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void sendDomainSearchFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int domainColumn,
+            @Nullable DomainSearchSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendDomainSearchFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void domainSearchFileStatus(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootFileStatus(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void domainSearchGetFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootGetFile(domainSearchBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
+    }
+
+    public void domainSearchDeleteFile(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBDeleteFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootDeleteFile(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void sendListEvaluatorFile(
+            @NotNull File file,
+            int emailAddressColumn,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendListEvaluatorFile(file, emailAddressColumn, successCallback, errorCallback);
+    }
+
+    public void sendListEvaluatorFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int emailAddressColumn,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendListEvaluatorFileStream(inputStream, fileName, emailAddressColumn, successCallback, errorCallback);
+    }
+
+    public void getListEvaluatorResult(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.getListEvaluatorResult(fileId, successCallback, errorCallback);
+    }
+
+    public void sendEvaluatedFile(
+            @NotNull File file,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEvaluatedFile(file, successCallback, errorCallback);
+    }
+
+    public void addFilter(
+            @NotNull String rule,
+            @NotNull String target,
+            @NotNull String value,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.addFilter(rule, target, value, successCallback, errorCallback);
+    }
+
+    public void listFilters(
+            boolean usePost,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.listFilters(usePost, successCallback, errorCallback);
+    }
+
+    public void deleteFilter(
+            @NotNull String rule,
+            @NotNull String target,
+            @NotNull String value,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.deleteFilter(rule, target, value, successCallback, errorCallback);
+    }
+
+    public void validateS3File(
+            @NotNull ValidateS3FileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.validateS3File(options, successCallback, errorCallback);
+    }
+
+    public void scoreS3File(
+            @NotNull ScoreS3FileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.scoreS3File(options, successCallback, errorCallback);
+    }
+
+    public void exportS3File(
+            @NotNull String fileId,
+            @NotNull String exportBucket,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.exportS3File(fileId, exportBucket, successCallback, errorCallback);
+    }
+
     /**
      * Checks if the [apiKey] is invalid or not and if it is, then it throws an error through the provided
      * [errorCallback].
@@ -1518,5 +1725,202 @@ public class ZeroBounceSDK {
             this.removeDuplicate = removeDuplicate;
             return this;
         }
+    }
+
+    public static class EmailFinderSendFileOptions {
+        int firstNameColumn;
+        int lastNameColumn;
+        int middleNameColumn;
+        int fullNameColumn;
+        @Nullable Boolean hasHeaderRow;
+
+        public EmailFinderSendFileOptions setFirstNameColumn(int firstNameColumn) {
+            this.firstNameColumn = firstNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setLastNameColumn(int lastNameColumn) {
+            this.lastNameColumn = lastNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setMiddleNameColumn(int middleNameColumn) {
+            this.middleNameColumn = middleNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setFullNameColumn(int fullNameColumn) {
+            this.fullNameColumn = fullNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+    }
+
+    public static class DomainSearchSendFileOptions {
+        @Nullable Boolean hasHeaderRow;
+
+        public DomainSearchSendFileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+    }
+
+    public static class ValidateS3FileOptions {
+        @NotNull String fileName = "";
+        @Nullable Boolean hasHeaderRow;
+        @Nullable Boolean removeDuplicates;
+        @Nullable Boolean removeDuplicate;
+        @Nullable Integer emailAddressColumn;
+        @Nullable String returnUrl;
+        int firstNameColumn;
+        int lastNameColumn;
+        int genderColumn;
+        int ipAddressColumn;
+        @Nullable Boolean allowPhase2;
+
+        public ValidateS3FileOptions setFileName(@NotNull String fileName) {
+            this.fileName = fileName;
+            return this;
+        }
+
+        public ValidateS3FileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+
+        public ValidateS3FileOptions setRemoveDuplicates(@Nullable Boolean removeDuplicates) {
+            this.removeDuplicates = removeDuplicates;
+            return this;
+        }
+
+        public ValidateS3FileOptions setRemoveDuplicate(@Nullable Boolean removeDuplicate) {
+            this.removeDuplicate = removeDuplicate;
+            return this;
+        }
+
+        public ValidateS3FileOptions setEmailAddressColumn(@Nullable Integer emailAddressColumn) {
+            this.emailAddressColumn = emailAddressColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setReturnUrl(@Nullable String returnUrl) {
+            this.returnUrl = returnUrl;
+            return this;
+        }
+
+        public ValidateS3FileOptions setFirstNameColumn(int firstNameColumn) {
+            this.firstNameColumn = firstNameColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setLastNameColumn(int lastNameColumn) {
+            this.lastNameColumn = lastNameColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setGenderColumn(int genderColumn) {
+            this.genderColumn = genderColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setIpAddressColumn(int ipAddressColumn) {
+            this.ipAddressColumn = ipAddressColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setAllowPhase2(@Nullable Boolean allowPhase2) {
+            this.allowPhase2 = allowPhase2;
+            return this;
+        }
+    }
+
+    public static class ScoreS3FileOptions {
+        @NotNull String fileName = "";
+        @Nullable Boolean hasHeaderRow;
+        @Nullable Boolean removeDuplicates;
+        @Nullable Boolean removeDuplicate;
+        @Nullable Integer emailAddressColumn;
+
+        public ScoreS3FileOptions setFileName(@NotNull String fileName) {
+            this.fileName = fileName;
+            return this;
+        }
+
+        public ScoreS3FileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+
+        public ScoreS3FileOptions setRemoveDuplicates(@Nullable Boolean removeDuplicates) {
+            this.removeDuplicates = removeDuplicates;
+            return this;
+        }
+
+        public ScoreS3FileOptions setRemoveDuplicate(@Nullable Boolean removeDuplicate) {
+            this.removeDuplicate = removeDuplicate;
+            return this;
+        }
+
+        public ScoreS3FileOptions setEmailAddressColumn(@Nullable Integer emailAddressColumn) {
+            this.emailAddressColumn = emailAddressColumn;
+            return this;
+        }
+    }
+
+    String priority3ApiKey() {
+        return apiKey;
+    }
+
+    String priority3ApiBaseUrl() {
+        return apiBaseUrl;
+    }
+
+    String priority3BulkApiBaseUrl() {
+        return bulkApiBaseUrl;
+    }
+
+    String priority3BulkApiRootUrl() {
+        return bulkApiRootUrl;
+    }
+
+    String priority3EmailFinderBaseUrl() {
+        return emailFinderBulkBaseUrl;
+    }
+
+    String priority3DomainSearchBaseUrl() {
+        return domainSearchBulkBaseUrl;
+    }
+
+    int priority3TimeoutMillis() {
+        return timeoutInMillis;
+    }
+
+    Gson priority3Gson() {
+        return gson;
+    }
+
+    <T> void priority3SendRequest(
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, Object> body,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        sendRequest(urlPath, queryParameters, body, typeToken, successCallback, errorCallback);
+    }
+
+    <T> void priority3SendFormPost(
+            @NotNull String urlPath,
+            @NotNull Map<String, String> formFields,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        sendFormPostRequest(urlPath, formFields, typeToken, successCallback, errorCallback);
     }
 }
