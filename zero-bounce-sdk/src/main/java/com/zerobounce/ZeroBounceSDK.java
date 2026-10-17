@@ -1167,6 +1167,9 @@ public class ZeroBounceSDK {
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestProperty("Accept", "application/json");
 //            con.setRequestProperty("Content-Type", "application/json");
+            // Timeouts must be set before connect(); the POST branch connects explicitly below.
+            con.setConnectTimeout(timeoutInMillis);
+            con.setReadTimeout(timeoutInMillis);
 
             String httpMethod;
             if (body == null) {
@@ -1189,9 +1192,6 @@ public class ZeroBounceSDK {
             }
 
             logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
-
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
 
             int status = con.getResponseCode();
             logDebug("ZeroBounceSDK::sendRequest status: " + status);

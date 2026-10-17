@@ -13,14 +13,27 @@ permissions:
 
 jobs:
   validate-tag:
+    outputs:
+      tag_sha: ${{ steps.tag_sha.outputs.sha }}
     name: Validate tag
     runs-on: ubuntu-latest
     steps:
+      - name: Validate tag input
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          re='^v?[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.-]+)?$'
+          if [[ ! "$TAG" =~ $re ]]; then
+            echo "Error: the tag input must be a release tag such as v1.2.3."
+            exit 1
+          fi
+
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
+          ref: refs/tags/${{ github.event.inputs.tag }}
+          persist-credentials: false
       - name: Verify tag exists
         run: |
           TAG="${{ github.event.inputs.tag }}"
@@ -28,11 +41,18 @@ jobs:
             echo "Error: Tag is required."
             exit 1
           fi
-          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             echo "Error: Tag '$TAG' does not exist."
             exit 1
           fi
-          echo "Publishing tag: $TAG"
+          
+      - name: Record tag commit SHA
+        id: tag_sha
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          SHA=$(git rev-parse "refs/tags/$TAG^{commit}")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   publish:
     name: Test, release build and publish
@@ -41,12 +61,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.inputs.tag }}
-
+          ref: ${{ needs.validate-tag.outputs.tag_sha }}
+          persist-credentials: false
       - name: Set up Maven Central Repository
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: 21
           distribution: 'temurin'
@@ -65,20 +85,21 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [publish]
+    needs: [validate-tag, publish]
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.inputs.tag }}
+          ref: ${{ needs.validate-tag.outputs.tag_sha }}
           fetch-depth: 0
 
+          persist-credentials: false
       - name: Create Release
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3.0.2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: ${{ github.event.inputs.tag }}
