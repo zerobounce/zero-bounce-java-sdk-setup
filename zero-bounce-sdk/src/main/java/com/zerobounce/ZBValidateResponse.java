@@ -42,6 +42,14 @@ public class ZBValidateResponse {
     @Nullable
     private String domainAgeDays = null;
 
+    @SerializedName("active_in_days")
+    @Nullable
+    private String activeInDays = null;
+
+    @SerializedName("active_first_seen")
+    @Nullable
+    private String activeFirstSeen = null;
+
     //@Nullable [true/false] If the email comes from a free provider.
     @SerializedName("free_email")
     @Nullable
@@ -160,6 +168,22 @@ public class ZBValidateResponse {
 
     public void setDomainAgeDays(@Nullable String domainAgeDays) {
         this.domainAgeDays = domainAgeDays;
+    }
+
+    public @Nullable String getActiveInDays() {
+        return activeInDays;
+    }
+
+    public void setActiveInDays(@Nullable String activeInDays) {
+        this.activeInDays = activeInDays;
+    }
+
+    public @Nullable String getActiveFirstSeen() {
+        return activeFirstSeen;
+    }
+
+    public void setActiveFirstSeen(@Nullable String activeFirstSeen) {
+        this.activeFirstSeen = activeFirstSeen;
     }
 
     public @Nullable Boolean getFreeEmail() {

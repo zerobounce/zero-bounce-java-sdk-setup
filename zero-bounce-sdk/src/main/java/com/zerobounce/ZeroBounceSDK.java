@@ -161,17 +161,42 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        ZBValidateRequestOptions options = new ZBValidateRequestOptions();
+        options.setIpAddress(ipAddress);
+        validateWithOptions(email, options, successCallback, errorCallback);
+    }
+
+    /**
+     * Validates the given email with optional v2 query parameters.
+     */
+    public void validateWithOptions(
+            @NotNull String email,
+            @Nullable ZBValidateRequestOptions options,
+            @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
         if (invalidApiKey(errorCallback)) return;
+
+        HashMap<String, String> params = new HashMap<>();
+        params.put("api_key", apiKey);
+        params.put("email", email);
+        String ip = options != null && options.getIpAddress() != null ? options.getIpAddress() : "";
+        params.put("ip_address", ip);
+        if (options != null) {
+            if (options.getTimeout() != null) {
+                params.put("timeout", String.valueOf(options.getTimeout()));
+            }
+            if (options.getActivityData() != null) {
+                params.put("activity_data", options.getActivityData() ? "true" : "false");
+            }
+            if (options.getVerifyPlus() != null) {
+                params.put("verify_plus", options.getVerifyPlus() ? "true" : "false");
+            }
+        }
 
         sendRequest(
                 apiBaseUrl + "/validate",
-                new HashMap<>() {
-                    {
-                        put("api_key", apiKey);
-                        put("email", email);
-                        put("ip_address", ipAddress != null ? ipAddress : "");
-                    }
-                },
+                params,
                 null,
                 new TypeToken<>() {
                 },
@@ -192,11 +217,31 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        validateBatchWithOptions(emails, null, successCallback, errorCallback);
+    }
+
+    public void validateBatchWithOptions(
+            @NotNull List<ZBValidateBatchData> emails,
+            @Nullable ZBValidateBatchOptions options,
+            @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
         if (invalidApiKey(errorCallback)) return;
 
         Map<String, Object> body = new HashMap<>();
         body.put("api_key", apiKey);
         body.put("email_batch", emails);
+        if (options != null) {
+            if (options.getTimeout() != null) {
+                body.put("timeout", options.getTimeout());
+            }
+            if (options.getActivityData() != null) {
+                body.put("activity_data", options.getActivityData());
+            }
+            if (options.getVerifyPlus() != null) {
+                body.put("verify_plus", options.getVerifyPlus());
+            }
+        }
 
         sendRequest(
                 apiBaseUrl + "/validatebatch",
