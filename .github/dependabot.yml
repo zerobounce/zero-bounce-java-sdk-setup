@@ -1,50 +1,57 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#versioning-strategy
+# Dependabot: security updates only (no version-update PRs).
+# Grouped security PRs open weekly on Tuesday morning (Europe/Bucharest).
+# Auto-merge: .github/workflows/dependabot-auto-merge.yml (on PR + Tuesday cron).
+# https://docs.github.com/en/code-security/dependabot/dependabot-security-updates
 
 version: 2
 updates:
-  # Keep the Java dependencies up to date
-  - package-ecosystem: "maven" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "maven"
+    directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    target-branch: "master"
+      interval: weekly
+      day: tuesday
+      time: "06:00"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 0
     labels:
+      - "dependabot-security"
       - "java dependencies"
     groups:
-      java:
-        applies-to: version-updates
+      maven-security:
+        applies-to: security-updates
         patterns:
-          - "*"       # A wildcard that matches all dependencies in the package
-  
-  # Keep the Java dependencies up to date
-  - package-ecosystem: "maven" # See documentation for possible values
-    directory: "/zero-bounce-sdk/" # Location of package manifests
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    target-branch: "master"
-    labels:
-      - "java dependencies"
-    groups:
-      java:
-        applies-to: version-updates
-        patterns:
-          - "*"       # A wildcard that matches all dependencies in the package
+          - "*"
 
-  # Keep the Github Actions dependencies up to date
-  - package-ecosystem: "github-actions" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "maven"
+    directory: "/zero-bounce-sdk/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    target-branch: "master"
+      interval: weekly
+      day: tuesday
+      time: "06:00"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 0
     labels:
+      - "dependabot-security"
+      - "java dependencies"
+    groups:
+      maven-sdk-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: "06:00"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 0
+    labels:
+      - "dependabot-security"
       - "github dependencies"
     groups:
-      github:
-        applies-to: version-updates
+      github-actions-security:
+        applies-to: security-updates
         patterns:
-          - "*"       # A wildcard that matches all dependencies in the package
+          - "*"

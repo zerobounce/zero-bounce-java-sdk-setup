@@ -10,4 +10,7 @@ WORKDIR /app/zero-bounce-sdk
 RUN mvn -q test
 
 # Default: run tests (re-run in case of docker run without build)
+
+USER 65532:65532
+
 CMD ["mvn", "-q", "test"]
