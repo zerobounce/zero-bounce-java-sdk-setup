@@ -1404,7 +1404,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
-        priority3Api.listS3Files(bucket, search, successCallback, errorCallback);
+        new Priority3Api(this).listS3Files(bucket, search, successCallback, errorCallback);
     }
 
     public void validateS3File(
