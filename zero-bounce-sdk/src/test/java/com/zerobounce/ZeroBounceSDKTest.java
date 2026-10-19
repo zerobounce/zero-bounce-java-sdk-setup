@@ -262,7 +262,9 @@ public class ZeroBounceSDKTest {
                           }
                       ]
                     }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(
+                "Invalid API Key or your account ran out of credits"
+        );
 
         List<ZBValidateBatchData> emailsData = new ArrayList<>();
         emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));

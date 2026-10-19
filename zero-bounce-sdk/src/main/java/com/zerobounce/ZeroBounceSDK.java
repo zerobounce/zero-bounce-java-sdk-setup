@@ -93,7 +93,17 @@ public class ZeroBounceSDK {
     private int timeoutInMillis;
     private final Gson gson;
 
-    private ZeroBounceSDK() {
+    /**
+     * When non-null, every HTTP call is answered by this transport instead of the network.
+     * Tests set it. Production leaves it null.
+     */
+    SdkHttp.Transport transport;
+
+    /**
+     * A client that holds one API key. Prefer this over {@link #getInstance()} when more than one
+     * key is in use: the singleton shares a single mutable key across the process.
+     */
+    public ZeroBounceSDK() {
         GsonBuilder gsonBuilder = new GsonBuilder();
         gsonBuilder.setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES);
         gsonBuilder.registerTypeAdapter(ZBSendFileResponse.class, new ZBSendFileResponse.Deserializer());
@@ -152,6 +162,47 @@ public class ZeroBounceSDK {
         return message.replace(apiKey, "***");
     }
 
+    org.apache.http.client.config.RequestConfig apacheRequestConfig() {
+        return org.apache.http.client.config.RequestConfig.custom()
+                .setRedirectsEnabled(false)
+                .setConnectTimeout(timeoutInMillis)
+                .setConnectionRequestTimeout(timeoutInMillis)
+                .setSocketTimeout(timeoutInMillis)
+                .build();
+    }
+
+    String redactedFailure(@NotNull Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Request failed.";
+        }
+        String redacted = redactSecrets(message);
+        if (redacted == null || redacted.isBlank()) {
+            return "Request failed.";
+        }
+        if (HttpMessages.looksLikeHtml(redacted, null)) {
+            return HttpMessages.jsonCallFailure(0, redacted, null);
+        }
+        if (redacted.length() > 1000) {
+            return "Request failed.";
+        }
+        String stripped = HttpMessages.stripPrefix(redacted);
+        return stripped.isEmpty() ? "Request failed." : stripped;
+    }
+
+    boolean reportHttpFailure(int status, @Nullable String body, @NotNull OnErrorCallback errorCallback) {
+        String text = body == null ? "" : body;
+        if (HttpMessages.looksLikeHtml(text, null) || text.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError(HttpMessages.jsonCallFailure(status, text, null)));
+            return true;
+        }
+        if (status > 299) {
+            errorCallback.onError(ErrorResponse.parseError(text));
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Validates the given [email].
      *
@@ -181,6 +232,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
 
         HashMap<String, String> params = new HashMap<>();
         params.put("api_key", apiKey);
@@ -338,7 +393,7 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         // Validate that at least one of companyName or domain is provided.
-        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+        if (isBlank(companyName) && isBlank(domain)) {
             errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
             return;
         }
@@ -349,16 +404,16 @@ public class ZeroBounceSDK {
                     {
                         put("api_key", apiKey);
                         put("first_name", firstName);
-                        if (domain != null) {
+                        if (!isBlank(domain)) {
                             put("domain", domain);
                         }
-                        if (companyName != null) {
+                        if (!isBlank(companyName)) {
                             put("company_name", companyName);
                         }
-                        if (middleName != null) {
+                        if (!isBlank(middleName)) {
                             put("middle_name", middleName);
                         }
-                        if (lastName != null) {
+                        if (!isBlank(lastName)) {
                             put("last_name", lastName);
                         }
                     }
@@ -390,7 +445,7 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         // Validate that at least one of companyName or domain is provided.
-        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+        if (isBlank(companyName) && isBlank(domain)) {
             errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
             return;
         }
@@ -400,10 +455,10 @@ public class ZeroBounceSDK {
                 new HashMap<>() {
                     {
                         put("api_key", apiKey);
-                        if (domain != null) {
+                        if (!isBlank(domain)) {
                             put("domain", domain);
                         }
-                        if (companyName != null) {
+                        if (!isBlank(companyName)) {
                             put("company_name", companyName);
                         }
                     }
@@ -615,8 +670,15 @@ public class ZeroBounceSDK {
             throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
         }
 
+        if (transport != null) {
+            Map<String, String> fields = sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName());
+            deliverSendFileTransport(urlPath, fields, successCallback, errorCallback);
+            return;
+        }
+
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
+            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
 
             builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
@@ -695,9 +757,8 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
-            if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
+            if (reportHttpFailure(status, rsp, errorCallback)) {
+                return;
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -708,7 +769,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
         }
     }
@@ -729,8 +790,15 @@ public class ZeroBounceSDK {
             throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
         }
 
+        if (transport != null) {
+            Map<String, String> fields = sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName);
+            deliverSendFileTransport(urlPath, fields, successCallback, errorCallback);
+            return;
+        }
+
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
+            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
 
             builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
@@ -809,9 +877,8 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
-            if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
+            if (reportHttpFailure(status, rsp, errorCallback)) {
+                return;
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -822,7 +889,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
         }
     }
@@ -872,6 +939,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(fileId)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus",
@@ -1031,51 +1102,26 @@ public class ZeroBounceSDK {
                 parent.mkdirs();
             }
             URI uri = buildGetFileUri(scoring, fileId, options);
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp("GET", uri.toString(), null, null, null));
+                deliverGetFile(file, downloadPath, result.status, result.contentType, result.body, successCallback, errorCallback);
+                return;
+            }
             try (CloseableHttpClient client = HttpClients.createDefault()) {
                 HttpGet downloadFile = new HttpGet(uri);
+                downloadFile.setConfig(apacheRequestConfig());
                 try (CloseableHttpResponse response = client.execute(downloadFile)) {
                     int statusCode = response.getStatusLine().getStatusCode();
                     HttpEntity entity = response.getEntity();
                     Header ctHeader = response.getFirstHeader("Content-Type");
                     String contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
-                    String mime = contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
-
                     byte[] bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
-
-                    if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
-                        String json = new String(bodyBytes, StandardCharsets.UTF_8);
-                        try {
-                            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                            if (getFileJsonIndicatesFailure(obj)) {
-                                errorCallback.onError(ErrorResponse.parseError(json));
-                                return;
-                            }
-                            if (obj.has("success")) {
-                                errorCallback.onError(ErrorResponse.parseError(json));
-                                return;
-                            }
-                        } catch (Exception parseEx) {
-                            errorCallback.onError(ErrorResponse.parseError(json));
-                            return;
-                        }
-                    }
-
-                    if (statusCode > 299) {
-                        errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8)));
-                        return;
-                    }
-
-                    try (FileOutputStream outStream = new FileOutputStream(file)) {
-                        outStream.write(bodyBytes);
-                    }
-                    ZBGetFileResponse rsp = new ZBGetFileResponse();
-                    rsp.setLocalFilePath(downloadPath);
-                    successCallback.onSuccess(rsp);
+                    deliverGetFile(file, downloadPath, statusCode, contentTypeRaw, bodyBytes, successCallback, errorCallback);
                 }
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
-            errorCallback.onError(ErrorResponse.parseError(redactSecrets(e.getMessage())));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
         }
     }
 
@@ -1181,6 +1227,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
 
         sendRequest(
                 apiBaseUrl + "/scoring",
@@ -1207,6 +1257,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
 
         sendFormPostRequest(
                 apiBaseUrl + "/scoring",
@@ -1443,7 +1497,7 @@ public class ZeroBounceSDK {
      * @return **true** if the [apiKey] is null or **false** otherwise
      */
     private boolean invalidApiKey(@NotNull OnErrorCallback errorCallback) {
-        if (apiKey == null) {
+        if (apiKey == null || apiKey.isBlank()) {
             ErrorResponse errorResponse = ErrorResponse.parseError(
                     "ZeroBounce SDK is not initialized. Please call ZeroBounceSDK.initialize(apiKey) first"
             );
@@ -1451,6 +1505,10 @@ public class ZeroBounceSDK {
             return true;
         }
         return false;
+    }
+
+    private static boolean isBlank(@Nullable String value) {
+        return value == null || value.isBlank();
     }
 
     /**
@@ -1495,68 +1553,68 @@ public class ZeroBounceSDK {
                 }
             }
 
-            URL url = createUrlFrom(ub.toString());
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestProperty("Accept", "application/json");
-//            con.setRequestProperty("Content-Type", "application/json");
-            // Timeouts must be set before connect(); the POST branch connects explicitly below.
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
-
-            String httpMethod;
-            if (body == null) {
-                httpMethod = "GET";
-                con.setRequestMethod("GET");
+            String httpMethod = body == null ? "GET" : "POST";
+            byte[] payload = body == null ? null : gson.toJson(body).getBytes(StandardCharsets.UTF_8);
+            String urlString = ub.toString();
+            int status;
+            String rsp;
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp(
+                        httpMethod,
+                        urlString,
+                        payload == null ? null : "application/json; charset=UTF-8",
+                        payload,
+                        null
+                ));
+                status = result.status;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                httpMethod = "POST";
-                con.setRequestMethod("POST");
-                con.setDoOutput(true);
+                URL url = createUrlFrom(urlString);
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestProperty("Accept", "application/json");
+                // Timeouts must be set before connect(); the POST branch connects explicitly below.
+                con.setConnectTimeout(timeoutInMillis);
+                con.setReadTimeout(timeoutInMillis);
 
-                // Attach the body to the request
-                byte[] out = gson.toJson(body).getBytes(StandardCharsets.UTF_8);
-                int length = out.length;
-
-                con.setFixedLengthStreamingMode(length);
-                con.connect();
-                try (OutputStream os = con.getOutputStream()) {
-                    os.write(out);
+                if (body == null) {
+                    con.setRequestMethod("GET");
+                } else {
+                    con.setRequestMethod("POST");
+                    con.setDoOutput(true);
+                    con.setFixedLengthStreamingMode(payload.length);
+                    con.connect();
+                    try (OutputStream os = con.getOutputStream()) {
+                        os.write(payload);
+                    }
                 }
-            }
 
-            logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
-
-            int status = con.getResponseCode();
-            logDebug("ZeroBounceSDK::sendRequest status: " + status);
-            Reader streamReader;
-            if (status > 299) {
-                streamReader = new InputStreamReader(con.getErrorStream());
-            } else {
-                streamReader = new InputStreamReader(con.getInputStream());
-            }
-
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(streamReader)) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
+                logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
+                status = con.getResponseCode();
+                logDebug("ZeroBounceSDK::sendRequest status: " + status);
+                Reader streamReader;
+                if (status > 299) {
+                    streamReader = new InputStreamReader(con.getErrorStream());
+                } else {
+                    streamReader = new InputStreamReader(con.getInputStream());
                 }
-            }
 
-            con.disconnect();
-            String rsp = content.toString();
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        content.append(inputLine);
+                    }
+                }
+                con.disconnect();
+                rsp = content.toString();
+            }
 
             logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
-
-            if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
-            } else {
-                T response = gson.fromJson(rsp, typeToken.getType());
-                successCallback.onSuccess(response);
-            }
+            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequest failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(redactSecrets(e.getMessage()));
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
         }
     }
@@ -1570,15 +1628,6 @@ public class ZeroBounceSDK {
     ) {
         try {
             logDebug("ZeroBounceSDK::sendFormPostRequest preparing request: " + urlPath);
-            URL url = createUrlFrom(urlPath);
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestProperty("Accept", "application/json");
-            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
-            con.setRequestMethod("POST");
-            con.setDoOutput(true);
-
             StringBuilder formBody = new StringBuilder();
             for (Map.Entry<String, String> entry : formFields.entrySet()) {
                 if (formBody.length() > 0) {
@@ -1589,40 +1638,57 @@ public class ZeroBounceSDK {
                 formBody.append(java.net.URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
             }
             byte[] out = formBody.toString().getBytes(StandardCharsets.UTF_8);
-            con.setFixedLengthStreamingMode(out.length);
-            con.connect();
-            try (OutputStream os = con.getOutputStream()) {
-                os.write(out);
-            }
-
-            int status = con.getResponseCode();
-            Reader streamReader;
-            if (status > 299) {
-                streamReader = new InputStreamReader(con.getErrorStream());
+            int status;
+            String rsp;
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp(
+                        "POST",
+                        urlPath,
+                        "application/x-www-form-urlencoded",
+                        out,
+                        null
+                ));
+                status = result.status;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                streamReader = new InputStreamReader(con.getInputStream());
-            }
-
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(streamReader)) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
+                URL url = createUrlFrom(urlPath);
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestProperty("Accept", "application/json");
+                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                con.setConnectTimeout(timeoutInMillis);
+                con.setReadTimeout(timeoutInMillis);
+                con.setRequestMethod("POST");
+                con.setDoOutput(true);
+                con.setFixedLengthStreamingMode(out.length);
+                con.connect();
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(out);
                 }
-            }
-            con.disconnect();
-            String rsp = content.toString();
-            logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
 
-            if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp));
-            } else {
-                T response = gson.fromJson(rsp, typeToken.getType());
-                successCallback.onSuccess(response);
+                status = con.getResponseCode();
+                Reader streamReader;
+                if (status > 299) {
+                    streamReader = new InputStreamReader(con.getErrorStream());
+                } else {
+                    streamReader = new InputStreamReader(con.getInputStream());
+                }
+
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        content.append(inputLine);
+                    }
+                }
+                con.disconnect();
+                rsp = content.toString();
             }
+            logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
+            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFormPostRequest failed", e);
-            errorCallback.onError(ErrorResponse.parseError(redactSecrets(e.getMessage())));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
         }
     }
 
@@ -1634,6 +1700,142 @@ public class ZeroBounceSDK {
      */
     URL createUrlFrom(String url) throws MalformedURLException {
         return URI.create(url).toURL();
+    }
+
+    private <T> void deliverJson(
+            int status,
+            String rsp,
+            TypeToken<T> typeToken,
+            OnSuccessCallback<T> successCallback,
+            OnErrorCallback errorCallback
+    ) {
+        String accountError = HttpMessages.batchAccountError(rsp);
+        if (accountError != null) {
+            errorCallback.onError(ErrorResponse.parseError(accountError));
+            return;
+        }
+        String failure = HttpMessages.jsonCallFailure(status, rsp, null);
+        if (failure == null) {
+            failure = HttpMessages.successPayloadError(rsp);
+        }
+        if (failure != null) {
+            String body = rsp == null ? "" : rsp;
+            if (HttpMessages.preferShortMessage(body)) {
+                errorCallback.onError(ErrorResponse.parseError(failure));
+            } else {
+                errorCallback.onError(ErrorResponse.parseError(body));
+            }
+            return;
+        }
+        T response = gson.fromJson(rsp, typeToken.getType());
+        successCallback.onSuccess(response);
+    }
+
+    private void deliverGetFile(
+            File file,
+            String downloadPath,
+            int statusCode,
+            String contentTypeRaw,
+            byte[] bodyBytes,
+            OnSuccessCallback<ZBGetFileResponse> successCallback,
+            OnErrorCallback errorCallback
+    ) throws IOException {
+        String downloadError = HttpMessages.downloadFailure(statusCode, bodyBytes, contentTypeRaw);
+        if (downloadError != null) {
+            String text = new String(bodyBytes, StandardCharsets.UTF_8);
+            if (HttpMessages.preferShortMessage(text)) {
+                errorCallback.onError(ErrorResponse.parseError(downloadError));
+            } else {
+                errorCallback.onError(ErrorResponse.parseError(text));
+            }
+            return;
+        }
+        String mime = contentTypeRaw == null ? "" : contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
+            String json = new String(bodyBytes, StandardCharsets.UTF_8);
+            try {
+                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                if (getFileJsonIndicatesFailure(obj)) {
+                    errorCallback.onError(ErrorResponse.parseError(json));
+                    return;
+                }
+                if (obj.has("success")) {
+                    errorCallback.onError(ErrorResponse.parseError(json));
+                    return;
+                }
+            } catch (Exception parseEx) {
+                errorCallback.onError(ErrorResponse.parseError(json));
+                return;
+            }
+        }
+
+        if (statusCode > 299) {
+            errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8)));
+            return;
+        }
+
+        try (FileOutputStream outStream = new FileOutputStream(file)) {
+            outStream.write(bodyBytes);
+        }
+        ZBGetFileResponse rsp = new ZBGetFileResponse();
+        rsp.setLocalFilePath(downloadPath);
+        successCallback.onSuccess(rsp);
+    }
+
+    private Map<String, String> sendFileMultipartFields(
+            boolean scoring,
+            int emailAddressColumnIndex,
+            @Nullable SendFileOptions options,
+            @NotNull String fileName
+    ) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("api_key", apiKey == null ? "" : apiKey);
+        fields.put("email_address_column", String.valueOf(emailAddressColumnIndex));
+        fields.put("file", fileName);
+        if (options != null) {
+            if (options.returnUrl != null) {
+                fields.put("return_url", options.returnUrl);
+            }
+            if (options.firstNameColumn > 0) {
+                fields.put("first_name_column", String.valueOf(options.firstNameColumn));
+            }
+            if (options.lastNameColumn > 0) {
+                fields.put("last_name_column", String.valueOf(options.lastNameColumn));
+            }
+            if (options.genderColumn > 0) {
+                fields.put("gender_column", String.valueOf(options.genderColumn));
+            }
+            if (options.ipAddressColumn > 0) {
+                fields.put("ip_address_column", String.valueOf(options.ipAddressColumn));
+            }
+            if (options.hasHeaderRow != null) {
+                fields.put("has_header_row", String.valueOf(options.hasHeaderRow));
+            }
+            if (options.removeDuplicate != null) {
+                fields.put("remove_duplicate", String.valueOf(options.removeDuplicate));
+            }
+            if (!scoring && options.allowPhase2 != null) {
+                fields.put("allow_phase_2", Boolean.toString(options.allowPhase2));
+            }
+        }
+        return fields;
+    }
+
+    private void deliverSendFileTransport(
+            String urlPath,
+            Map<String, String> fields,
+            OnSuccessCallback<ZBSendFileResponse> successCallback,
+            OnErrorCallback errorCallback
+    ) {
+        try {
+            SdkHttp.Result result = transport.exchange(new SdkHttp("POST", urlPath, "multipart/form-data", null, fields));
+            String rsp = new String(result.body, StandardCharsets.UTF_8);
+            if (!reportHttpFailure(result.status, rsp, errorCallback)) {
+                successCallback.onSuccess(gson.fromJson(rsp, ZBSendFileResponse.class));
+            }
+        } catch (Exception e) {
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+        }
     }
 
     private static void logDebug(String message) {
