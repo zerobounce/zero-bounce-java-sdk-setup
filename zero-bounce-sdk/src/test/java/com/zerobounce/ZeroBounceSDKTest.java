@@ -126,6 +126,63 @@ public class ZeroBounceSDKTest {
         );
     }
 
+
+    @Test
+    public void validateEmail_AiAgentMailbox_Valid() throws Exception {
+        assertSubStatusParsed("valid", "ai_agent_mailbox", ZBValidateSubStatus.AI_AGENT_MAILBOX);
+    }
+
+    @Test
+    public void validateEmail_AiAgentMailbox_CatchAll() throws Exception {
+        assertSubStatusParsed("catch-all", "ai_agent_mailbox", ZBValidateSubStatus.AI_AGENT_MAILBOX);
+    }
+
+    @Test
+    public void validateEmail_UnknownSubStatus_IsNullNotAnError() throws Exception {
+        // Gson maps an unrecognised enum constant to null rather than throwing,
+        // so a sub_status added to the API after this SDK shipped degrades to
+        // null instead of failing the whole validate call.
+        assertSubStatusParsed("valid", "some_future_sub_status", null);
+    }
+
+    /** Runs a validate call whose response carries the given status/sub_status and checks the parsed enum. */
+    private void assertSubStatusParsed(
+            String status,
+            String subStatus,
+            ZBValidateSubStatus expected
+    ) throws Exception {
+        String email = "agent@example.com";
+        String responseJson = """
+                {
+                        "address":"%s",
+                        "status":"%s",
+                        "sub_status":"%s"
+                        }""".formatted(email, status, subStatus);
+
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/validate",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                        put("ip_address", "");
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.validate(
+                        email,
+                        null,
+                        response -> assertEquals(expected, response.getSubStatus()),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
     @Test
     public void validateEmail_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
