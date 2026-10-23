@@ -479,3 +479,132 @@ You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login
     gpg --list-keys
     gpg --list-secret-keys
     ```
+
+## Validate options
+
+`validate` has an overload that takes `ZBValidateOptions`. An option left unset
+is not sent, and booleans go on the wire as the strings `"true"`/`"false"`.
+
+```java
+ZBValidateOptions options = new ZBValidateOptions()
+        .setTimeout(30)                 // 3-60 seconds
+        .setActivityData(true)          // fills getActiveInDays() / getActiveFirstSeen()
+        .setVerifyPlus(true)
+        .setDomainInfo(true)            // fills getDomainWebsiteExists() / getDomainRegistrantCompanyName()
+        .setGreylistProcessing(true)
+        .setCallbackUrl("https://example.com/greylist")
+        .setUsePost(true);              // form-encoded POST /v2/validate instead of GET
+
+ZeroBounceSDK.getInstance().validate("<EMAIL>", null, options,
+        response -> System.out.println(response),
+        error -> System.out.println(error.getErrors()));
+```
+
+`setCallbackUrl` is where the greylist retry posts its result, so it is rejected
+without `setGreylistProcessing(true)` — before any request is sent. While that
+retry is still running the API answers with a `Message` instead of a result,
+which lands on `response.getMessage()`.
+
+## Real-time AI scoring
+
+```java
+ZeroBounceSDK.getInstance().scoreEmail("<EMAIL>", onSuccess, onError);        // GET /v2/scoring
+ZeroBounceSDK.getInstance().scoreEmail("<EMAIL>", true, onSuccess, onError);  // form-encoded POST
+```
+
+## Filters
+
+```java
+ZeroBounceSDK.getInstance().addFilter("exclude", "domain", "example.com", onSuccess, onError);
+ZeroBounceSDK.getInstance().listFilters(false, onSuccess, onError); // true sends a POST
+ZeroBounceSDK.getInstance().deleteFilter("exclude", "domain", "example.com", onSuccess, onError);
+```
+
+## S3 and SFTP/FTP bulk
+
+Queue a job on a file that already sits in your Amazon S3 bucket, or on your
+SFTP/FTP server. See the [S3](https://www.zerobounce.net/docs/api-integrations/amazon-s3-bulk-api)
+and [SFTP](https://www.zerobounce.net/docs/api-integrations/sftp_bulk_api) docs.
+These live on the bulkapi host *without* the `/v2` path.
+
+```java
+ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
+
+// Amazon S3. The file name is the full path, as returned by listS3Files.
+zb.listS3Files(null, null, onSuccess, onError);   // optional bucket, search
+
+zb.validateS3File(new ZBBulkFileJobOptions()
+        .setFileName("lists/leads.csv")
+        .setHasHeaderRow(true), onSuccess, onError);
+zb.scoreS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
+zb.emailFinderS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
+zb.domainSearchS3File(new ZBBulkFileJobOptions()
+        .setFileName("lists/leads.csv")
+        .setRemoveDuplicates(true)
+        .setReturnUrl("https://example.com/zerobounce-done"), onSuccess, onError);
+zb.exportS3File("<FILE_ID>", "my-export-bucket", onSuccess, onError);
+
+// SFTP/FTP. The server, path and protocol come from your ZeroBounce settings.
+// The file name may be left unset for validateSFTPFile alone, which then uses
+// the input bucket from those settings.
+zb.validateSFTPFile(new ZBBulkFileJobOptions().setHasHeaderRow(true), onSuccess, onError);
+zb.scoreSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
+zb.emailFinderSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
+zb.domainSearchSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
+
+// Note the field: this one takes export_path, not export_bucket.
+// Pass null to use the export path from your settings.
+zb.exportSFTPFile("<FILE_ID>", "/exports", onSuccess, onError);
+```
+
+## List evaluator
+
+The list evaluator has its own base URL, not a path built from the bulk one, and
+the file id is URL-encoded as a single path segment.
+
+```java
+ZeroBounceSDK.getInstance().getListEvaluatorResult("<FILE_ID>", onSuccess, onError);
+```
+
+## Inbox Placement Tester
+
+Runs on its own host, takes the API key on the query string, and sends camelCase
+JSON bodies. It spends the account's inbox-test credits.
+
+```java
+ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
+
+zb.getInboxPlacementProviders(onSuccess, onError);
+zb.getInboxPlacementTestTypes(onSuccess, onError);
+
+zb.createInboxPlacementTest("Launch",
+        new ZeroBounceSDK.CreateInboxPlacementTestOptions()
+                .setTestType(1)
+                .setSenderEmail("news@example.com")
+                .setWebhookUrl("https://example.com/ipt-webhook"),
+        onSuccess, onError);
+
+// Send your campaign to the seeds you got back, then read the results.
+zb.getInboxPlacementTest("<TEST_ID>", onSuccess, onError);
+
+zb.listInboxPlacementTests(
+        new ZeroBounceSDK.ListInboxPlacementTestsOptions().setStatus("finished").setPage(1),
+        onSuccess, onError);
+zb.setInboxPlacementWebhook("https://example.com/ipt-webhook", onSuccess, onError);
+zb.getInboxPlacementWebhook(onSuccess, onError);
+zb.deleteInboxPlacementTest("<TEST_ID>", onSuccess, onError);
+```
+
+## Per-API base URLs
+
+The list evaluator and the Inbox Placement Tester are separate hosts, so
+overriding the main base URL alone leaves them pointing at the live API.
+
+```java
+ZeroBounceSDK.getInstance().initialize(
+        "<API_KEY>",
+        "https://api.zerobounce.net/v2",
+        "https://bulkapi.zerobounce.net/v2/listevaluator",
+        "https://bulkapi.zerobounce.net/api/ipt");
+```
+

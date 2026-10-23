@@ -82,6 +82,18 @@ public class ZeroBounceSDK {
     String apiBaseUrl = "https://api.zerobounce.net/v2";
     private final String bulkApiBaseUrl = "https://bulkapi.zerobounce.net/v2";
     private final String bulkApiScoringBaseUrl = "https://bulkapi.zerobounce.net/v2/scoring";
+    /**
+     * The S3 and SFTP bulk jobs live on the bulkapi host WITHOUT the /v2 path.
+     * See https://www.zerobounce.net/docs/api-integrations.
+     */
+    private final String bulkApiRootUrl = "https://bulkapi.zerobounce.net";
+    /**
+     * The list evaluator and the Inbox Placement Tester have their own base URLs,
+     * not paths built from the bulk one. Both are overridable through
+     * {@link #initialize(String, String, String, String)}.
+     */
+    String listEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
+    String inboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
@@ -131,6 +143,36 @@ public class ZeroBounceSDK {
         if (apiBaseUrl != null) {
             requireHttpsUrl(apiBaseUrl);
             this.apiBaseUrl = apiBaseUrl;
+        }
+    }
+
+    /**
+     * Initializes the SDK, overriding the list evaluator and Inbox Placement
+     * Tester base URLs as well.
+     * <p>
+     * Those two are separate hosts rather than paths built from the bulk base,
+     * so an override of {@code apiBaseUrl} alone leaves them pointing at the
+     * live API.
+     *
+     * @param apiKey                the API key
+     * @param apiBaseUrl            the main API base URL, or null to keep the default
+     * @param listEvaluatorBaseUrl  the list evaluator base URL, or null to keep the default
+     * @param inboxPlacementBaseUrl the Inbox Placement Tester base URL, or null to keep the default
+     */
+    public void initialize(
+            String apiKey,
+            @Nullable String apiBaseUrl,
+            @Nullable String listEvaluatorBaseUrl,
+            @Nullable String inboxPlacementBaseUrl
+    ) {
+        initialize(apiKey, apiBaseUrl);
+        if (listEvaluatorBaseUrl != null) {
+            requireHttpsUrl(listEvaluatorBaseUrl);
+            this.listEvaluatorBaseUrl = listEvaluatorBaseUrl;
+        }
+        if (inboxPlacementBaseUrl != null) {
+            requireHttpsUrl(inboxPlacementBaseUrl);
+            this.inboxPlacementBaseUrl = inboxPlacementBaseUrl;
         }
     }
 
@@ -1103,6 +1145,682 @@ public class ZeroBounceSDK {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // Validate options, real-time AI scoring, filters
+    // ---------------------------------------------------------------------
+
+    /**
+     * Validates the given email with the documented optional parameters.
+     * <p>
+     * An option left null is not sent. With {@link ZBValidateOptions#setUsePost(boolean)}
+     * the same fields go out as a form-encoded POST instead of a query string.
+     *
+     * @param email           the email address you want to validate
+     * @param ipAddress       the IP Address the email signed up from (can be blank)
+     * @param options         the optional parameters, or null for none
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void validate(
+            @NotNull String email,
+            @Nullable String ipAddress,
+            @Nullable ZBValidateOptions options,
+            @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+        parameters.put("email", email);
+        parameters.put("ip_address", ipAddress != null ? ipAddress : "");
+        try {
+            if (options != null) {
+                options.fill(parameters);
+            }
+        } catch (IllegalArgumentException e) {
+            // Rejected before any request is sent.
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            return;
+        }
+
+        boolean usePost = options != null && options.isUsePost();
+        sendRequestWithMethod(
+                usePost ? "POST" : "GET",
+                apiBaseUrl + "/validate",
+                usePost ? null : parameters,
+                usePost ? parameters : null,
+                null,
+                new TypeToken<ZBValidateResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /**
+     * Real-time AI scoring for one address (GET /v2/scoring).
+     */
+    public void scoreEmail(
+            @NotNull String email,
+            @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        scoreEmail(email, false, successCallback, errorCallback);
+    }
+
+    /**
+     * Real-time AI scoring for one address.
+     *
+     * @param usePost true sends the form-encoded POST /v2/scoring instead of the GET
+     */
+    public void scoreEmail(
+            @NotNull String email,
+            boolean usePost,
+            @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (email.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+        parameters.put("email", email);
+
+        sendRequestWithMethod(
+                usePost ? "POST" : "GET",
+                apiBaseUrl + "/scoring",
+                usePost ? null : parameters,
+                usePost ? parameters : null,
+                null,
+                new TypeToken<ZBScoreEmailResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /** Adds an account filter (POST /v2/filters/add). */
+    public void addFilter(
+            @NotNull String rule,
+            @NotNull String target,
+            @NotNull String value,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        filterRequest("/filters/add", rule, target, value, true, successCallback, errorCallback);
+    }
+
+    /** Deletes an account filter (POST /v2/filters/delete). */
+    public void deleteFilter(
+            @NotNull String rule,
+            @NotNull String target,
+            @NotNull String value,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        filterRequest("/filters/delete", rule, target, value, true, successCallback, errorCallback);
+    }
+
+    /**
+     * Lists the account filters (/v2/filters/list).
+     *
+     * @param usePost true sends a POST instead of a GET; both are documented
+     */
+    public void listFilters(
+            boolean usePost,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        filterRequest("/filters/list", null, null, null, usePost, successCallback, errorCallback);
+    }
+
+    private void filterRequest(
+            @NotNull String path,
+            @Nullable String rule,
+            @Nullable String target,
+            @Nullable String value,
+            boolean usePost,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+        if (rule != null) parameters.put("rule", rule);
+        if (target != null) parameters.put("target", target);
+        if (value != null) parameters.put("value", value);
+
+        sendRequestWithMethod(
+                usePost ? "POST" : "GET",
+                apiBaseUrl + path,
+                usePost ? null : parameters,
+                usePost ? parameters : null,
+                null,
+                new TypeToken<JsonObject>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // S3 and SFTP/FTP bulk
+    // https://www.zerobounce.net/docs/api-integrations/amazon-s3-bulk-api
+    // https://www.zerobounce.net/docs/api-integrations/sftp_bulk_api
+    // ---------------------------------------------------------------------
+
+    /**
+     * Lists the files in your Amazon S3 bucket (GET /listS3files).
+     *
+     * @param bucket an optional bucket filter, or null
+     * @param search an optional name filter, or null
+     */
+    public void listS3Files(
+            @Nullable String bucket,
+            @Nullable String search,
+            @NotNull OnSuccessCallback<List<ZBS3ListFileEntry>> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+        if (bucket != null && !bucket.trim().isEmpty()) parameters.put("bucket", bucket);
+        if (search != null && !search.trim().isEmpty()) parameters.put("search", search);
+
+        sendRequestWithMethod(
+                "GET",
+                bulkApiRootUrl + "/listS3files",
+                parameters,
+                null,
+                null,
+                new TypeToken<JsonElement>() {
+                },
+                payload -> successCallback.onSuccess(parseS3FileList(payload)),
+                errorCallback
+        );
+    }
+
+    /**
+     * listS3files is documented as {"success": true, "files": [...]} but also
+     * answers with a bare array, so both shapes are accepted.
+     */
+    private List<ZBS3ListFileEntry> parseS3FileList(@Nullable JsonElement payload) {
+        Type listType = new TypeToken<List<ZBS3ListFileEntry>>() {
+        }.getType();
+        if (payload == null || payload.isJsonNull()) {
+            return new ArrayList<>();
+        }
+        if (payload.isJsonArray()) {
+            return gson.fromJson(payload, listType);
+        }
+        if (payload.isJsonObject() && payload.getAsJsonObject().has("files")) {
+            return gson.fromJson(payload.getAsJsonObject().get("files"), listType);
+        }
+        return new ArrayList<>();
+    }
+
+    /** Validates a file in your Amazon S3 bucket (POST /validateS3file). */
+    public void validateS3File(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/validateS3file", options, true, successCallback, errorCallback);
+    }
+
+    /** Scores a file in your Amazon S3 bucket (POST /scoreS3file). */
+    public void scoreS3File(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/scoreS3file", options, true, successCallback, errorCallback);
+    }
+
+    /** Runs the email finder on a file in your Amazon S3 bucket (POST /emailFinderS3file). */
+    public void emailFinderS3File(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/emailFinderS3file", options, true, successCallback, errorCallback);
+    }
+
+    /** Runs domain search on a file in your Amazon S3 bucket (POST /domainSearchS3file). */
+    public void domainSearchS3File(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/domainSearchS3file", options, true, successCallback, errorCallback);
+    }
+
+    /**
+     * Exports a validated or scored file back to Amazon S3 (POST /exportS3file).
+     *
+     * @param exportBucket the destination bucket, or null to use the one from
+     *                     your ZeroBounce settings
+     */
+    public void exportS3File(
+            @NotNull String fileId,
+            @Nullable String exportBucket,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        exportBulkFile("/exportS3file", "export_bucket", fileId, exportBucket, successCallback, errorCallback);
+    }
+
+    // SFTP / FTP bulk. The server, path and protocol are never sent by the SDK;
+    // they come from your ZeroBounce settings.
+
+    /**
+     * Validates a file from your SFTP/FTP server (POST /validateSFTPfile).
+     * <p>
+     * This is the one job whose file_name the docs list as optional: leave
+     * {@link ZBBulkFileJobOptions#setFileName(String)} unset to use the input
+     * bucket from your settings.
+     */
+    public void validateSFTPFile(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/validateSFTPfile", options, false, successCallback, errorCallback);
+    }
+
+    /** Scores a file from your SFTP/FTP server (POST /scoreSFTPfile). */
+    public void scoreSFTPFile(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/scoreSFTPfile", options, true, successCallback, errorCallback);
+    }
+
+    /** Runs the email finder on a file from your SFTP/FTP server (POST /emailFinderSFTPfile). */
+    public void emailFinderSFTPFile(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/emailFinderSFTPfile", options, true, successCallback, errorCallback);
+    }
+
+    /** Runs domain search on a file from your SFTP/FTP server (POST /domainSearchSFTPfile). */
+    public void domainSearchSFTPFile(
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        bulkRootFileJob("/domainSearchSFTPfile", options, true, successCallback, errorCallback);
+    }
+
+    /**
+     * Exports a validated or scored file back to your SFTP/FTP server
+     * (POST /exportSFTPfile).
+     * <p>
+     * Note the field name: this endpoint takes export_path, not the
+     * export_bucket that {@link #exportS3File} sends.
+     *
+     * @param exportPath the destination path, or null to use the one from your
+     *                   ZeroBounce settings
+     */
+    public void exportSFTPFile(
+            @NotNull String fileId,
+            @Nullable String exportPath,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        exportBulkFile("/exportSFTPfile", "export_path", fileId, exportPath, successCallback, errorCallback);
+    }
+
+    /** POSTs one of the six documented S3 / SFTP file jobs on the bulkapi root. */
+    private void bulkRootFileJob(
+            @NotNull String path,
+            @NotNull ZBBulkFileJobOptions options,
+            boolean fileNameRequired,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        try {
+            options.fill(fields, fileNameRequired);
+        } catch (IllegalArgumentException e) {
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            return;
+        }
+        fields.put("api_key", apiKey);
+
+        sendRequestWithMethod(
+                "POST",
+                bulkApiRootUrl + path,
+                null,
+                fields,
+                null,
+                new TypeToken<ZBSendFileResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    private void exportBulkFile(
+            @NotNull String path,
+            @NotNull String destinationField,
+            @NotNull String fileId,
+            @Nullable String destination,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (fileId.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
+        if (destination != null && destination.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: " + destinationField));
+            return;
+        }
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("file_id", fileId);
+        if (destination != null) {
+            fields.put(destinationField, destination);
+        }
+        fields.put("api_key", apiKey);
+
+        sendRequestWithMethod(
+                "POST",
+                bulkApiRootUrl + path,
+                null,
+                fields,
+                null,
+                new TypeToken<ZBSendFileResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // List evaluator. Its own base URL, not a path built from the bulk one.
+    // ---------------------------------------------------------------------
+
+    /**
+     * The evaluation of an uploaded file (GET /v2/listevaluator/{file_id}/).
+     * <p>
+     * The file id is URL-encoded as a single path segment.
+     */
+    public void getListEvaluatorResult(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (fileId.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
+
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+
+        sendRequestWithMethod(
+                "GET",
+                listEvaluatorBaseUrl + "/" + encodePathSegment(fileId.trim()) + "/",
+                parameters,
+                null,
+                null,
+                new TypeToken<JsonObject>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /** URL-encodes a value as a single path segment, so a slash in it stays encoded. */
+    private static String encodePathSegment(String value) {
+        return urlEncode(value).replace("+", "%20");
+    }
+
+    // ---------------------------------------------------------------------
+    // Inbox Placement Tester (bulkapi.zerobounce.net/api/ipt).
+    // The API key goes on the query string, bodies are camelCase JSON, and
+    // errors come back under a "detail" key (Django REST framework).
+    // Spends the account's inbox-test credits.
+    // ---------------------------------------------------------------------
+
+    /** Seed providers available for new tests (GET /api/ipt/providers). */
+    public void getInboxPlacementProviders(
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        inboxPlacementRequest("GET", "/providers", null, null, successCallback, errorCallback);
+    }
+
+    /** Supported test types and the default one (GET /api/ipt/test-types). */
+    public void getInboxPlacementTestTypes(
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        inboxPlacementRequest("GET", "/test-types", null, null, successCallback, errorCallback);
+    }
+
+    /**
+     * Starts a test and returns its seed list (POST /api/ipt/test).
+     *
+     * @param name    the test name, required
+     * @param options the optional fields, or null. Only the fields that are set are sent.
+     */
+    public void createInboxPlacementTest(
+            @NotNull String name,
+            @Nullable CreateInboxPlacementTestOptions options,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (name.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: name"));
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        if (options != null) {
+            options.fill(body);
+        }
+        inboxPlacementRequest("POST", "/test", null, body, successCallback, errorCallback);
+    }
+
+    /** The results of one test (GET /api/ipt/test/{id}). */
+    public void getInboxPlacementTest(
+            @NotNull String testId,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        String segment = inboxPlacementTestPath(testId, errorCallback);
+        if (segment == null) return;
+        inboxPlacementRequest("GET", "/test/" + segment, null, null, successCallback, errorCallback);
+    }
+
+    /** The account's tests (GET /api/ipt/test). */
+    public void listInboxPlacementTests(
+            @Nullable ListInboxPlacementTestsOptions options,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        Map<String, String> query = new LinkedHashMap<>();
+        if (options != null) {
+            options.fill(query);
+        }
+        inboxPlacementRequest("GET", "/test", query, null, successCallback, errorCallback);
+    }
+
+    /** Deletes one test (DELETE /api/ipt/test/{id}). */
+    public void deleteInboxPlacementTest(
+            @NotNull String testId,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        String segment = inboxPlacementTestPath(testId, errorCallback);
+        if (segment == null) return;
+        inboxPlacementRequest("DELETE", "/test/" + segment, null, null, successCallback, errorCallback);
+    }
+
+    /** The configured webhook (GET /api/ipt/webhook). */
+    public void getInboxPlacementWebhook(
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        inboxPlacementRequest("GET", "/webhook", null, null, successCallback, errorCallback);
+    }
+
+    /** Sets the webhook that test results post to (PUT /api/ipt/webhook). */
+    public void setInboxPlacementWebhook(
+            @NotNull String webhookUrl,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (webhookUrl.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: webhook_url"));
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("webhookUrl", webhookUrl);
+        inboxPlacementRequest("PUT", "/webhook", null, body, successCallback, errorCallback);
+    }
+
+    private @Nullable String inboxPlacementTestPath(
+            @NotNull String testId,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (testId.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: test_id"));
+            return null;
+        }
+        return encodePathSegment(testId.trim());
+    }
+
+    private void inboxPlacementRequest(
+            @NotNull String method,
+            @NotNull String path,
+            @Nullable Map<String, String> query,
+            @Nullable Map<String, Object> body,
+            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+
+        Map<String, String> parameters = query != null ? new LinkedHashMap<>(query) : new LinkedHashMap<>();
+        parameters.put("api_key", apiKey);
+
+        sendRequestWithMethod(
+                method,
+                inboxPlacementBaseUrl + path,
+                parameters,
+                null,
+                body,
+                new TypeToken<JsonObject>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    /** The optional fields of a new Inbox Placement test. Only what is set is sent. */
+    public static class CreateInboxPlacementTestOptions {
+
+        @Nullable
+        private Integer testType = null;
+        @Nullable
+        private String senderEmail = null;
+        @Nullable
+        private List<Integer> providerIds = null;
+        @Nullable
+        private List<Integer> seedIds = null;
+        @Nullable
+        private List<Map<String, Object>> providers = null;
+        @Nullable
+        private String webhookUrl = null;
+
+        public CreateInboxPlacementTestOptions setTestType(@Nullable Integer testType) {
+            this.testType = testType;
+            return this;
+        }
+
+        public CreateInboxPlacementTestOptions setSenderEmail(@Nullable String senderEmail) {
+            this.senderEmail = senderEmail;
+            return this;
+        }
+
+        public CreateInboxPlacementTestOptions setProviderIds(@Nullable List<Integer> providerIds) {
+            this.providerIds = providerIds;
+            return this;
+        }
+
+        public CreateInboxPlacementTestOptions setSeedIds(@Nullable List<Integer> seedIds) {
+            this.seedIds = seedIds;
+            return this;
+        }
+
+        public CreateInboxPlacementTestOptions setProviders(@Nullable List<Map<String, Object>> providers) {
+            this.providers = providers;
+            return this;
+        }
+
+        public CreateInboxPlacementTestOptions setWebhookUrl(@Nullable String webhookUrl) {
+            this.webhookUrl = webhookUrl;
+            return this;
+        }
+
+        void fill(@NotNull Map<String, Object> body) {
+            if (testType != null) body.put("testType", testType);
+            if (senderEmail != null) body.put("senderEmail", senderEmail);
+            if (providerIds != null) body.put("providerIds", providerIds);
+            if (seedIds != null) body.put("seedIds", seedIds);
+            if (providers != null) body.put("providers", providers);
+            if (webhookUrl != null) body.put("webhookUrl", webhookUrl);
+        }
+    }
+
+    /** The documented filters of the Inbox Placement test list. */
+    public static class ListInboxPlacementTestsOptions {
+
+        @Nullable
+        private String status = null;
+        @Nullable
+        private Integer page = null;
+        @Nullable
+        private Integer pageSize = null;
+
+        public ListInboxPlacementTestsOptions setStatus(@Nullable String status) {
+            this.status = status;
+            return this;
+        }
+
+        public ListInboxPlacementTestsOptions setPage(@Nullable Integer page) {
+            this.page = page;
+            return this;
+        }
+
+        public ListInboxPlacementTestsOptions setPageSize(@Nullable Integer pageSize) {
+            this.pageSize = pageSize;
+            return this;
+        }
+
+        void fill(@NotNull Map<String, String> query) {
+            if (status != null) query.put("status", status);
+            if (page != null) query.put("page", String.valueOf(page));
+            if (pageSize != null) query.put("pageSize", String.valueOf(pageSize));
+        }
+    }
+
     /**
      * Checks if the [apiKey] is invalid or not and if it is, then it throws an error through the provided
      * [errorCallback].
@@ -1227,6 +1945,104 @@ public class ZeroBounceSDK {
             ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
             errorCallback.onError(errorResponse);
         }
+    }
+
+    /**
+     * The helper that handles a request with an explicit method and an optional
+     * body, for the endpoints {@link #sendRequest} cannot express: form-encoded
+     * POSTs, and the Inbox Placement Tester's PUT and DELETE.
+     *
+     * @param method          GET, POST, PUT or DELETE
+     * @param urlPath         the url
+     * @param queryParameters the query parameters, appended to the url
+     * @param formFields      form-encoded body fields, or null
+     * @param jsonBody        a JSON body, or null. Mutually exclusive with formFields.
+     */
+    private <T> void sendRequestWithMethod(
+            @NotNull String method,
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, String> formFields,
+            @Nullable Object jsonBody,
+            @Nullable TypeToken<T> typeToken,
+            @Nullable OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback) {
+        try {
+            URIBuilder ub = new URIBuilder(urlPath);
+            if (queryParameters != null) {
+                for (Map.Entry<String, String> param : queryParameters.entrySet()) {
+                    ub.addParameter(param.getKey(), param.getValue());
+                }
+            }
+
+            URL url = createUrlFrom(ub.toString());
+            HttpURLConnection con = (HttpURLConnection) url.openConnection();
+            con.setRequestProperty("Accept", "application/json");
+            con.setConnectTimeout(timeoutInMillis);
+            con.setReadTimeout(timeoutInMillis);
+            con.setRequestMethod(method);
+
+            byte[] out = null;
+            if (formFields != null) {
+                StringBuilder form = new StringBuilder();
+                for (Map.Entry<String, String> field : formFields.entrySet()) {
+                    if (form.length() > 0) form.append('&');
+                    form.append(urlEncode(field.getKey())).append('=').append(urlEncode(field.getValue()));
+                }
+                out = form.toString().getBytes(StandardCharsets.UTF_8);
+                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            } else if (jsonBody != null) {
+                out = gson.toJson(jsonBody).getBytes(StandardCharsets.UTF_8);
+                con.setRequestProperty("Content-Type", "application/json");
+            }
+
+            if (out != null) {
+                con.setDoOutput(true);
+                con.setFixedLengthStreamingMode(out.length);
+                con.connect();
+                try (OutputStream os = con.getOutputStream()) {
+                    os.write(out);
+                }
+            }
+
+            logDebug("ZeroBounceSDK::sendRequestWithMethod executing " + method + " " + urlPath);
+
+            int status = con.getResponseCode();
+            Reader streamReader = status > 299
+                    ? new InputStreamReader(con.getErrorStream())
+                    : new InputStreamReader(con.getInputStream());
+
+            StringBuilder content = new StringBuilder();
+            try (BufferedReader in = new BufferedReader(streamReader)) {
+                String inputLine;
+                while ((inputLine = in.readLine()) != null) {
+                    content.append(inputLine);
+                }
+            }
+            con.disconnect();
+            String rsp = content.toString();
+            logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
+
+            if (status > 299) {
+                errorCallback.onError(ErrorResponse.parseError(rsp));
+                return;
+            }
+            if (successCallback == null) {
+                return;
+            }
+            if (typeToken == null || rsp.trim().isEmpty()) {
+                successCallback.onSuccess(null);
+                return;
+            }
+            successCallback.onSuccess(gson.fromJson(rsp, typeToken.getType()));
+        } catch (Exception e) {
+            logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+        }
+    }
+
+    private static String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
