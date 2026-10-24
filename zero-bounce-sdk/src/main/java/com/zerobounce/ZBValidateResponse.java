@@ -42,6 +42,14 @@ public class ZBValidateResponse {
     @Nullable
     private String domainAgeDays = null;
 
+    @SerializedName("active_in_days")
+    @Nullable
+    private String activeInDays = null;
+
+    @SerializedName("active_first_seen")
+    @Nullable
+    private String activeFirstSeen = null;
+
     //@Nullable [true/false] If the email comes from a free provider.
     @SerializedName("free_email")
     @Nullable
@@ -160,6 +168,22 @@ public class ZBValidateResponse {
 
     public void setDomainAgeDays(@Nullable String domainAgeDays) {
         this.domainAgeDays = domainAgeDays;
+    }
+
+    public @Nullable String getActiveInDays() {
+        return activeInDays;
+    }
+
+    public void setActiveInDays(@Nullable String activeInDays) {
+        this.activeInDays = activeInDays;
+    }
+
+    public @Nullable String getActiveFirstSeen() {
+        return activeFirstSeen;
+    }
+
+    public void setActiveFirstSeen(@Nullable String activeFirstSeen) {
+        this.activeFirstSeen = activeFirstSeen;
     }
 
     public @Nullable Boolean getFreeEmail() {
@@ -286,6 +310,8 @@ public class ZBValidateResponse {
                 && Objects.equals(domain, that.domain)
                 && Objects.equals(didYouMean, that.didYouMean)
                 && Objects.equals(domainAgeDays, that.domainAgeDays)
+                && Objects.equals(activeInDays, that.activeInDays)
+                && Objects.equals(activeFirstSeen, that.activeFirstSeen)
                 && Objects.equals(freeEmail, that.freeEmail)
                 && Objects.equals(mxFound, that.mxFound)
                 && Objects.equals(mxRecord, that.mxRecord)
@@ -304,7 +330,8 @@ public class ZBValidateResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays, freeEmail,
+        return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays,
+                activeInDays, activeFirstSeen, freeEmail,
                 mxFound, mxRecord, smtpProvider, catchallDomain, firstName, lastName, gender, city, region, zipCode,
                 country, processedAt, error
         );
