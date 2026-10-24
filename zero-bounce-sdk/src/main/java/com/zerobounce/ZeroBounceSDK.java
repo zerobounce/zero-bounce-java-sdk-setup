@@ -1310,10 +1310,14 @@ public class ZeroBounceSDK {
      */
     public void listFilters(
             boolean usePost,
-            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        filterRequest("/filters/list", null, null, null, usePost, successCallback, errorCallback);
+        // LIVE: /filters/list answers with a JSON *array*, not an object, so
+        // this takes a JsonElement. Read as an object it threw.
+        filterRequest("/filters/list", null, null, null, usePost,
+                new TypeToken<JsonElement>() {
+                }, successCallback, errorCallback);
     }
 
     private void filterRequest(
@@ -1323,6 +1327,21 @@ public class ZeroBounceSDK {
             @Nullable String value,
             boolean usePost,
             @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        filterRequest(path, rule, target, value, usePost,
+                new TypeToken<JsonObject>() {
+                }, successCallback, errorCallback);
+    }
+
+    private <T> void filterRequest(
+            @NotNull String path,
+            @Nullable String rule,
+            @Nullable String target,
+            @Nullable String value,
+            boolean usePost,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
@@ -1339,8 +1358,7 @@ public class ZeroBounceSDK {
                 usePost ? null : parameters,
                 usePost ? parameters : null,
                 null,
-                new TypeToken<JsonObject>() {
-                },
+                typeToken,
                 successCallback,
                 errorCallback
         );

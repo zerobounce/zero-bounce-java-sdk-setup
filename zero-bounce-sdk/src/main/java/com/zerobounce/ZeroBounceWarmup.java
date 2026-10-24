@@ -238,16 +238,25 @@ public class ZeroBounceWarmup {
             successCallback.onSuccess(null);
             return;
         }
+        if (!looksLikeJson(result.body)) {
+            // Gson parses leniently, so junk would come back as a string
+            // instead of raising: reject it before it reaches the parser.
+            errorCallback.onError(ErrorResponse.parseError(
+                    redact(messageFromBody(result.body, result.status), secrets), result.status));
+            return;
+        }
         try {
-            // A list payload is wrapped so one return type covers every endpoint.
+            // LIVE: not every endpoint answers with an object. /seeds is a JSON
+            // array and /seed-count is a bare number, so anything that is not
+            // an object is wrapped under "data" and one return type covers all.
             com.google.gson.JsonElement parsed = JsonParser.parseString(result.body);
-            if (parsed.isJsonArray()) {
-                JsonObject wrapper = new JsonObject();
-                wrapper.add("data", parsed);
-                successCallback.onSuccess(wrapper);
+            if (parsed.isJsonObject()) {
+                successCallback.onSuccess(parsed.getAsJsonObject());
                 return;
             }
-            successCallback.onSuccess(parsed.getAsJsonObject());
+            JsonObject wrapper = new JsonObject();
+            wrapper.add("data", parsed);
+            successCallback.onSuccess(wrapper);
         } catch (RuntimeException e) {
             errorCallback.onError(ErrorResponse.parseError(
                     redact(messageFromBody(result.body, result.status), secrets), result.status));
@@ -271,6 +280,22 @@ public class ZeroBounceWarmup {
             return;
         }
         successCallback.onSuccess(result.body);
+    }
+
+    /**
+     * Whether a body could be JSON at all. Gson's parser is lenient and would
+     * read bare junk as a string, so the shape is checked first.
+     */
+    private static boolean looksLikeJson(@Nullable String body) {
+        String trimmed = body == null ? "" : body.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        char first = trimmed.charAt(0);
+        if (first == '{' || first == '[' || first == '"' || first == '-' || Character.isDigit(first)) {
+            return true;
+        }
+        return trimmed.equals("true") || trimmed.equals("false") || trimmed.equals("null");
     }
 
     /** Turn an error body into a short message. Never raw HTML or a parser dump. */
