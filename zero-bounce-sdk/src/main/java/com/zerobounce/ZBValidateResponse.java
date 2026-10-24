@@ -42,14 +42,6 @@ public class ZBValidateResponse {
     @Nullable
     private String domainAgeDays = null;
 
-    @SerializedName("active_in_days")
-    @Nullable
-    private String activeInDays = null;
-
-    @SerializedName("active_first_seen")
-    @Nullable
-    private String activeFirstSeen = null;
-
     //@Nullable [true/false] If the email comes from a free provider.
     @SerializedName("free_email")
     @Nullable
@@ -111,8 +103,60 @@ public class ZBValidateResponse {
     @Nullable
     private Date processedAt = null;
 
+    /** Returned with activity_data. */
+    @SerializedName("active_in_days")
+    @Nullable
+    private String activeInDays = null;
+
+    /** Returned with activity_data. */
+    @SerializedName("active_first_seen")
+    @Nullable
+    private String activeFirstSeen = null;
+
+    /** Returned with domain_info. */
+    @SerializedName("domain_website_exists")
+    @Nullable
+    private String domainWebsiteExists = null;
+
+    /** Returned with domain_info. */
+    @SerializedName("domain_registrant_company_name")
+    @Nullable
+    private String domainRegistrantCompanyName = null;
+
+    /**
+     * The API's "Message" key, returned instead of a result while a greylist
+     * retry is still running.
+     */
+    @SerializedName("Message")
+    @Nullable
+    private String message = null;
+
     @Nullable
     private String error = null;
+
+    public @Nullable String getDomainWebsiteExists() {
+        return domainWebsiteExists;
+    }
+
+    public void setDomainWebsiteExists(@Nullable String domainWebsiteExists) {
+        this.domainWebsiteExists = domainWebsiteExists;
+    }
+
+    public @Nullable String getDomainRegistrantCompanyName() {
+        return domainRegistrantCompanyName;
+    }
+
+    public void setDomainRegistrantCompanyName(@Nullable String domainRegistrantCompanyName) {
+        this.domainRegistrantCompanyName = domainRegistrantCompanyName;
+    }
+
+    public @Nullable String getMessage() {
+        return message;
+    }
+
+    public void setMessage(@Nullable String message) {
+        this.message = message;
+    }
 
     public @Nullable String getAddress() {
         return address;
@@ -310,8 +354,6 @@ public class ZBValidateResponse {
                 && Objects.equals(domain, that.domain)
                 && Objects.equals(didYouMean, that.didYouMean)
                 && Objects.equals(domainAgeDays, that.domainAgeDays)
-                && Objects.equals(activeInDays, that.activeInDays)
-                && Objects.equals(activeFirstSeen, that.activeFirstSeen)
                 && Objects.equals(freeEmail, that.freeEmail)
                 && Objects.equals(mxFound, that.mxFound)
                 && Objects.equals(mxRecord, that.mxRecord)
@@ -325,15 +367,21 @@ public class ZBValidateResponse {
                 && Objects.equals(zipCode, that.zipCode)
                 && Objects.equals(country, that.country)
                 && Objects.equals(processedAt, that.processedAt)
+                && Objects.equals(activeInDays, that.activeInDays)
+                && Objects.equals(activeFirstSeen, that.activeFirstSeen)
+                && Objects.equals(domainWebsiteExists, that.domainWebsiteExists)
+                && Objects.equals(domainRegistrantCompanyName, that.domainRegistrantCompanyName)
+                && Objects.equals(message, that.message)
                 && Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays,
-                activeInDays, activeFirstSeen, freeEmail,
+                freeEmail,
                 mxFound, mxRecord, smtpProvider, catchallDomain, firstName, lastName, gender, city, region, zipCode,
-                country, processedAt, error
+                country, processedAt, activeInDays, activeFirstSeen, domainWebsiteExists,
+                domainRegistrantCompanyName, message, error
         );
     }
 
@@ -360,6 +408,11 @@ public class ZBValidateResponse {
                 ", zipCode='" + zipCode + '\'' +
                 ", country='" + country + '\'' +
                 ", processedAt='" + processedAt + '\'' +
+                ", activeInDays='" + activeInDays + '\'' +
+                ", activeFirstSeen='" + activeFirstSeen + '\'' +
+                ", domainWebsiteExists='" + domainWebsiteExists + '\'' +
+                ", domainRegistrantCompanyName='" + domainRegistrantCompanyName + '\'' +
+                ", message='" + message + '\'' +
                 ", error='" + error + '\'' +
                 '}';
     }

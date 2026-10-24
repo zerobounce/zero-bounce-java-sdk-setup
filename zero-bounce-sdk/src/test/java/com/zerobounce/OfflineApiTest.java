@@ -94,7 +94,7 @@ class OfflineApiTest {
     void validateBatchStaysOnApiHostAndKeepsPartialErrors() {
         Probe probe = probe("batchitem-key");
         ZBValidateBatchOptions options = new ZBValidateBatchOptions();
-        options.setTimeout(0);
+        options.setTimeout(30);
         options.setActivityData(false);
         options.setVerifyPlus(true);
         ZBValidateBatchResponse response = probe.success((ok, err) -> probe.sdk.validateBatchWithOptions(
@@ -112,7 +112,10 @@ class OfflineApiTest {
         assertEquals("/v2/validatebatch", request.path);
         assertNotEquals("bulkapi.zerobounce.net", request.host);
         JsonObject body = JsonParser.parseString(request.rawBody).getAsJsonObject();
-        assertEquals(0, body.get("timeout").getAsInt());
+        // LIVE: the batch timeout goes out as a JSON *string*; a number is
+        // rejected with the account-level error.
+        assertTrue(body.get("timeout").getAsJsonPrimitive().isString());
+        assertEquals("30", body.get("timeout").getAsString());
         assertFalse(body.get("activity_data").getAsBoolean());
         assertTrue(body.get("verify_plus").getAsBoolean());
         assertFalse(body.has("ip_address"));
@@ -249,7 +252,7 @@ class OfflineApiTest {
 
         probe.api.clear();
         ZBScoreEmailResponse scored = probe.success((ok, err) -> probe.sdk.scoreEmail("person@example.com", ok, err));
-        assertEquals(9, scored.getScore());
+        assertEquals("9", scored.getScore());
         assertEquals("GET", probe.only().method);
         assertEquals("/v2/scoring", probe.only().path);
 

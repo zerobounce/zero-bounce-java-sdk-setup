@@ -30,6 +30,21 @@ public class ErrorResponse {
     @NotNull
     private ArrayList<String> errors = new ArrayList<>();
 
+    /**
+     * The HTTP status of the failed response, or 0 when the failure never
+     * reached the API. It lets callers tell a 403 from Cloudflare apart from a
+     * 400/404 from the API and a 429 from the Warmup rate limit.
+     */
+    private int statusCode = 0;
+
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(int statusCode) {
+        this.statusCode = statusCode;
+    }
+
     public @Nullable Boolean getSuccess() {
         return success;
     }
@@ -51,12 +66,14 @@ public class ErrorResponse {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ErrorResponse that = (ErrorResponse) o;
-        return Objects.equals(success, that.success) && Objects.equals(errors, that.errors);
+        return Objects.equals(success, that.success)
+                && Objects.equals(errors, that.errors)
+                && statusCode == that.statusCode;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(success, errors);
+        return Objects.hash(success, errors, statusCode);
     }
 
     /**
@@ -68,6 +85,12 @@ public class ErrorResponse {
      * @param error the error that will be parsed
      * @return an [ErrorResponse] object
      */
+    protected static ErrorResponse parseError(@Nullable String error, int statusCode) {
+        ErrorResponse response = parseError(error);
+        response.setStatusCode(statusCode);
+        return response;
+    }
+
     protected static ErrorResponse parseError(@Nullable String error) {
         ErrorResponse response = new ErrorResponse();
         if (error == null) return response;

@@ -126,11 +126,68 @@ public class ZeroBounceSDKTest {
         );
     }
 
+
+    @Test
+    public void validateEmail_AiAgentMailbox_Valid() throws Exception {
+        assertSubStatusParsed("valid", "ai_agent_mailbox", ZBValidateSubStatus.AI_AGENT_MAILBOX);
+    }
+
+    @Test
+    public void validateEmail_AiAgentMailbox_CatchAll() throws Exception {
+        assertSubStatusParsed("catch-all", "ai_agent_mailbox", ZBValidateSubStatus.AI_AGENT_MAILBOX);
+    }
+
+    @Test
+    public void validateEmail_UnknownSubStatus_IsNullNotAnError() throws Exception {
+        // Gson maps an unrecognised enum constant to null rather than throwing,
+        // so a sub_status added to the API after this SDK shipped degrades to
+        // null instead of failing the whole validate call.
+        assertSubStatusParsed("valid", "some_future_sub_status", null);
+    }
+
+    /** Runs a validate call whose response carries the given status/sub_status and checks the parsed enum. */
+    private void assertSubStatusParsed(
+            String status,
+            String subStatus,
+            ZBValidateSubStatus expected
+    ) throws Exception {
+        String email = "agent@example.com";
+        String responseJson = """
+                {
+                        "address":"%s",
+                        "status":"%s",
+                        "sub_status":"%s"
+                        }""".formatted(email, status, subStatus);
+
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/validate",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                        put("ip_address", "");
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.validate(
+                        email,
+                        null,
+                        response -> assertEquals(expected, response.getSubStatus()),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
     @Test
     public void validateEmail_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(
@@ -262,8 +319,10 @@ public class ZeroBounceSDKTest {
                           }
                       ]
                     }""";
+        // The account-level batch error ("email_address": "all") is reported as
+        // the short message, and now also carries the HTTP status it arrived with.
         ErrorResponse expectedResponse = ErrorResponse.parseError(
-                "Invalid API Key or your account ran out of credits"
+                "Invalid API Key or your account ran out of credits", 400
         );
 
         List<ZBValidateBatchData> emailsData = new ArrayList<>();
@@ -341,7 +400,7 @@ public class ZeroBounceSDKTest {
     public void guessFormat_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String domain = "example.com";
         String urlPath = getEncodedUrl(
@@ -417,7 +476,7 @@ public class ZeroBounceSDKTest {
     public void findEmail_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String domain = "example.com";
         String firstName = "John doe";
@@ -535,7 +594,7 @@ public class ZeroBounceSDKTest {
     public void findDomain_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"error\":[\"Invalid API Key or your account ran out of credits\"]}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String domain = "example.com";
         String urlPath = getEncodedUrl(
@@ -617,7 +676,7 @@ public class ZeroBounceSDKTest {
     public void getCredits_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"Credits\":-1}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
@@ -716,7 +775,7 @@ public class ZeroBounceSDKTest {
     public void getApiUsage_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = "{\"error\":\"Invalid API Key\"}";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         Date startDate = new Date();
         startDate.setTime(startDate.getTime() - 5 * 24 * 60 * 60 * 1000);  // previous 5 days
@@ -1017,7 +1076,7 @@ public class ZeroBounceSDKTest {
                           "Error messages"
                       ]
                   }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/sendfile";
@@ -1048,7 +1107,7 @@ public class ZeroBounceSDKTest {
                           "Error messages"
                       ]
                   }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         File file = new File("../email_file.csv");
         String urlPath = "https://bulkapi.zerobounce.net/v2/scoring/sendfile";
@@ -1075,7 +1134,7 @@ public class ZeroBounceSDKTest {
                     "success": false,
                     "message": "Error messages"
                   }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1108,7 +1167,7 @@ public class ZeroBounceSDKTest {
                     "success": false,
                     "message": "Error messages"
                   }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1141,7 +1200,7 @@ public class ZeroBounceSDKTest {
                     "success": false,
                     "message": "Error messages"
                 }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1175,7 +1234,7 @@ public class ZeroBounceSDKTest {
                     "success": false,
                     "message": "Error messages"
                 }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1209,7 +1268,7 @@ public class ZeroBounceSDKTest {
                   "success": false,
                   "message": "File cannot be found."
                 }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1242,7 +1301,7 @@ public class ZeroBounceSDKTest {
                   "success": false,
                   "message": "File cannot be found."
                 }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String fileId = "some-id";
         String urlPath = getEncodedUrl(
@@ -1402,7 +1461,7 @@ public class ZeroBounceSDKTest {
                   "found": false,
                   "active_in_days": null
                 }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson);
+        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String email = "flowerjill@aol.com";
         String urlPath = getEncodedUrl(

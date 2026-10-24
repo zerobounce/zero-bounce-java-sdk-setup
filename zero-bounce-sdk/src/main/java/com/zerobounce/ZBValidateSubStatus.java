@@ -97,5 +97,8 @@ public enum ZBValidateSubStatus {
     ROLE_BASED_ACCEPT_ALL,
 
     @SerializedName("gold")
-    GOLD
+    GOLD,
+
+    @SerializedName("ai_agent_mailbox")
+    AI_AGENT_MAILBOX
 }
