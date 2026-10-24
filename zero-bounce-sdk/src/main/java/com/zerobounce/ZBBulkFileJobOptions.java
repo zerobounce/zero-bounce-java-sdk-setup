@@ -8,10 +8,10 @@ import java.util.Map;
 /**
  * The documented fields shared by the six S3 and SFTP/FTP file jobs.
  * <p>
- * {@code fileName} is required by every job except
- * {@link ZeroBounceSDK#validateSFTPFile}, where the docs list it as optional:
- * leaving it null there uses the input bucket configured in your ZeroBounce
- * settings.
+ * LIVE: {@code fileName} and {@code returnUrl} are required on every one of
+ * them, {@code validateSFTPFile} included, although the docs list
+ * {@code fileName} as optional for that one. Without either the API answers
+ * "This field is required".
  */
 public class ZBBulkFileJobOptions {
 
@@ -65,23 +65,20 @@ public class ZBBulkFileJobOptions {
     /**
      * Adds the documented fields to the given form map.
      *
-     * @param fileNameRequired false only for validateSFTPfile
      * @throws IllegalArgumentException when a required field is missing or blank
      */
-    void fill(@NotNull Map<String, String> fields, boolean fileNameRequired) {
-        boolean blank = fileName != null && fileName.trim().isEmpty();
-        if ((fileName == null && fileNameRequired) || blank) {
+    void fill(@NotNull Map<String, String> fields) {
+        if (fileName == null || fileName.trim().isEmpty()) {
             throw new IllegalArgumentException("Empty parameter: file_name");
         }
-        fields.put("has_header_row", String.valueOf(hasHeaderRow));
-        if (fileName != null) {
-            fields.put("file_name", fileName);
+        if (returnUrl == null || returnUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("Empty parameter: return_url");
         }
+        fields.put("has_header_row", String.valueOf(hasHeaderRow));
+        fields.put("file_name", fileName);
+        fields.put("return_url", returnUrl);
         if (removeDuplicates != null) {
             fields.put("remove_duplicates", String.valueOf(removeDuplicates));
-        }
-        if (returnUrl != null) {
-            fields.put("return_url", returnUrl);
         }
     }
 }

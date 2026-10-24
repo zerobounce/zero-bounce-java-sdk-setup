@@ -44,6 +44,8 @@ public class OfflineApiTest {
         String url;
         String method;
         String body;
+        /** Request headers, for the Inbox Placement Tester's Bearer key. */
+        final Map<String, String> headers = new LinkedHashMap<>();
 
         /** The form body parsed into field/value pairs. */
         Map<String, String> form() {
@@ -122,6 +124,14 @@ public class OfflineApiTest {
             }
             return null;
         }).when(con).setRequestMethod(anyString());
+
+        lenient().doAnswer(invocation -> {
+            if (!recorded.isEmpty()) {
+                recorded.get(recorded.size() - 1).headers
+                        .put(invocation.getArgument(0), invocation.getArgument(1));
+            }
+            return null;
+        }).when(con).setRequestProperty(anyString(), anyString());
 
         // The body is written after setRequestMethod, so read it back lazily.
         lenient().doAnswer(invocation -> {
@@ -300,7 +310,10 @@ public class OfflineApiTest {
                 {"success":true,"message":"ok","file_name":"f.csv","file_id":"fid"}""");
 
         zeroBounceSDK.emailFinderS3File(
-                new ZBBulkFileJobOptions().setFileName("lists/leads.csv").setHasHeaderRow(true),
+                new ZBBulkFileJobOptions()
+                        .setFileName("lists/leads.csv")
+                        .setHasHeaderRow(true)
+                        .setReturnUrl("https://example.com/done"),
                 r -> {
                 }, this::failOnError);
         Recorded record = only();
@@ -310,9 +323,9 @@ public class OfflineApiTest {
         Map<String, String> form = record.form();
         assertEquals("lists/leads.csv", form.get("file_name"));
         assertEquals("true", form.get("has_header_row"));
+        assertEquals("https://example.com/done", form.get("return_url"));
         // Unset options stay off the request entirely.
         assertFalse(form.containsKey("remove_duplicates"));
-        assertFalse(form.containsKey("return_url"));
 
         zeroBounceSDK.domainSearchS3File(
                 new ZBBulkFileJobOptions()
@@ -329,16 +342,17 @@ public class OfflineApiTest {
         assertEquals("true", form.get("remove_duplicates"));
         assertEquals("https://example.com/done", form.get("return_url"));
 
-        // file_name is optional for validateSFTPfile alone: without it the input
-        // bucket from the account's settings is used.
-        zeroBounceSDK.validateSFTPFile(new ZBBulkFileJobOptions().setHasHeaderRow(true), r -> {
+        // LIVE: file_name is required here too, although the docs list it as
+        // optional for this one endpoint.
+        ZBBulkFileJobOptions named = new ZBBulkFileJobOptions()
+                .setFileName("my_file.txt")
+                .setReturnUrl("https://example.com/done");
+        zeroBounceSDK.validateSFTPFile(named, r -> {
         }, this::failOnError);
         record = only();
         assertEquals("https://bulkapi.zerobounce.net/validateSFTPfile", record.path());
-        assertFalse(record.form().containsKey("file_name"));
+        assertEquals("my_file.txt", record.form().get("file_name"));
         assertEquals("true", record.form().get("has_header_row"));
-
-        ZBBulkFileJobOptions named = new ZBBulkFileJobOptions().setFileName("my_file.txt");
         zeroBounceSDK.scoreSFTPFile(named, r -> {
         }, this::failOnError);
         assertEquals("https://bulkapi.zerobounce.net/scoreSFTPfile", only().path());
@@ -462,6 +476,95 @@ public class OfflineApiTest {
     }
 
     @Test
+    public void successFalseOnAnHttp200IsAnError() throws IOException {
+        // LIVE: the API answers an unknown file id with an HTTP 200 whose body
+        // says success: false.
+        mockAll(200, """
+                {"success":false,"message":"File cannot be found."}""");
+
+        List<String> errors = new ArrayList<>();
+        int[] status = {-1};
+        zeroBounceSDK.fileStatus("0d1b7a4e-1111-2222-3333-444455556666",
+                r -> fail("success"),
+                error -> {
+                    errors.addAll(error.getErrors());
+                    status[0] = error.getStatusCode();
+                });
+        assertTrue(errors.toString().contains("File cannot be found."), errors.toString());
+        assertEquals(200, status[0]);
+    }
+
+    @Test
+    public void validateBatchSendsTimeoutAsAString() throws IOException {
+        // LIVE: sent as a JSON number the API rejects the whole batch with the
+        // account-level "Invalid API Key or your account ran out of credits".
+        mockAll(200, """
+                {"email_batch":[],"errors":[]}""");
+
+        zeroBounceSDK.validateBatch(
+                List.of(new ZBValidateBatchData("a@example.com", null)),
+                new ZBValidateOptions().setTimeout(30).setVerifyPlus(true),
+                r -> {
+                }, this::failOnError);
+        Recorded record = only();
+        assertTrue(record.body.contains("\"timeout\":\"30\""), record.body);
+        assertTrue(record.body.contains("\"verify_plus\":true"), record.body);
+
+        List<String> errors = new ArrayList<>();
+        zeroBounceSDK.validateBatch(
+                List.of(new ZBValidateBatchData("a@example.com", null)),
+                new ZBValidateOptions().setTimeout(5),
+                r -> fail("success"), error -> errors.addAll(error.getErrors()));
+        assertTrue(errors.toString().contains("timeout"), errors.toString());
+        assertTrue(recorded.isEmpty());
+    }
+
+    @Test
+    public void sendEvaluatedFilePostsTheFileIdAsAFormField() throws IOException {
+        // LIVE: send-evaluated-file takes the evaluator's file_id as a form
+        // field, not the file upload the docs describe.
+        mockAll(200, """
+                {"success":true,"message":"ok","file_id":"new-fid"}""");
+
+        zeroBounceSDK.sendEvaluatedFile("eval-file-1", r -> {
+        }, this::failOnError);
+        Recorded record = only();
+        assertEquals("POST", record.method);
+        assertEquals("https://bulkapi.zerobounce.net/v2/send-evaluated-file/", record.path());
+        assertEquals("eval-file-1", record.form().get("file_id"));
+
+        List<String> errors = new ArrayList<>();
+        zeroBounceSDK.sendEvaluatedFile("  ", r -> fail("success"),
+                error -> errors.addAll(error.getErrors()));
+        assertTrue(errors.toString().contains("file_id"), errors.toString());
+        assertTrue(recorded.isEmpty());
+    }
+
+    @Test
+    public void s3AndSftpFileJobsRequireFileNameAndReturnUrl() throws IOException {
+        mockAll(200, "{}");
+        List<String> errors = new ArrayList<>();
+        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
+
+        // LIVE: both fields are required on every one of these jobs.
+        zeroBounceSDK.emailFinderS3File(
+                new ZBBulkFileJobOptions().setReturnUrl("https://example.com/done"),
+                r -> fail("success"), collect);
+        zeroBounceSDK.validateSFTPFile(
+                new ZBBulkFileJobOptions().setReturnUrl("https://example.com/done"),
+                r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("file_name"), errors.toString());
+
+        errors.clear();
+        zeroBounceSDK.domainSearchS3File(
+                new ZBBulkFileJobOptions().setFileName("f.csv"), r -> fail("success"), collect);
+        zeroBounceSDK.scoreSFTPFile(
+                new ZBBulkFileJobOptions().setFileName("f.csv"), r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("return_url"), errors.toString());
+        assertTrue(recorded.isEmpty());
+    }
+
+    @Test
     public void inboxPlacementUsesItsOwnHostAndCamelCaseJson() throws IOException {
         mockAll(200, "{\"ok\":true}");
 
@@ -469,8 +572,10 @@ public class OfflineApiTest {
         }, this::failOnError);
         Recorded record = only();
         assertEquals("https://bulkapi.zerobounce.net/api/ipt/providers", record.path());
-        // The API key goes on the query string here, not in the body.
-        assertEquals(API_KEY, record.query().get("api_key"));
+        // LIVE: the Inbox Placement Tester authenticates with a Bearer header,
+        // and the key must not reach the query string, where it would be logged.
+        assertEquals("Bearer " + API_KEY, record.headers.get("Authorization"));
+        assertNull(record.query().get("api_key"));
 
         zeroBounceSDK.getInboxPlacementTestTypes(r -> {
         }, this::failOnError);

@@ -108,6 +108,30 @@ public class ZBValidateOptions {
     }
 
     /**
+     * Adds the options that are set to a validatebatch JSON body.
+     * <p>
+     * LIVE: {@code timeout} goes out as a JSON <em>string</em>. Sent as a
+     * number the API rejects the whole batch with the account-level
+     * "Invalid API Key or your account ran out of credits".
+     *
+     * @throws IllegalArgumentException if the options cannot produce a valid request
+     */
+    void fillBatch(@NotNull Map<String, Object> body) {
+        if (timeout != null) {
+            if (timeout < 10 || timeout > 120) {
+                throw new IllegalArgumentException("timeout must be between 10 and 120 seconds");
+            }
+            body.put("timeout", String.valueOf(timeout));
+        }
+        if (activityData != null) {
+            body.put("activity_data", activityData);
+        }
+        if (verifyPlus != null) {
+            body.put("verify_plus", verifyPlus);
+        }
+    }
+
+    /**
      * Adds the options that are set to the given parameter map.
      *
      * @throws IllegalArgumentException if the options cannot produce a valid request

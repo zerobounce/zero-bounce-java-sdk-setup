@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import org.apache.http.Header;
@@ -227,11 +228,41 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        validateBatch(emails, null, successCallback, errorCallback);
+    }
+
+    /**
+     * Validates a batch of emails, with the documented optional parameters.
+     * <p>
+     * An option left null is not sent. The batch {@code timeout} is 10 to 120
+     * seconds, and goes out as a JSON string: see
+     * {@link ZBValidateOptions#fillBatch(Map)}.
+     *
+     * @param emails          the email addresses you want to validate
+     * @param options         the optional parameters, or null for none
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void validateBatch(
+            @NotNull List<ZBValidateBatchData> emails,
+            @Nullable ZBValidateOptions options,
+            @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
         if (invalidApiKey(errorCallback)) return;
 
-        Map<String, Object> body = new HashMap<>();
+        Map<String, Object> body = new LinkedHashMap<>();
         body.put("api_key", apiKey);
         body.put("email_batch", emails);
+        try {
+            if (options != null) {
+                options.fillBatch(body);
+            }
+        } catch (IllegalArgumentException e) {
+            // Rejected before any request is sent.
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            return;
+        }
 
         sendRequest(
                 apiBaseUrl + "/validatebatch",
@@ -669,8 +700,11 @@ public class ZeroBounceSDK {
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
             if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            } else if (apiSuccessIsFalse(rsp)) {
+                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+                // result. The API answers an unknown bulk file id that way.
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -783,8 +817,11 @@ public class ZeroBounceSDK {
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
             if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            } else if (apiSuccessIsFalse(rsp)) {
+                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+                // result. The API answers an unknown bulk file id that way.
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -1020,21 +1057,22 @@ public class ZeroBounceSDK {
                         try {
                             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
                             if (getFileJsonIndicatesFailure(obj)) {
-                                errorCallback.onError(ErrorResponse.parseError(json));
+                                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
                                 return;
                             }
                             if (obj.has("success")) {
-                                errorCallback.onError(ErrorResponse.parseError(json));
+                                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
                                 return;
                             }
                         } catch (Exception parseEx) {
-                            errorCallback.onError(ErrorResponse.parseError(json));
+                            errorCallback.onError(ErrorResponse.parseError(json, statusCode));
                             return;
                         }
                     }
 
                     if (statusCode > 299) {
-                        errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8)));
+                        errorCallback.onError(ErrorResponse.parseError(
+                                new String(bodyBytes, StandardCharsets.UTF_8), statusCode));
                         return;
                     }
 
@@ -1371,7 +1409,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/validateS3file", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/validateS3file", options, successCallback, errorCallback);
     }
 
     /** Scores a file in your Amazon S3 bucket (POST /scoreS3file). */
@@ -1380,7 +1418,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/scoreS3file", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/scoreS3file", options, successCallback, errorCallback);
     }
 
     /** Runs the email finder on a file in your Amazon S3 bucket (POST /emailFinderS3file). */
@@ -1389,7 +1427,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/emailFinderS3file", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/emailFinderS3file", options, successCallback, errorCallback);
     }
 
     /** Runs domain search on a file in your Amazon S3 bucket (POST /domainSearchS3file). */
@@ -1398,7 +1436,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/domainSearchS3file", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/domainSearchS3file", options, successCallback, errorCallback);
     }
 
     /**
@@ -1431,7 +1469,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/validateSFTPfile", options, false, successCallback, errorCallback);
+        bulkRootFileJob("/validateSFTPfile", options, successCallback, errorCallback);
     }
 
     /** Scores a file from your SFTP/FTP server (POST /scoreSFTPfile). */
@@ -1440,7 +1478,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/scoreSFTPfile", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/scoreSFTPfile", options, successCallback, errorCallback);
     }
 
     /** Runs the email finder on a file from your SFTP/FTP server (POST /emailFinderSFTPfile). */
@@ -1449,7 +1487,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/emailFinderSFTPfile", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/emailFinderSFTPfile", options, successCallback, errorCallback);
     }
 
     /** Runs domain search on a file from your SFTP/FTP server (POST /domainSearchSFTPfile). */
@@ -1458,7 +1496,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        bulkRootFileJob("/domainSearchSFTPfile", options, true, successCallback, errorCallback);
+        bulkRootFileJob("/domainSearchSFTPfile", options, successCallback, errorCallback);
     }
 
     /**
@@ -1484,7 +1522,6 @@ public class ZeroBounceSDK {
     private void bulkRootFileJob(
             @NotNull String path,
             @NotNull ZBBulkFileJobOptions options,
-            boolean fileNameRequired,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
@@ -1492,7 +1529,7 @@ public class ZeroBounceSDK {
 
         Map<String, String> fields = new LinkedHashMap<>();
         try {
-            options.fill(fields, fileNameRequired);
+            options.fill(fields);
         } catch (IllegalArgumentException e) {
             errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
             return;
@@ -1586,6 +1623,47 @@ public class ZeroBounceSDK {
         );
     }
 
+    /**
+     * Submits a finished evaluation for validation (POST /v2/send-evaluated-file/).
+     * <p>
+     * LIVE: this takes the list evaluator's {@code file_id} as a form field,
+     * not the file upload the docs describe - an upload is rejected with
+     * "file_id: This field is required". It returns a new validation job's
+     * {@code file_id}, which answers "File cannot be found" for a short while
+     * after it is accepted.
+     *
+     * @param fileId          the file_id returned by the list evaluator
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void sendEvaluatedFile(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (fileId.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("api_key", apiKey);
+        fields.put("file_id", fileId.trim());
+
+        sendRequestWithMethod(
+                "POST",
+                bulkApiBaseUrl + "/send-evaluated-file/",
+                null,
+                fields,
+                null,
+                new TypeToken<ZBSendFileResponse>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
     /** URL-encodes a value as a single path segment, so a slash in it stays encoded. */
     private static String encodePathSegment(String value) {
         return urlEncode(value).replace("+", "%20");
@@ -1649,7 +1727,12 @@ public class ZeroBounceSDK {
         inboxPlacementRequest("GET", "/test/" + segment, null, null, successCallback, errorCallback);
     }
 
-    /** The account's tests (GET /api/ipt/test). */
+    /**
+     * The account's tests (GET /api/ipt/tests).
+     * <p>
+     * LIVE: the listing is {@code /tests} (plural). {@code /test} is the
+     * single-test path and answers {@code Method "GET" not allowed}.
+     */
     public void listInboxPlacementTests(
             @Nullable ListInboxPlacementTestsOptions options,
             @NotNull OnSuccessCallback<JsonObject> successCallback,
@@ -1659,7 +1742,7 @@ public class ZeroBounceSDK {
         if (options != null) {
             options.fill(query);
         }
-        inboxPlacementRequest("GET", "/test", query, null, successCallback, errorCallback);
+        inboxPlacementRequest("GET", "/tests", query, null, successCallback, errorCallback);
     }
 
     /** Deletes one test (DELETE /api/ipt/test/{id}). */
@@ -1717,8 +1800,10 @@ public class ZeroBounceSDK {
     ) {
         if (invalidApiKey(errorCallback)) return;
 
+        // LIVE: the Inbox Placement Tester authenticates with a Bearer header.
+        // Sent as an api_key parameter the request is rejected as unauthorized,
+        // and the key would end up in a query string that gets logged.
         Map<String, String> parameters = query != null ? new LinkedHashMap<>(query) : new LinkedHashMap<>();
-        parameters.put("api_key", apiKey);
 
         sendRequestWithMethod(
                 method,
@@ -1728,6 +1813,7 @@ public class ZeroBounceSDK {
                 body,
                 new TypeToken<JsonObject>() {
                 },
+                Map.of("Authorization", "Bearer " + apiKey),
                 successCallback,
                 errorCallback
         );
@@ -1934,8 +2020,11 @@ public class ZeroBounceSDK {
             logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
 
             if (status > 299) {
-                ErrorResponse errorResponse = ErrorResponse.parseError(rsp);
-                errorCallback.onError(errorResponse);
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            } else if (apiSuccessIsFalse(rsp)) {
+                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+                // result. The API answers an unknown bulk file id that way.
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
             } else {
                 T response = gson.fromJson(rsp, typeToken.getType());
                 successCallback.onSuccess(response);
@@ -1967,6 +2056,20 @@ public class ZeroBounceSDK {
             @Nullable TypeToken<T> typeToken,
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
+        sendRequestWithMethod(method, urlPath, queryParameters, formFields, jsonBody, typeToken,
+                null, successCallback, errorCallback);
+    }
+
+    private <T> void sendRequestWithMethod(
+            @NotNull String method,
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, String> formFields,
+            @Nullable Object jsonBody,
+            @Nullable TypeToken<T> typeToken,
+            @Nullable Map<String, String> extraHeaders,
+            @Nullable OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback) {
         try {
             URIBuilder ub = new URIBuilder(urlPath);
             if (queryParameters != null) {
@@ -1978,6 +2081,11 @@ public class ZeroBounceSDK {
             URL url = createUrlFrom(ub.toString());
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestProperty("Accept", "application/json");
+            if (extraHeaders != null) {
+                for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                    con.setRequestProperty(header.getKey(), header.getValue());
+                }
+            }
             con.setConnectTimeout(timeoutInMillis);
             con.setReadTimeout(timeoutInMillis);
             con.setRequestMethod(method);
@@ -2024,7 +2132,13 @@ public class ZeroBounceSDK {
             logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
 
             if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp));
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+                return;
+            }
+            // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+            // result. The API answers an unknown bulk file id that way.
+            if (apiSuccessIsFalse(rsp)) {
+                errorCallback.onError(ErrorResponse.parseError(rsp, status));
                 return;
             }
             if (successCallback == null) {
@@ -2038,6 +2152,38 @@ public class ZeroBounceSDK {
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
             errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+        }
+    }
+
+    /**
+     * Whether a JSON body says the call failed although the HTTP status was a
+     * success. The API sends {@code success} as a JSON false, "false" or
+     * "False" depending on the endpoint.
+     */
+    private static boolean apiSuccessIsFalse(@Nullable String body) {
+        if (body == null) {
+            return false;
+        }
+        String trimmed = body.trim();
+        if (!trimmed.startsWith("{")) {
+            return false;
+        }
+        try {
+            JsonObject parsed = JsonParser.parseString(trimmed).getAsJsonObject();
+            if (parsed == null || !parsed.has("success")) {
+                return false;
+            }
+            JsonElement value = parsed.get("success");
+            if (!value.isJsonPrimitive()) {
+                return false;
+            }
+            JsonPrimitive primitive = value.getAsJsonPrimitive();
+            if (primitive.isBoolean()) {
+                return !primitive.getAsBoolean();
+            }
+            return primitive.isString() && "false".equalsIgnoreCase(primitive.getAsString().trim());
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 
