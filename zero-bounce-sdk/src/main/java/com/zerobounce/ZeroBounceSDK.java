@@ -88,6 +88,8 @@ public class ZeroBounceSDK {
      * See https://www.zerobounce.net/docs/api-integrations.
      */
     private final String bulkApiRootUrl = "https://bulkapi.zerobounce.net";
+    private final String emailFinderBulkBaseUrl = bulkApiRootUrl + "/email-finder";
+    private final String domainSearchBulkBaseUrl = bulkApiRootUrl + "/domain-search";
     /**
      * The list evaluator and the Inbox Placement Tester have their own base URLs,
      * not paths built from the bulk one. Both are overridable through
@@ -95,13 +97,25 @@ public class ZeroBounceSDK {
      */
     String listEvaluatorBaseUrl = "https://bulkapi.zerobounce.net/v2/listevaluator";
     String inboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
+
+    private final Priority3Api priority3Api = new Priority3Api(this);
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
     private int timeoutInMillis;
     private final Gson gson;
 
-    private ZeroBounceSDK() {
+    /**
+     * When non-null, every HTTP call is answered by this transport instead of the network.
+     * Tests set it. Production leaves it null.
+     */
+    SdkHttp.Transport transport;
+
+    /**
+     * A client that holds one API key. Prefer this over {@link #getInstance()} when more than one
+     * key is in use: the singleton shares a single mutable key across the process.
+     */
+    public ZeroBounceSDK() {
         GsonBuilder gsonBuilder = new GsonBuilder();
         gsonBuilder.setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES);
         gsonBuilder.registerTypeAdapter(ZBSendFileResponse.class, new ZBSendFileResponse.Deserializer());
@@ -183,6 +197,61 @@ public class ZeroBounceSDK {
         }
     }
 
+    private String redactSecrets(@Nullable String message) {
+        if (message == null || apiKey == null || apiKey.isEmpty()) {
+            return message;
+        }
+        return message.replace(apiKey, "***");
+    }
+
+    org.apache.http.client.config.RequestConfig apacheRequestConfig() {
+        return org.apache.http.client.config.RequestConfig.custom()
+                .setRedirectsEnabled(false)
+                .setConnectTimeout(timeoutInMillis)
+                .setConnectionRequestTimeout(timeoutInMillis)
+                .setSocketTimeout(timeoutInMillis)
+                .build();
+    }
+
+    String redactedFailure(@NotNull Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Request failed.";
+        }
+        String redacted = redactSecrets(message);
+        if (redacted == null || redacted.isBlank()) {
+            return "Request failed.";
+        }
+        if (HttpMessages.looksLikeHtml(redacted, null)) {
+            return HttpMessages.jsonCallFailure(0, redacted, null);
+        }
+        if (redacted.length() > 1000) {
+            return "Request failed.";
+        }
+        String stripped = HttpMessages.stripPrefix(redacted);
+        return stripped.isEmpty() ? "Request failed." : stripped;
+    }
+
+    boolean reportHttpFailure(int status, @Nullable String body, @NotNull OnErrorCallback errorCallback) {
+        String text = body == null ? "" : body;
+        if (HttpMessages.looksLikeHtml(text, null) || text.trim().isEmpty()) {
+            errorCallback.onError(
+                    ErrorResponse.parseError(HttpMessages.jsonCallFailure(status, text, null), status));
+            return true;
+        }
+        if (status > 299) {
+            errorCallback.onError(ErrorResponse.parseError(text, status));
+            return true;
+        }
+        if (apiSuccessIsFalse(text)) {
+            // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+            // result. The API answers an unknown bulk file id that way.
+            errorCallback.onError(ErrorResponse.parseError(text, status));
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Validates the given [email].
      *
@@ -197,17 +266,58 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        ZBValidateRequestOptions options = new ZBValidateRequestOptions();
+        options.setIpAddress(ipAddress);
+        validateWithOptions(email, options, successCallback, errorCallback);
+    }
+
+    /**
+     * Validates the given email with optional v2 query parameters.
+     */
+    public void validateWithOptions(
+            @NotNull String email,
+            @Nullable ZBValidateRequestOptions options,
+            @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
+
+        HashMap<String, String> params = new HashMap<>();
+        params.put("api_key", apiKey);
+        params.put("email", email);
+        String ip = options != null && options.getIpAddress() != null ? options.getIpAddress() : "";
+        params.put("ip_address", ip);
+        if (options != null) {
+            if (options.getTimeout() != null) {
+                params.put("timeout", String.valueOf(options.getTimeout()));
+            }
+            if (options.getActivityData() != null) {
+                params.put("activity_data", options.getActivityData() ? "true" : "false");
+            }
+            if (options.getVerifyPlus() != null) {
+                params.put("verify_plus", options.getVerifyPlus() ? "true" : "false");
+            }
+        }
+
+        if (options != null && options.isUsePost()) {
+            sendFormPostRequest(
+                    apiBaseUrl + "/validate",
+                    params,
+                    new TypeToken<>() {
+                    },
+                    successCallback,
+                    errorCallback
+            );
+            return;
+        }
 
         sendRequest(
                 apiBaseUrl + "/validate",
-                new HashMap<>() {
-                    {
-                        put("api_key", apiKey);
-                        put("email", email);
-                        put("ip_address", ipAddress != null ? ipAddress : "");
-                    }
-                },
+                params,
                 null,
                 new TypeToken<>() {
                 },
@@ -273,6 +383,36 @@ public class ZeroBounceSDK {
                 successCallback,
                 errorCallback
         );
+    }
+
+    /**
+     * Validates a batch of emails with the batch-only option object.
+     * <p>
+     * Kept so callers written against {@link ZBValidateBatchOptions} keep
+     * compiling; it forwards to
+     * {@link #validateBatch(List, ZBValidateOptions, OnSuccessCallback, OnErrorCallback)},
+     * so both entry points send the same request and share the same
+     * pre-send validation.
+     *
+     * @param emails          the email addresses you want to validate
+     * @param options         the optional parameters, or null for none
+     * @param successCallback the success callback
+     * @param errorCallback   the error callback
+     */
+    public void validateBatchWithOptions(
+            @NotNull List<ZBValidateBatchData> emails,
+            @Nullable ZBValidateBatchOptions options,
+            @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        ZBValidateOptions mapped = null;
+        if (options != null) {
+            mapped = new ZBValidateOptions()
+                    .setTimeout(options.getTimeout())
+                    .setActivityData(options.getActivityData())
+                    .setVerifyPlus(options.getVerifyPlus());
+        }
+        validateBatch(emails, mapped, successCallback, errorCallback);
     }
 
     /**
@@ -342,7 +482,7 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         // Validate that at least one of companyName or domain is provided.
-        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+        if (isBlank(companyName) && isBlank(domain)) {
             errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
             return;
         }
@@ -353,16 +493,16 @@ public class ZeroBounceSDK {
                     {
                         put("api_key", apiKey);
                         put("first_name", firstName);
-                        if (domain != null) {
+                        if (!isBlank(domain)) {
                             put("domain", domain);
                         }
-                        if (companyName != null) {
+                        if (!isBlank(companyName)) {
                             put("company_name", companyName);
                         }
-                        if (middleName != null) {
+                        if (!isBlank(middleName)) {
                             put("middle_name", middleName);
                         }
-                        if (lastName != null) {
+                        if (!isBlank(lastName)) {
                             put("last_name", lastName);
                         }
                     }
@@ -394,7 +534,7 @@ public class ZeroBounceSDK {
         if (invalidApiKey(errorCallback)) return;
 
         // Validate that at least one of companyName or domain is provided.
-        if ((companyName == null || companyName.isEmpty()) && (domain == null || domain.isEmpty())) {
+        if (isBlank(companyName) && isBlank(domain)) {
             errorCallback.onError(ErrorResponse.parseError("Either companyName or domain must be provided."));
             return;
         }
@@ -404,10 +544,10 @@ public class ZeroBounceSDK {
                 new HashMap<>() {
                     {
                         put("api_key", apiKey);
-                        if (domain != null) {
+                        if (!isBlank(domain)) {
                             put("domain", domain);
                         }
-                        if (companyName != null) {
+                        if (!isBlank(companyName)) {
                             put("company_name", companyName);
                         }
                     }
@@ -619,8 +759,15 @@ public class ZeroBounceSDK {
             throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
         }
 
+        if (transport != null) {
+            Map<String, String> fields = sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName());
+            deliverSendFileTransport(urlPath, fields, successCallback, errorCallback);
+            return;
+        }
+
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
+            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
 
             builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
@@ -699,12 +846,9 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
-            if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
-            } else if (apiSuccessIsFalse(rsp)) {
-                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
-                // result. The API answers an unknown bulk file id that way.
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            if (reportHttpFailure(status, rsp, errorCallback)) {
+                // Covers status > 299, an HTML or empty body, and a
+                // {"success": false} answered on an HTTP 200.
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -715,7 +859,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
         }
     }
@@ -736,8 +880,15 @@ public class ZeroBounceSDK {
             throw new ZBException("Index for emailAddressColumnIndex must start from 1.");
         }
 
+        if (transport != null) {
+            Map<String, String> fields = sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName);
+            deliverSendFileTransport(urlPath, fields, successCallback, errorCallback);
+            return;
+        }
+
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
+            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
 
             builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
@@ -816,12 +967,9 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
 
-            if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
-            } else if (apiSuccessIsFalse(rsp)) {
-                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
-                // result. The API answers an unknown bulk file id that way.
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            if (reportHttpFailure(status, rsp, errorCallback)) {
+                // Covers status > 299, an HTML or empty body, and a
+                // {"success": false} answered on an HTTP 200.
             } else {
                 Type type = new TypeToken<ZBSendFileResponse>() {
                 }.getType();
@@ -832,7 +980,7 @@ public class ZeroBounceSDK {
 
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
         }
     }
@@ -882,6 +1030,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(fileId)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return;
+        }
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/filestatus",
@@ -1041,52 +1193,26 @@ public class ZeroBounceSDK {
                 parent.mkdirs();
             }
             URI uri = buildGetFileUri(scoring, fileId, options);
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp("GET", uri.toString(), null, null, null));
+                deliverGetFile(file, downloadPath, result.status, result.contentType, result.body, successCallback, errorCallback);
+                return;
+            }
             try (CloseableHttpClient client = HttpClients.createDefault()) {
                 HttpGet downloadFile = new HttpGet(uri);
+                downloadFile.setConfig(apacheRequestConfig());
                 try (CloseableHttpResponse response = client.execute(downloadFile)) {
                     int statusCode = response.getStatusLine().getStatusCode();
                     HttpEntity entity = response.getEntity();
                     Header ctHeader = response.getFirstHeader("Content-Type");
                     String contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
-                    String mime = contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
-
                     byte[] bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
-
-                    if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
-                        String json = new String(bodyBytes, StandardCharsets.UTF_8);
-                        try {
-                            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                            if (getFileJsonIndicatesFailure(obj)) {
-                                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                                return;
-                            }
-                            if (obj.has("success")) {
-                                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                                return;
-                            }
-                        } catch (Exception parseEx) {
-                            errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                            return;
-                        }
-                    }
-
-                    if (statusCode > 299) {
-                        errorCallback.onError(ErrorResponse.parseError(
-                                new String(bodyBytes, StandardCharsets.UTF_8), statusCode));
-                        return;
-                    }
-
-                    try (FileOutputStream outStream = new FileOutputStream(file)) {
-                        outStream.write(bodyBytes);
-                    }
-                    ZBGetFileResponse rsp = new ZBGetFileResponse();
-                    rsp.setLocalFilePath(downloadPath);
-                    successCallback.onSuccess(rsp);
+                    deliverGetFile(file, downloadPath, statusCode, contentTypeRaw, bodyBytes, successCallback, errorCallback);
                 }
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
-            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
         }
     }
 
@@ -1286,10 +1412,14 @@ public class ZeroBounceSDK {
             @NotNull String rule,
             @NotNull String target,
             @NotNull String value,
-            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        filterRequest("/filters/add", rule, target, value, true, successCallback, errorCallback);
+        // Read as a JsonElement for the same reason as listFilters: the filter
+        // endpoints do not always answer with a JSON object.
+        filterRequest("/filters/add", rule, target, value, true,
+                new TypeToken<JsonElement>() {
+                }, successCallback, errorCallback);
     }
 
     /** Deletes an account filter (POST /v2/filters/delete). */
@@ -1297,10 +1427,14 @@ public class ZeroBounceSDK {
             @NotNull String rule,
             @NotNull String target,
             @NotNull String value,
-            @NotNull OnSuccessCallback<JsonObject> successCallback,
+            @NotNull OnSuccessCallback<JsonElement> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        filterRequest("/filters/delete", rule, target, value, true, successCallback, errorCallback);
+        // Read as a JsonElement for the same reason as listFilters: the filter
+        // endpoints do not always answer with a JSON object.
+        filterRequest("/filters/delete", rule, target, value, true,
+                new TypeToken<JsonElement>() {
+                }, successCallback, errorCallback);
     }
 
     /**
@@ -1334,6 +1468,15 @@ public class ZeroBounceSDK {
                 }, successCallback, errorCallback);
     }
 
+    /** A supplied-but-blank filter argument is rejected before anything is sent. */
+    private boolean blankArgument(@NotNull OnErrorCallback errorCallback, String name, @Nullable String value) {
+        if (value != null && value.trim().isEmpty()) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: " + name));
+            return true;
+        }
+        return false;
+    }
+
     private <T> void filterRequest(
             @NotNull String path,
             @Nullable String rule,
@@ -1345,6 +1488,11 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankArgument(errorCallback, "rule", rule)
+                || blankArgument(errorCallback, "target", target)
+                || blankArgument(errorCallback, "value", value)) {
+            return;
+        }
 
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("api_key", apiKey);
@@ -1926,6 +2074,187 @@ public class ZeroBounceSDK {
     }
 
     /**
+     * Real-time AI scoring for a single email (POST /scoring, form-encoded).
+     */
+    public void scoreEmailPost(
+            @NotNull String email,
+            @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
+
+        sendFormPostRequest(
+                apiBaseUrl + "/scoring",
+                new HashMap<>() {
+                    {
+                        put("api_key", apiKey);
+                        put("email", email);
+                    }
+                },
+                new TypeToken<>() {
+                },
+                successCallback,
+                errorCallback
+        );
+    }
+
+    // Priority 3 — bulk email finder, domain search, list evaluator, filters, S3
+
+    public void sendEmailFinderFile(
+            @NotNull File file,
+            int domainColumn,
+            @Nullable EmailFinderSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEmailFinderFile(file, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void sendEmailFinderFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int domainColumn,
+            @Nullable EmailFinderSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEmailFinderFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void emailFinderFileStatus(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootFileStatus(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void emailFinderGetFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootGetFile(emailFinderBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
+    }
+
+    public void emailFinderDeleteFile(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBDeleteFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootDeleteFile(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void sendDomainSearchFile(
+            @NotNull File file,
+            int domainColumn,
+            @Nullable DomainSearchSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendDomainSearchFile(file, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void sendDomainSearchFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int domainColumn,
+            @Nullable DomainSearchSendFileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendDomainSearchFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
+    }
+
+    public void domainSearchFileStatus(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBFileStatusResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootFileStatus(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void domainSearchGetFile(
+            @NotNull String fileId,
+            @NotNull String downloadPath,
+            @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootGetFile(domainSearchBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
+    }
+
+    public void domainSearchDeleteFile(
+            @NotNull String fileId,
+            @NotNull OnSuccessCallback<ZBDeleteFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.bulkRootDeleteFile(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
+    }
+
+    public void sendListEvaluatorFile(
+            @NotNull File file,
+            int emailAddressColumn,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendListEvaluatorFile(file, emailAddressColumn, successCallback, errorCallback);
+    }
+
+    public void sendListEvaluatorFileStream(
+            @NotNull InputStream inputStream,
+            @NotNull String fileName,
+            int emailAddressColumn,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendListEvaluatorFileStream(inputStream, fileName, emailAddressColumn, successCallback, errorCallback);
+    }
+
+    public void sendEvaluatedFile(
+            @NotNull File file,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.sendEvaluatedFile(file, successCallback, errorCallback);
+    }
+
+    public void validateS3File(
+            @NotNull ValidateS3FileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.validateS3File(options, successCallback, errorCallback);
+    }
+
+    public void scoreS3File(
+            @NotNull ScoreS3FileOptions options,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        if (invalidApiKey(errorCallback)) return;
+        priority3Api.scoreS3File(options, successCallback, errorCallback);
+    }
+
+    /**
      * Checks if the [apiKey] is invalid or not and if it is, then it throws an error through the provided
      * [errorCallback].
      *
@@ -1933,7 +2262,7 @@ public class ZeroBounceSDK {
      * @return **true** if the [apiKey] is null or **false** otherwise
      */
     private boolean invalidApiKey(@NotNull OnErrorCallback errorCallback) {
-        if (apiKey == null) {
+        if (apiKey == null || apiKey.isBlank()) {
             ErrorResponse errorResponse = ErrorResponse.parseError(
                     "ZeroBounce SDK is not initialized. Please call ZeroBounceSDK.initialize(apiKey) first"
             );
@@ -1941,6 +2270,10 @@ public class ZeroBounceSDK {
             return true;
         }
         return false;
+    }
+
+    private static boolean isBlank(@Nullable String value) {
+        return value == null || value.isBlank();
     }
 
     /**
@@ -1985,72 +2318,142 @@ public class ZeroBounceSDK {
                 }
             }
 
-            URL url = createUrlFrom(ub.toString());
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestProperty("Accept", "application/json");
-//            con.setRequestProperty("Content-Type", "application/json");
-            // Timeouts must be set before connect(); the POST branch connects explicitly below.
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
-
-            String httpMethod;
-            if (body == null) {
-                httpMethod = "GET";
-                con.setRequestMethod("GET");
+            String httpMethod = body == null ? "GET" : "POST";
+            byte[] payload = body == null ? null : gson.toJson(body).getBytes(StandardCharsets.UTF_8);
+            String urlString = ub.toString();
+            int status;
+            String rsp;
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp(
+                        httpMethod,
+                        urlString,
+                        payload == null ? null : "application/json; charset=UTF-8",
+                        payload,
+                        null
+                ));
+                status = result.status;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                httpMethod = "POST";
+                URL url = createUrlFrom(urlString);
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestProperty("Accept", "application/json");
+                // Timeouts must be set before connect(); the POST branch connects explicitly below.
+                con.setConnectTimeout(timeoutInMillis);
+                con.setReadTimeout(timeoutInMillis);
+
+                if (body == null) {
+                    con.setRequestMethod("GET");
+                } else {
+                    con.setRequestMethod("POST");
+                    con.setDoOutput(true);
+                    con.setFixedLengthStreamingMode(payload.length);
+                    con.connect();
+                    try (OutputStream os = con.getOutputStream()) {
+                        os.write(payload);
+                    }
+                }
+
+                logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
+                status = con.getResponseCode();
+                logDebug("ZeroBounceSDK::sendRequest status: " + status);
+                Reader streamReader;
+                if (status > 299) {
+                    streamReader = new InputStreamReader(con.getErrorStream());
+                } else {
+                    streamReader = new InputStreamReader(con.getInputStream());
+                }
+
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        content.append(inputLine);
+                    }
+                }
+                con.disconnect();
+                rsp = content.toString();
+            }
+
+            logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
+            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
+        } catch (Exception e) {
+            logError("ZeroBounceSDK::sendRequest failed", e);
+            ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
+            errorCallback.onError(errorResponse);
+        }
+    }
+
+    private <T> void sendFormPostRequest(
+            @NotNull String urlPath,
+            @NotNull Map<String, String> formFields,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        try {
+            logDebug("ZeroBounceSDK::sendFormPostRequest preparing request: " + urlPath);
+            StringBuilder formBody = new StringBuilder();
+            for (Map.Entry<String, String> entry : formFields.entrySet()) {
+                if (formBody.length() > 0) {
+                    formBody.append('&');
+                }
+                formBody.append(java.net.URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+                formBody.append('=');
+                formBody.append(java.net.URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+            }
+            byte[] out = formBody.toString().getBytes(StandardCharsets.UTF_8);
+            int status;
+            String rsp;
+            if (transport != null) {
+                SdkHttp.Result result = transport.exchange(new SdkHttp(
+                        "POST",
+                        urlPath,
+                        "application/x-www-form-urlencoded",
+                        out,
+                        null
+                ));
+                status = result.status;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
+            } else {
+                URL url = createUrlFrom(urlPath);
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestProperty("Accept", "application/json");
+                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                con.setConnectTimeout(timeoutInMillis);
+                con.setReadTimeout(timeoutInMillis);
                 con.setRequestMethod("POST");
                 con.setDoOutput(true);
-
-                // Attach the body to the request
-                byte[] out = gson.toJson(body).getBytes(StandardCharsets.UTF_8);
-                int length = out.length;
-
-                con.setFixedLengthStreamingMode(length);
+                con.setFixedLengthStreamingMode(out.length);
                 con.connect();
                 try (OutputStream os = con.getOutputStream()) {
                     os.write(out);
                 }
-            }
 
-            logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
-
-            int status = con.getResponseCode();
-            logDebug("ZeroBounceSDK::sendRequest status: " + status);
-            Reader streamReader;
-            if (status > 299) {
-                streamReader = new InputStreamReader(con.getErrorStream());
-            } else {
-                streamReader = new InputStreamReader(con.getInputStream());
-            }
-
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(streamReader)) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
+                status = con.getResponseCode();
+                Reader streamReader;
+                if (status > 299) {
+                    streamReader = new InputStreamReader(con.getErrorStream());
+                } else {
+                    streamReader = new InputStreamReader(con.getInputStream());
                 }
+
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        content.append(inputLine);
+                    }
+                }
+                con.disconnect();
+                rsp = content.toString();
             }
-
-            con.disconnect();
-            String rsp = content.toString();
-
-            logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
-
-            if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
-            } else if (apiSuccessIsFalse(rsp)) {
-                // LIVE: {"success": false} on an HTTP 200 is a failure, not a
-                // result. The API answers an unknown bulk file id that way.
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
-            } else {
-                T response = gson.fromJson(rsp, typeToken.getType());
-                successCallback.onSuccess(response);
-            }
+            logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
+            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
-            logError("ZeroBounceSDK::sendRequest failed", e);
-            ErrorResponse errorResponse = ErrorResponse.parseError(e.getMessage());
-            errorCallback.onError(errorResponse);
+            logError("ZeroBounceSDK::sendFormPostRequest failed", e);
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
         }
     }
 
@@ -2096,18 +2499,8 @@ public class ZeroBounceSDK {
                 }
             }
 
-            URL url = createUrlFrom(ub.toString());
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestProperty("Accept", "application/json");
-            if (extraHeaders != null) {
-                for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
-                    con.setRequestProperty(header.getKey(), header.getValue());
-                }
-            }
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
-            con.setRequestMethod(method);
-
+            String urlString = ub.toString();
+            String contentType = null;
             byte[] out = null;
             if (formFields != null) {
                 StringBuilder form = new StringBuilder();
@@ -2116,37 +2509,71 @@ public class ZeroBounceSDK {
                     form.append(urlEncode(field.getKey())).append('=').append(urlEncode(field.getValue()));
                 }
                 out = form.toString().getBytes(StandardCharsets.UTF_8);
-                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                contentType = "application/x-www-form-urlencoded";
             } else if (jsonBody != null) {
                 out = gson.toJson(jsonBody).getBytes(StandardCharsets.UTF_8);
-                con.setRequestProperty("Content-Type", "application/json");
+                contentType = "application/json";
             }
 
-            if (out != null) {
-                con.setDoOutput(true);
-                con.setFixedLengthStreamingMode(out.length);
-                con.connect();
-                try (OutputStream os = con.getOutputStream()) {
-                    os.write(out);
+            int status;
+            String rsp;
+            if (transport != null) {
+                // The offline suites replace the network here. Without this branch
+                // every call built on sendRequestWithMethod -- the Inbox Placement
+                // Tester, the filters, the SFTP jobs, scoring -- would go out to the
+                // live API from a test run.
+                SdkHttp.Result result = transport.exchange(new SdkHttp(
+                        method,
+                        urlString,
+                        contentType,
+                        out,
+                        formFields
+                ));
+                status = result.status;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
+            } else {
+                URL url = createUrlFrom(urlString);
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setRequestProperty("Accept", "application/json");
+                if (extraHeaders != null) {
+                    for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                        con.setRequestProperty(header.getKey(), header.getValue());
+                    }
                 }
-            }
-
-            logDebug("ZeroBounceSDK::sendRequestWithMethod executing " + method + " " + urlPath);
-
-            int status = con.getResponseCode();
-            Reader streamReader = status > 299
-                    ? new InputStreamReader(con.getErrorStream())
-                    : new InputStreamReader(con.getInputStream());
-
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(streamReader)) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
+                con.setConnectTimeout(timeoutInMillis);
+                con.setReadTimeout(timeoutInMillis);
+                con.setRequestMethod(method);
+                if (contentType != null) {
+                    con.setRequestProperty("Content-Type", contentType);
                 }
+
+                if (out != null) {
+                    con.setDoOutput(true);
+                    con.setFixedLengthStreamingMode(out.length);
+                    con.connect();
+                    try (OutputStream os = con.getOutputStream()) {
+                        os.write(out);
+                    }
+                }
+
+                logDebug("ZeroBounceSDK::sendRequestWithMethod executing " + method + " " + urlPath);
+
+                status = con.getResponseCode();
+                Reader streamReader = status > 299
+                        ? new InputStreamReader(con.getErrorStream())
+                        : new InputStreamReader(con.getInputStream());
+
+                StringBuilder content = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        content.append(inputLine);
+                    }
+                }
+                con.disconnect();
+                rsp = content.toString();
             }
-            con.disconnect();
-            String rsp = content.toString();
             logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
 
             if (status > 299) {
@@ -2160,6 +2587,14 @@ public class ZeroBounceSDK {
                 return;
             }
             if (successCallback == null) {
+                return;
+            }
+            if (typeToken != null && rsp.trim().isEmpty() && status != 204) {
+                // A typed endpoint that answers 200 with no body did not succeed.
+                // Only a 204 legitimately carries nothing (the Inbox Placement
+                // Tester's DELETE), and that still reaches the success callback.
+                errorCallback.onError(ErrorResponse.parseError(
+                        HttpMessages.jsonCallFailure(status, rsp, null), status));
                 return;
             }
             if (typeToken == null || rsp.trim().isEmpty()) {
@@ -2217,6 +2652,142 @@ public class ZeroBounceSDK {
      */
     URL createUrlFrom(String url) throws MalformedURLException {
         return URI.create(url).toURL();
+    }
+
+    private <T> void deliverJson(
+            int status,
+            String rsp,
+            TypeToken<T> typeToken,
+            OnSuccessCallback<T> successCallback,
+            OnErrorCallback errorCallback
+    ) {
+        String accountError = HttpMessages.batchAccountError(rsp);
+        if (accountError != null) {
+            errorCallback.onError(ErrorResponse.parseError(accountError, status));
+            return;
+        }
+        String failure = HttpMessages.jsonCallFailure(status, rsp, null);
+        if (failure == null) {
+            failure = HttpMessages.successPayloadError(rsp);
+        }
+        if (failure != null) {
+            String body = rsp == null ? "" : rsp;
+            if (HttpMessages.preferShortMessage(body)) {
+                errorCallback.onError(ErrorResponse.parseError(failure, status));
+            } else {
+                errorCallback.onError(ErrorResponse.parseError(body, status));
+            }
+            return;
+        }
+        T response = gson.fromJson(rsp, typeToken.getType());
+        successCallback.onSuccess(response);
+    }
+
+    private void deliverGetFile(
+            File file,
+            String downloadPath,
+            int statusCode,
+            String contentTypeRaw,
+            byte[] bodyBytes,
+            OnSuccessCallback<ZBGetFileResponse> successCallback,
+            OnErrorCallback errorCallback
+    ) throws IOException {
+        String downloadError = HttpMessages.downloadFailure(statusCode, bodyBytes, contentTypeRaw);
+        if (downloadError != null) {
+            String text = new String(bodyBytes, StandardCharsets.UTF_8);
+            if (HttpMessages.preferShortMessage(text)) {
+                errorCallback.onError(ErrorResponse.parseError(downloadError, statusCode));
+            } else {
+                errorCallback.onError(ErrorResponse.parseError(text, statusCode));
+            }
+            return;
+        }
+        String mime = contentTypeRaw == null ? "" : contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
+            String json = new String(bodyBytes, StandardCharsets.UTF_8);
+            try {
+                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+                if (getFileJsonIndicatesFailure(obj)) {
+                    errorCallback.onError(ErrorResponse.parseError(json, statusCode));
+                    return;
+                }
+                if (obj.has("success")) {
+                    errorCallback.onError(ErrorResponse.parseError(json, statusCode));
+                    return;
+                }
+            } catch (Exception parseEx) {
+                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
+                return;
+            }
+        }
+
+        if (statusCode > 299) {
+            errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8), statusCode));
+            return;
+        }
+
+        try (FileOutputStream outStream = new FileOutputStream(file)) {
+            outStream.write(bodyBytes);
+        }
+        ZBGetFileResponse rsp = new ZBGetFileResponse();
+        rsp.setLocalFilePath(downloadPath);
+        successCallback.onSuccess(rsp);
+    }
+
+    private Map<String, String> sendFileMultipartFields(
+            boolean scoring,
+            int emailAddressColumnIndex,
+            @Nullable SendFileOptions options,
+            @NotNull String fileName
+    ) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("api_key", apiKey == null ? "" : apiKey);
+        fields.put("email_address_column", String.valueOf(emailAddressColumnIndex));
+        fields.put("file", fileName);
+        if (options != null) {
+            if (options.returnUrl != null) {
+                fields.put("return_url", options.returnUrl);
+            }
+            if (options.firstNameColumn > 0) {
+                fields.put("first_name_column", String.valueOf(options.firstNameColumn));
+            }
+            if (options.lastNameColumn > 0) {
+                fields.put("last_name_column", String.valueOf(options.lastNameColumn));
+            }
+            if (options.genderColumn > 0) {
+                fields.put("gender_column", String.valueOf(options.genderColumn));
+            }
+            if (options.ipAddressColumn > 0) {
+                fields.put("ip_address_column", String.valueOf(options.ipAddressColumn));
+            }
+            if (options.hasHeaderRow != null) {
+                fields.put("has_header_row", String.valueOf(options.hasHeaderRow));
+            }
+            if (options.removeDuplicate != null) {
+                fields.put("remove_duplicate", String.valueOf(options.removeDuplicate));
+            }
+            if (!scoring && options.allowPhase2 != null) {
+                fields.put("allow_phase_2", Boolean.toString(options.allowPhase2));
+            }
+        }
+        return fields;
+    }
+
+    private void deliverSendFileTransport(
+            String urlPath,
+            Map<String, String> fields,
+            OnSuccessCallback<ZBSendFileResponse> successCallback,
+            OnErrorCallback errorCallback
+    ) {
+        try {
+            SdkHttp.Result result = transport.exchange(new SdkHttp("POST", urlPath, "multipart/form-data", null, fields));
+            String rsp = new String(result.body, StandardCharsets.UTF_8);
+            if (!reportHttpFailure(result.status, rsp, errorCallback)) {
+                successCallback.onSuccess(gson.fromJson(rsp, ZBSendFileResponse.class));
+            }
+        } catch (Exception e) {
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+        }
     }
 
     private static void logDebug(String message) {
@@ -2330,5 +2901,202 @@ public class ZeroBounceSDK {
             this.removeDuplicate = removeDuplicate;
             return this;
         }
+    }
+
+    public static class EmailFinderSendFileOptions {
+        int firstNameColumn;
+        int lastNameColumn;
+        int middleNameColumn;
+        int fullNameColumn;
+        @Nullable Boolean hasHeaderRow;
+
+        public EmailFinderSendFileOptions setFirstNameColumn(int firstNameColumn) {
+            this.firstNameColumn = firstNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setLastNameColumn(int lastNameColumn) {
+            this.lastNameColumn = lastNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setMiddleNameColumn(int middleNameColumn) {
+            this.middleNameColumn = middleNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setFullNameColumn(int fullNameColumn) {
+            this.fullNameColumn = fullNameColumn;
+            return this;
+        }
+
+        public EmailFinderSendFileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+    }
+
+    public static class DomainSearchSendFileOptions {
+        @Nullable Boolean hasHeaderRow;
+
+        public DomainSearchSendFileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+    }
+
+    public static class ValidateS3FileOptions {
+        @NotNull String fileName = "";
+        @Nullable Boolean hasHeaderRow;
+        @Nullable Boolean removeDuplicates;
+        @Nullable Boolean removeDuplicate;
+        @Nullable Integer emailAddressColumn;
+        @Nullable String returnUrl;
+        int firstNameColumn;
+        int lastNameColumn;
+        int genderColumn;
+        int ipAddressColumn;
+        @Nullable Boolean allowPhase2;
+
+        public ValidateS3FileOptions setFileName(@NotNull String fileName) {
+            this.fileName = fileName;
+            return this;
+        }
+
+        public ValidateS3FileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+
+        public ValidateS3FileOptions setRemoveDuplicates(@Nullable Boolean removeDuplicates) {
+            this.removeDuplicates = removeDuplicates;
+            return this;
+        }
+
+        public ValidateS3FileOptions setRemoveDuplicate(@Nullable Boolean removeDuplicate) {
+            this.removeDuplicate = removeDuplicate;
+            return this;
+        }
+
+        public ValidateS3FileOptions setEmailAddressColumn(@Nullable Integer emailAddressColumn) {
+            this.emailAddressColumn = emailAddressColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setReturnUrl(@Nullable String returnUrl) {
+            this.returnUrl = returnUrl;
+            return this;
+        }
+
+        public ValidateS3FileOptions setFirstNameColumn(int firstNameColumn) {
+            this.firstNameColumn = firstNameColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setLastNameColumn(int lastNameColumn) {
+            this.lastNameColumn = lastNameColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setGenderColumn(int genderColumn) {
+            this.genderColumn = genderColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setIpAddressColumn(int ipAddressColumn) {
+            this.ipAddressColumn = ipAddressColumn;
+            return this;
+        }
+
+        public ValidateS3FileOptions setAllowPhase2(@Nullable Boolean allowPhase2) {
+            this.allowPhase2 = allowPhase2;
+            return this;
+        }
+    }
+
+    public static class ScoreS3FileOptions {
+        @NotNull String fileName = "";
+        @Nullable Boolean hasHeaderRow;
+        @Nullable Boolean removeDuplicates;
+        @Nullable Boolean removeDuplicate;
+        @Nullable Integer emailAddressColumn;
+
+        public ScoreS3FileOptions setFileName(@NotNull String fileName) {
+            this.fileName = fileName;
+            return this;
+        }
+
+        public ScoreS3FileOptions setHasHeaderRow(@Nullable Boolean hasHeaderRow) {
+            this.hasHeaderRow = hasHeaderRow;
+            return this;
+        }
+
+        public ScoreS3FileOptions setRemoveDuplicates(@Nullable Boolean removeDuplicates) {
+            this.removeDuplicates = removeDuplicates;
+            return this;
+        }
+
+        public ScoreS3FileOptions setRemoveDuplicate(@Nullable Boolean removeDuplicate) {
+            this.removeDuplicate = removeDuplicate;
+            return this;
+        }
+
+        public ScoreS3FileOptions setEmailAddressColumn(@Nullable Integer emailAddressColumn) {
+            this.emailAddressColumn = emailAddressColumn;
+            return this;
+        }
+    }
+
+    String priority3ApiKey() {
+        return apiKey;
+    }
+
+    String priority3ApiBaseUrl() {
+        return apiBaseUrl;
+    }
+
+    String priority3BulkApiBaseUrl() {
+        return bulkApiBaseUrl;
+    }
+
+    String priority3BulkApiRootUrl() {
+        return bulkApiRootUrl;
+    }
+
+    String priority3EmailFinderBaseUrl() {
+        return emailFinderBulkBaseUrl;
+    }
+
+    String priority3DomainSearchBaseUrl() {
+        return domainSearchBulkBaseUrl;
+    }
+
+    int priority3TimeoutMillis() {
+        return timeoutInMillis;
+    }
+
+    Gson priority3Gson() {
+        return gson;
+    }
+
+    <T> void priority3SendRequest(
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, Object> body,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        sendRequest(urlPath, queryParameters, body, typeToken, successCallback, errorCallback);
+    }
+
+    <T> void priority3SendFormPost(
+            @NotNull String urlPath,
+            @NotNull Map<String, String> formFields,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
+        sendFormPostRequest(urlPath, formFields, typeToken, successCallback, errorCallback);
     }
 }

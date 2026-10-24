@@ -1,670 +1,742 @@
 package com.zerobounce;
 
-import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.BeforeEach;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import org.apache.http.HttpEntity;
+import org.apache.http.StatusLine;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.io.File;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/**
- * Offline tests for the endpoints ported from the Python SDK: the validate
- * options, real-time AI scoring, the filters, the list evaluator, the S3 and
- * SFTP/FTP bulk jobs and the Inbox Placement Tester.
- * <p>
- * Every request is answered by a mocked {@link HttpURLConnection}; nothing here
- * reaches the live API. The assertions are on what actually went on the wire.
- */
-@ExtendWith(MockitoExtension.class)
-public class OfflineApiTest {
+class OfflineApiTest {
 
-    @Spy
-    private ZeroBounceSDK zeroBounceSDK;
+    @TempDir
+    Path tempDir;
 
-    private static final String API_KEY = "offline-key";
+    @Test
+    void validateUsesGetAndOmitsUnsetOptions() {
+        Probe probe = probe("key-a");
+        ZBValidateResponse response = probe.success(
+                (ok, err) -> probe.sdk.validate("person@example.com", null, ok, err)
+        );
+        assertEquals("valid", response.getStatus().name().toLowerCase());
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("GET", request.method);
+        assertEquals("api.zerobounce.net", request.host);
+        assertEquals("/v2/validate", request.path);
+        assertEquals("key-a", request.apiKey);
+        assertEquals("person@example.com", request.field("email"));
+        assertEquals("", request.field("ip_address"));
+        assertNull(request.field("timeout"));
+        assertNull(request.field("activity_data"));
+        assertNull(request.field("verify_plus"));
+        assertFalse(request.followRedirects);
+    }
 
-    /** What one mocked call recorded. */
-    private static class Recorded {
-        String url;
-        String method;
-        String body;
-        /** Request headers, for the Inbox Placement Tester's Bearer key. */
-        final Map<String, String> headers = new LinkedHashMap<>();
+    @Test
+    void validateSendsZeroTimeoutFalseFlagsAndPostForm() {
+        Probe probe = probe("key a/b");
+        ZBValidateRequestOptions options = new ZBValidateRequestOptions();
+        options.setIpAddress("203.0.113.5");
+        options.setTimeout(0);
+        options.setActivityData(false);
+        options.setVerifyPlus(true);
+        options.setUsePost(true);
+        probe.success((ok, err) -> probe.sdk.validateWithOptions("a b+c@example.com", options, ok, err));
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("POST", request.method);
+        assertEquals("/v2/validate", request.path);
+        assertEquals("api.zerobounce.net", request.host);
+        assertEquals("application/x-www-form-urlencoded", request.contentType);
+        assertEquals("key a/b", request.apiKey);
+        assertEquals("a b+c@example.com", request.field("email"));
+        assertEquals("0", request.field("timeout"));
+        assertEquals("false", request.field("activity_data"));
+        assertEquals("true", request.field("verify_plus"));
+        assertTrue(request.rawBody.contains("email="));
+        assertFalse(request.rawBody.contains(" "));
+        assertFalse(request.url.contains(" "));
+    }
 
-        /** The form body parsed into field/value pairs. */
-        Map<String, String> form() {
-            Map<String, String> fields = new LinkedHashMap<>();
-            if (body == null || body.isEmpty()) return fields;
-            for (String pair : body.split("&")) {
-                int split = pair.indexOf('=');
-                if (split < 0) continue;
-                fields.put(
-                        URLDecoder.decode(pair.substring(0, split), StandardCharsets.UTF_8),
-                        URLDecoder.decode(pair.substring(split + 1), StandardCharsets.UTF_8)
-                );
+    @Test
+    void validateBatchStaysOnApiHostAndKeepsPartialErrors() {
+        Probe probe = probe("batchitem-key");
+        ZBValidateBatchOptions options = new ZBValidateBatchOptions();
+        options.setTimeout(30);
+        options.setActivityData(false);
+        options.setVerifyPlus(true);
+        ZBValidateBatchResponse response = probe.success((ok, err) -> probe.sdk.validateBatchWithOptions(
+                List.of(new ZBValidateBatchData("ok@example.com", null)),
+                options,
+                ok,
+                err
+        ));
+        assertEquals(2, response.getEmailBatch().size());
+        assertEquals(1, response.getErrors().size());
+        assertEquals("bad@example.com", String.valueOf(response.getErrors().get(0).get("email_address")));
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("POST", request.method);
+        assertEquals("api.zerobounce.net", request.host);
+        assertEquals("/v2/validatebatch", request.path);
+        assertNotEquals("bulkapi.zerobounce.net", request.host);
+        JsonObject body = JsonParser.parseString(request.rawBody).getAsJsonObject();
+        // LIVE: the batch timeout goes out as a JSON *string*; a number is
+        // rejected with the account-level error.
+        assertTrue(body.get("timeout").getAsJsonPrimitive().isString());
+        assertEquals("30", body.get("timeout").getAsString());
+        assertFalse(body.get("activity_data").getAsBoolean());
+        assertTrue(body.get("verify_plus").getAsBoolean());
+        assertFalse(body.has("ip_address"));
+    }
+
+    @Test
+    void validateBatchAccountErrorIsAnError() {
+        Probe probe = probe("batchall-key");
+        ErrorResponse error = probe.failure((ok, err) -> probe.sdk.validateBatch(
+                List.of(new ZBValidateBatchData("a@example.com", "203.0.113.8")),
+                ok,
+                err
+        ));
+        assertShort(error, "batchall-key");
+        assertTrue(error.getErrors().stream().anyMatch(message -> message.contains("Invalid API Key")));
+    }
+
+    @Test
+    void accountLevelSuccessBodiesAreErrors() {
+        Probe invalid = probe("badkey-1");
+        ErrorResponse invalidKey = invalid.failure((ok, err) -> invalid.sdk.getCredits(ok, err));
+        assertShort(invalidKey, "badkey-1");
+        assertTrue(invalidKey.getErrors().get(0).contains("Invalid API Key"));
+
+        Probe credits = probe("nocredits-1");
+        ErrorResponse noCredits = credits.failure((ok, err) -> credits.sdk.validate("a@example.com", "", ok, err));
+        assertShort(noCredits, "nocredits-1");
+        assertTrue(noCredits.getErrors().get(0).contains("credits"));
+    }
+
+    @Test
+    void htmlEmptyAndMalformedBodiesStayShort() throws Exception {
+        Probe denied = probe("html403-secret");
+        ErrorResponse accessDenied = denied.failure((ok, err) -> denied.sdk.getCredits(ok, err));
+        assertShort(accessDenied, "html403-secret");
+        assertTrue(accessDenied.getErrors().get(0).contains("Access denied"));
+
+        Probe htmlOk = probe("html200-secret");
+        Path download = tempDir.resolve("html.csv");
+        ErrorResponse htmlFile = htmlOk.failure((ok, err) -> htmlOk.sdk.getFile("fid", download.toString(), ok, err));
+        assertShort(htmlFile, "html200-secret");
+        assertFalse(Files.exists(download));
+
+        Probe finder = probe("html200-finder");
+        Path finderFile = tempDir.resolve("finder.csv");
+        ErrorResponse finderError = finder.failure((ok, err) -> finder.sdk.emailFinderGetFile("fid", finderFile.toString(), ok, err));
+        assertShort(finderError, "html200-finder");
+        assertFalse(Files.exists(finderFile));
+
+        Probe domain = probe("html403-domain");
+        Path domainFile = tempDir.resolve("domain.csv");
+        ErrorResponse domainError = domain.failure((ok, err) -> domain.sdk.domainSearchGetFile("fid", domainFile.toString(), ok, err));
+        assertShort(domainError, "html403-domain");
+        assertFalse(Files.exists(domainFile));
+
+        Probe empty = probe("empty-key");
+        ErrorResponse emptyError = empty.failure((ok, err) -> empty.sdk.scoreEmail("a@example.com", ok, err));
+        assertShort(emptyError, "empty-key");
+        assertTrue(emptyError.getErrors().get(0).toLowerCase().contains("empty"));
+
+        Probe malformed = probe("malformed-key");
+        ErrorResponse malformedError = malformed.failure((ok, err) -> malformed.sdk.getActivityData("a@example.com", ok, err));
+        assertShort(malformedError, "malformed-key");
+        assertFalse(malformedError.getErrors().get(0).contains("JsonSyntax"));
+        assertFalse(malformedError.getErrors().get(0).contains("IllegalStateException"));
+
+        Probe prefixed = probe("errprefix-key");
+        ErrorResponse prefixedError = prefixed.failure((ok, err) -> prefixed.sdk.getCredits(ok, err));
+        assertEquals(List.of("boom"), prefixedError.getErrors());
+
+        Probe cloudflare = probe("cf-json-secret");
+        ErrorResponse cloudflareError = cloudflare.failure((ok, err) -> cloudflare.sdk.getCredits(ok, err));
+        assertShort(cloudflareError, "cf-json-secret");
+        String cloudflareText = String.join("\n", cloudflareError.getErrors());
+        assertTrue(cloudflareText.contains("Access denied"));
+        assertFalse(cloudflareText.contains("developers.cloudflare.com"));
+    }
+
+    @Test
+    void findersRejectBlankInputAndOmitUnsetFields() {
+        Probe missing = probe("key");
+        ErrorResponse error = missing.failure((ok, err) -> missing.sdk.findEmail("Ada", "  ", "", null, null, ok, err));
+        assertEquals(0, missing.api.records().size());
+        assertFalse(error.getErrors().isEmpty());
+
+        Probe domain = probe("key");
+        ErrorResponse domainError = domain.failure((ok, err) -> domain.sdk.findDomain(" ", null, ok, err));
+        assertEquals(0, domain.api.records().size());
+        assertFalse(domainError.getErrors().isEmpty());
+
+        Probe probe = probe("key");
+        probe.success((ok, err) -> probe.sdk.findEmail("Ada", "", "Acme", null, "", ok, err));
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("/v2/guessformat", request.path);
+        assertEquals("Ada", request.field("first_name"));
+        assertEquals("Acme", request.field("company_name"));
+        assertNull(request.field("domain"));
+        assertNull(request.field("middle_name"));
+        assertNull(request.field("last_name"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.findDomain("example.com", null, ok, err));
+        assertEquals("example.com", probe.only().field("domain"));
+        assertNull(probe.only().field("company_name"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.guessFormat("example.com", null, null, "Lovelace", ok, err));
+        FakeApi.RecordedRequest guess = probe.only();
+        assertEquals("GET", guess.method);
+        assertEquals("/v2/guessformat", guess.path);
+        assertNull(guess.field("first_name"));
+        assertEquals("Lovelace", guess.field("last_name"));
+    }
+
+    @Test
+    void usageCreditsActivityAndScoring() {
+        Probe probe = probe("usage-key");
+        Date start = Date.from(LocalDate.of(2020, 1, 2).atStartOfDay(ZoneId.systemDefault()).toInstant());
+        Date end = Date.from(LocalDate.of(2020, 1, 3).atStartOfDay(ZoneId.systemDefault()).toInstant());
+        probe.success((ok, err) -> probe.sdk.getApiUsage(start, end, ok, err));
+        FakeApi.RecordedRequest usage = probe.only();
+        assertEquals("/v2/getapiusage", usage.path);
+        assertEquals("2020-01-02", usage.field("start_date"));
+        assertEquals("2020-01-03", usage.field("end_date"));
+
+        probe.api.clear();
+        ZBCreditsResponse credits = probe.success((ok, err) -> probe.sdk.getCredits(ok, err));
+        assertEquals("usage-key", credits.getCredits());
+        assertEquals("/v2/getcredits", probe.only().path);
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.getActivityData("person@example.com", ok, err));
+        assertEquals("/v2/activity", probe.only().path);
+
+        probe.api.clear();
+        ZBScoreEmailResponse scored = probe.success((ok, err) -> probe.sdk.scoreEmail("person@example.com", ok, err));
+        assertEquals("9", scored.getScore());
+        assertEquals("GET", probe.only().method);
+        assertEquals("/v2/scoring", probe.only().path);
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.scoreEmailPost("person@example.com", ok, err));
+        FakeApi.RecordedRequest posted = probe.only();
+        assertEquals("POST", posted.method);
+        assertEquals("/v2/scoring", posted.path);
+        assertEquals("application/x-www-form-urlencoded", posted.contentType);
+        assertEquals("person@example.com", posted.field("email"));
+    }
+
+    @Test
+    void bulkFileRoundTripAndBooleans() throws Exception {
+        Probe probe = probe("file-key");
+        File csv = tempDir.resolve("emails.csv").toFile();
+        Files.writeString(csv.toPath(), "email\na@example.com\n");
+        ZeroBounceSDK.SendFileOptions options = new ZeroBounceSDK.SendFileOptions()
+                .setHasHeaderRow(false)
+                .setRemoveDuplicate(true)
+                .setAllowPhase2(false)
+                .setFirstNameColumn(0)
+                .setReturnUrl("https://example.com/hook");
+        ZBSendFileResponse sent = probe.success((ok, err) -> {
+            try {
+                probe.sdk.sendFile(csv, 1, options, ok, err);
+            } catch (ZBException e) {
+                fail(e);
             }
-            return fields;
+        });
+        assertEquals("fid", sent.getFileId());
+        FakeApi.RecordedRequest upload = probe.only();
+        assertEquals("POST", upload.method);
+        assertEquals("bulkapi.zerobounce.net", upload.host);
+        assertEquals("/v2/sendfile", upload.path);
+        assertEquals("multipart/form-data", upload.contentType);
+        assertEquals("1", upload.field("email_address_column"));
+        assertEquals("false", upload.field("has_header_row"));
+        assertEquals("true", upload.field("remove_duplicate"));
+        assertEquals("false", upload.field("allow_phase_2"));
+        assertNull(upload.field("first_name_column"));
+        assertEquals("emails.csv", upload.field("file"));
+
+        probe.api.clear();
+        assertThrows(ZBException.class, () -> probe.sdk.sendFile(csv, 0, null, r -> fail(), e -> fail()));
+        assertEquals(0, probe.api.records().size());
+
+        probe.api.clear();
+        byte[] bytes = "email\nb@example.com\n".getBytes(StandardCharsets.UTF_8);
+        probe.success((ok, err) -> {
+            try {
+                probe.sdk.sendFile(new ByteArrayInputStream(bytes), "stream.csv", 2, null, ok, err);
+            } catch (ZBException e) {
+                fail(e);
+            }
+        });
+        assertEquals("2", probe.only().field("email_address_column"));
+        assertEquals("stream.csv", probe.only().field("file"));
+        assertNull(probe.only().field("allow_phase_2"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.fileStatus("fid", ok, err));
+        assertEquals("/v2/filestatus", probe.only().path);
+        assertEquals("fid", probe.only().field("file_id"));
+
+        probe.api.clear();
+        Path out = tempDir.resolve("out.csv");
+        ZBGetFileOptions downloadOptions = new ZBGetFileOptions()
+                .setDownloadType(ZBDownloadType.PHASE_1)
+                .setActivityData(false);
+        probe.success((ok, err) -> probe.sdk.getFile("fid", out.toString(), downloadOptions, ok, err));
+        FakeApi.RecordedRequest download = probe.only();
+        assertEquals("/v2/getfile", download.path);
+        assertEquals("phase_1", download.field("download_type"));
+        assertEquals("false", download.field("activity_data"));
+        assertEquals("email,status\nok@example.com,valid\n", Files.readString(out));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.deleteFile("fid", ok, err));
+        assertEquals("/v2/deletefile", probe.only().path);
+    }
+
+    @Test
+    void scoringBulkOmitsValidationOnlyFields() throws Exception {
+        Probe probe = probe("score-file");
+        File csv = tempDir.resolve("score.csv").toFile();
+        Files.writeString(csv.toPath(), "email\na@example.com\n");
+        ZeroBounceSDK.ScoringSendFileOptions options = new ZeroBounceSDK.ScoringSendFileOptions()
+                .setHasHeaderRow(false)
+                .setRemoveDuplicate(false);
+        probe.success((ok, err) -> {
+            try {
+                probe.sdk.scoringSendFile(csv, 1, options, ok, err);
+            } catch (ZBException e) {
+                fail(e);
+            }
+        });
+        FakeApi.RecordedRequest upload = probe.only();
+        assertEquals("/v2/scoring/sendfile", upload.path);
+        assertEquals("false", upload.field("has_header_row"));
+        assertEquals("false", upload.field("remove_duplicate"));
+        assertNull(upload.field("allow_phase_2"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.scoringFileStatus("fid", ok, err));
+        assertEquals("/v2/scoring/filestatus", probe.only().path);
+
+        probe.api.clear();
+        Path out = tempDir.resolve("score-out.csv");
+        probe.success((ok, err) -> probe.sdk.scoringGetFile(
+                "fid",
+                out.toString(),
+                new ZBGetFileOptions().setDownloadType(ZBDownloadType.COMBINED).setActivityData(true),
+                ok,
+                err
+        ));
+        FakeApi.RecordedRequest download = probe.only();
+        assertEquals("/v2/scoring/getfile", download.path);
+        assertEquals("combined", download.field("download_type"));
+        assertNull(download.field("activity_data"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.scoringDeleteFile("fid", ok, err));
+        assertEquals("/v2/scoring/deletefile", probe.only().path);
+    }
+
+    @Test
+    void priority3EndpointsAndFalseHeaderFlag() throws Exception {
+        Probe probe = probe("p3");
+        File csv = tempDir.resolve("people.csv").toFile();
+        Files.writeString(csv.toPath(), "domain\nexample.com\n");
+        ZeroBounceSDK.EmailFinderSendFileOptions finderOptions = new ZeroBounceSDK.EmailFinderSendFileOptions()
+                .setHasHeaderRow(false)
+                .setFirstNameColumn(0)
+                .setFullNameColumn(3);
+        probe.success((ok, err) -> probe.sdk.sendEmailFinderFile(csv, 1, finderOptions, ok, err));
+        FakeApi.RecordedRequest finder = probe.only();
+        assertEquals("bulkapi.zerobounce.net", finder.host);
+        assertEquals("/email-finder/sendfile", finder.path);
+        assertEquals("1", finder.field("domain_column"));
+        assertEquals("false", finder.field("has_header_row"));
+        assertNull(finder.field("first_name_column"));
+        assertEquals("3", finder.field("full_name_column"));
+        assertEquals("people.csv", finder.field("file"));
+
+        probe.api.clear();
+        InputStream stream = new ByteArrayInputStream("domain\nexample.com\n".getBytes(StandardCharsets.UTF_8));
+        probe.success((ok, err) -> probe.sdk.sendEmailFinderFileStream(stream, "names.csv", 2, null, ok, err));
+        assertEquals("names.csv", probe.only().field("file"));
+        assertNull(probe.only().field("has_header_row"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.emailFinderFileStatus("fid", ok, err));
+        assertEquals("/email-finder/filestatus", probe.only().path);
+        probe.api.clear();
+        Path found = tempDir.resolve("found.csv");
+        probe.success((ok, err) -> probe.sdk.emailFinderGetFile("fid", found.toString(), ok, err));
+        assertEquals("/email-finder/getfile", probe.only().path);
+        assertTrue(Files.size(found) > 0);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.emailFinderDeleteFile("fid", ok, err));
+        assertEquals("/email-finder/deletefile", probe.only().path);
+
+        probe.api.clear();
+        ZeroBounceSDK.DomainSearchSendFileOptions domainOptions = new ZeroBounceSDK.DomainSearchSendFileOptions()
+                .setHasHeaderRow(false);
+        probe.success((ok, err) -> probe.sdk.sendDomainSearchFile(csv, 4, domainOptions, ok, err));
+        FakeApi.RecordedRequest domain = probe.only();
+        assertEquals("/domain-search/sendfile", domain.path);
+        assertEquals("4", domain.field("domain_column"));
+        assertEquals("false", domain.field("has_header_row"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.sendDomainSearchFileStream(
+                new ByteArrayInputStream("d\n".getBytes(StandardCharsets.UTF_8)),
+                "domains.csv",
+                1,
+                null,
+                ok,
+                err
+        ));
+        assertEquals("domains.csv", probe.only().field("file"));
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.domainSearchFileStatus("fid", ok, err));
+        assertEquals("/domain-search/filestatus", probe.only().path);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.domainSearchGetFile("fid", tempDir.resolve("d.csv").toString(), ok, err));
+        assertEquals("/domain-search/getfile", probe.only().path);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.domainSearchDeleteFile("fid", ok, err));
+        assertEquals("/domain-search/deletefile", probe.only().path);
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.sendListEvaluatorFile(csv, 1, ok, err));
+        assertEquals("/v2/listevaluator/", probe.only().path);
+        assertEquals("1", probe.only().field("email_address_column"));
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.sendListEvaluatorFileStream(
+                new ByteArrayInputStream("e\n".getBytes(StandardCharsets.UTF_8)),
+                "list.csv",
+                1,
+                ok,
+                err
+        ));
+        assertEquals("list.csv", probe.only().field("file"));
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.getListEvaluatorResult("fid", ok, err));
+        assertEquals("/v2/listevaluator/fid/", probe.only().path);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.sendEvaluatedFile(csv, ok, err));
+        assertEquals("/v2/send-evaluated-file/", probe.only().path);
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.addFilter("exclude", "email", "spam@", ok, err));
+        FakeApi.RecordedRequest added = probe.only();
+        assertEquals("POST", added.method);
+        assertEquals("/v2/filters/add", added.path);
+        assertEquals("exclude", added.field("rule"));
+        assertEquals("spam@", added.field("value"));
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.listFilters(false, ok, err));
+        assertEquals("GET", probe.only().method);
+        assertEquals("/v2/filters/list", probe.only().path);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.listFilters(true, ok, err));
+        assertEquals("POST", probe.only().method);
+        assertEquals("application/x-www-form-urlencoded", probe.only().contentType);
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.deleteFilter("exclude", "email", "spam@", ok, err));
+        assertEquals("/v2/filters/delete", probe.only().path);
+    }
+
+    @Test
+    void s3SendsZeroEmailColumnAndOmitsUnsetColumns() {
+        Probe probe = probe("s3-key");
+        probe.success((ok, err) -> probe.sdk.listS3Files(null, "  ", ok, err));
+        FakeApi.RecordedRequest listed = probe.only();
+        assertEquals("bulkapi.zerobounce.net", listed.host);
+        assertEquals("/listS3files", listed.path);
+        assertNull(listed.field("bucket"));
+        assertNull(listed.field("search"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.listS3Files("inbox", "csv", ok, err));
+        assertEquals("inbox", probe.only().field("bucket"));
+        assertEquals("csv", probe.only().field("search"));
+
+        probe.api.clear();
+        ZeroBounceSDK.ValidateS3FileOptions validate = new ZeroBounceSDK.ValidateS3FileOptions()
+                .setFileName("emails.csv")
+                .setEmailAddressColumn(0)
+                .setHasHeaderRow(false)
+                .setAllowPhase2(false)
+                .setFirstNameColumn(0);
+        probe.success((ok, err) -> probe.sdk.validateS3File(validate, ok, err));
+        FakeApi.RecordedRequest validation = probe.only();
+        assertEquals("POST", validation.method);
+        assertEquals("/validateS3file", validation.path);
+        assertEquals("0", validation.field("email_address_column"));
+        assertEquals("false", validation.field("has_header_row"));
+        assertEquals("false", validation.field("allow_phase_2"));
+        assertNull(validation.field("first_name_column"));
+
+        probe.api.clear();
+        ZeroBounceSDK.ScoreS3FileOptions score = new ZeroBounceSDK.ScoreS3FileOptions()
+                .setFileName("emails.csv")
+                .setRemoveDuplicate(false);
+        probe.success((ok, err) -> probe.sdk.scoreS3File(score, ok, err));
+        FakeApi.RecordedRequest scoring = probe.only();
+        assertEquals("/scoreS3file", scoring.path);
+        assertEquals("false", scoring.field("remove_duplicate"));
+        assertNull(scoring.field("allow_phase_2"));
+        assertNull(scoring.field("email_address_column"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.exportS3File("fid", "bucket", ok, err));
+        FakeApi.RecordedRequest exported = probe.only();
+        assertEquals("/exportS3file", exported.path);
+        assertEquals("fid", exported.field("file_id"));
+        assertEquals("bucket", exported.field("export_bucket"));
+    }
+
+    @Test
+    void invalidArgumentsDoNotSend() throws Exception {
+        Probe blankKey = probe("");
+        ErrorResponse blank = blankKey.failure((ok, err) -> blankKey.sdk.getCredits(ok, err));
+        assertEquals(0, blankKey.api.records().size());
+        assertFalse(blank.getErrors().isEmpty());
+
+        ZeroBounceSDK uninitialized = new ZeroBounceSDK();
+        uninitialized.transport = new FakeApi();
+        AtomicReference<ErrorResponse> initError = new AtomicReference<>();
+        uninitialized.getCredits(response -> fail(String.valueOf(response)), initError::set);
+        assertNotNull(initError.get());
+        assertEquals(0, ((FakeApi) uninitialized.transport).records().size());
+
+        Probe probe = probe("key");
+        ErrorResponse email = probe.failure((ok, err) -> probe.sdk.validate("  ", null, ok, err));
+        assertEquals(0, probe.api.records().size());
+        assertFalse(email.getErrors().isEmpty());
+
+        ErrorResponse score = probe.failure((ok, err) -> probe.sdk.scoreEmailPost("", ok, err));
+        assertEquals(0, probe.api.records().size());
+        assertFalse(score.getErrors().isEmpty());
+
+        ErrorResponse status = probe.failure((ok, err) -> probe.sdk.fileStatus("  ", ok, err));
+        assertEquals(0, probe.api.records().size());
+
+        File csv = tempDir.resolve("blank.csv").toFile();
+        Files.writeString(csv.toPath(), "a\n");
+        ErrorResponse finder = probe.failure((ok, err) -> probe.sdk.sendEmailFinderFile(csv, 0, null, ok, err));
+        assertEquals(0, probe.api.records().size());
+        assertFalse(finder.getErrors().isEmpty());
+
+        ErrorResponse filter = probe.failure((ok, err) -> probe.sdk.addFilter("", "email", "x", ok, err));
+        assertEquals(0, probe.api.records().size());
+
+        ErrorResponse s3 = probe.failure((ok, err) -> probe.sdk.validateS3File(
+                new ZeroBounceSDK.ValidateS3FileOptions().setFileName("  "),
+                ok,
+                err
+        ));
+        assertEquals(0, probe.api.records().size());
+        assertFalse(s3.getErrors().isEmpty());
+
+        ErrorResponse exported = probe.failure((ok, err) -> probe.sdk.exportS3File("fid", " ", ok, err));
+        assertEquals(0, probe.api.records().size());
+    }
+
+    @Test
+    void separateClientsDoNotMixKeys() throws Exception {
+        Probe first = probe("key-one");
+        Probe second = probe("key-two");
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(2);
+        AtomicReference<ZBCreditsResponse> firstResponse = new AtomicReference<>();
+        AtomicReference<ZBCreditsResponse> secondResponse = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread one = new Thread(() -> runCredits(first, start, done, firstResponse, failure));
+        Thread two = new Thread(() -> runCredits(second, start, done, secondResponse, failure));
+        one.start();
+        two.start();
+        start.countDown();
+        assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        one.join();
+        two.join();
+        assertNull(failure.get());
+        assertEquals("key-one", firstResponse.get().getCredits());
+        assertEquals("key-two", secondResponse.get().getCredits());
+        assertEquals("key-one", first.only().apiKey);
+        assertEquals("key-two", second.only().apiKey);
+    }
+
+    @Test
+    void urlConnectionDoesNotFollowRedirects() throws Exception {
+        ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
+        sdk.initialize("key");
+        URL url = mock(URL.class);
+        HttpURLConnection connection = mock(HttpURLConnection.class);
+        when(url.openConnection()).thenReturn(connection);
+        when(connection.getResponseCode()).thenReturn(200);
+        when(connection.getInputStream()).thenReturn(new ByteArrayInputStream("{\"Credits\":\"1\"}".getBytes(StandardCharsets.UTF_8)));
+        doReturn(url).when(sdk).createUrlFrom(anyString());
+        sdk.getCredits(response -> assertEquals("1", response.getCredits()), error -> fail(error.getErrors().toString()));
+        verify(connection).setInstanceFollowRedirects(false);
+    }
+
+    @Test
+    void apacheDownloadDoesNotFollowRedirects() throws Exception {
+        ZeroBounceSDK sdk = new ZeroBounceSDK();
+        sdk.initialize("key");
+        CloseableHttpClient client = mock(CloseableHttpClient.class);
+        CloseableHttpResponse response = mock(CloseableHttpResponse.class);
+        HttpEntity entity = mock(HttpEntity.class);
+        StatusLine status = mock(StatusLine.class);
+        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
+        when(client.execute(captor.capture())).thenReturn(response);
+        when(response.getEntity()).thenReturn(entity);
+        when(response.getStatusLine()).thenReturn(status);
+        when(status.getStatusCode()).thenReturn(200);
+        when(response.getFirstHeader("Content-Type")).thenReturn(null);
+        when(entity.getContent()).thenReturn(new ByteArrayInputStream("email\n".getBytes(StandardCharsets.UTF_8)));
+        try (MockedStatic<HttpClients> clients = Mockito.mockStatic(HttpClients.class)) {
+            clients.when(HttpClients::createDefault).thenReturn(client);
+            Path out = tempDir.resolve("apache.csv");
+            sdk.getFile("fid", out.toString(), responseBody -> {
+            }, error -> fail(error.getErrors().toString()));
+        }
+        RequestConfig config = ((HttpRequestBase) captor.getValue()).getConfig();
+        assertNotNull(config);
+        assertFalse(config.isRedirectsEnabled());
+    }
+
+    @Test
+    void validateResponseEqualityIncludesActivityFields() {
+        ZBValidateResponse left = new ZBValidateResponse();
+        left.setAddress("a@example.com");
+        left.setActiveInDays("5");
+        left.setActiveFirstSeen("2024-01-01");
+        ZBValidateResponse right = new ZBValidateResponse();
+        right.setAddress("a@example.com");
+        right.setActiveInDays("9");
+        right.setActiveFirstSeen("2024-01-01");
+        assertNotEquals(left, right);
+        assertNotEquals(left.hashCode(), right.hashCode());
+        right.setActiveInDays("5");
+        right.setActiveFirstSeen("2024-02-01");
+        assertNotEquals(left, right);
+    }
+
+    private static void runCredits(
+            Probe probe,
+            CountDownLatch start,
+            CountDownLatch done,
+            AtomicReference<ZBCreditsResponse> response,
+            AtomicReference<Throwable> failure
+    ) {
+        try {
+            start.await();
+            response.set(probe.success((ok, err) -> probe.sdk.getCredits(ok, err)));
+        } catch (Throwable throwable) {
+            failure.set(throwable);
+        } finally {
+            done.countDown();
+        }
+    }
+
+    private static void assertShort(ErrorResponse error, String secret) {
+        assertNotNull(error);
+        assertFalse(error.getErrors().isEmpty());
+        String text = String.join("\n", error.getErrors());
+        assertTrue(text.length() < 400, text.substring(0, Math.min(text.length(), 120)));
+        String lower = text.toLowerCase();
+        assertFalse(lower.contains("<html"));
+        assertFalse(lower.contains("<!doctype"));
+        assertFalse(lower.contains("<p>blocked</p>"));
+        assertFalse(text.contains(secret));
+        assertFalse(text.contains("Error: Error:"));
+        assertFalse(text.contains("[Error]:"));
+    }
+
+    private Probe probe(String apiKey) {
+        return new Probe(apiKey);
+    }
+
+    private static final class Probe {
+        final ZeroBounceSDK sdk = new ZeroBounceSDK();
+        final FakeApi api = new FakeApi();
+
+        Probe(String apiKey) {
+            sdk.transport = api;
+            sdk.initialize(apiKey);
         }
 
-        /** The query string parsed into parameter/value pairs. */
-        Map<String, String> query() {
-            Map<String, String> params = new LinkedHashMap<>();
-            int mark = url.indexOf('?');
-            if (mark < 0) return params;
-            for (String pair : url.substring(mark + 1).split("&")) {
-                int split = pair.indexOf('=');
-                if (split < 0) continue;
-                params.put(
-                        URLDecoder.decode(pair.substring(0, split), StandardCharsets.UTF_8),
-                        URLDecoder.decode(pair.substring(split + 1), StandardCharsets.UTF_8)
-                );
-            }
-            return params;
+        FakeApi.RecordedRequest only() {
+            assertEquals(1, api.records().size(), api.records().toString());
+            return api.records().get(0);
         }
 
-        /** The url without its query string, still percent-encoded. */
-        String path() {
-            int mark = url.indexOf('?');
-            return mark < 0 ? url : url.substring(0, mark);
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        <T> T success(Call call) {
+            AtomicReference value = new AtomicReference();
+            AtomicReference<ErrorResponse> error = new AtomicReference<>();
+            call.run(value::set, error::set);
+            if (error.get() != null) {
+                fail(error.get().getErrors().toString());
+            }
+            assertNotNull(value.get());
+            return (T) value.get();
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        ErrorResponse failure(Call call) {
+            AtomicReference value = new AtomicReference();
+            AtomicReference<ErrorResponse> error = new AtomicReference<>();
+            call.run(value::set, error::set);
+            assertNull(value.get());
+            assertNotNull(error.get());
+            return error.get();
         }
     }
 
-    private final List<Recorded> recorded = new ArrayList<>();
-
-    @BeforeEach
-    public void setUp() {
-        zeroBounceSDK.initialize(API_KEY);
-        recorded.clear();
-    }
-
-    /**
-     * Answers every request with the given JSON and records what was sent.
-     * Returns the recorded calls, in order.
-     */
-    private List<Recorded> mockAll(int status, @NotNull String responseJson) throws IOException {
-        ByteArrayOutputStream sentBody = new ByteArrayOutputStream();
-
-        URL url = mock(URL.class, withSettings().useConstructor("https://api.zerobounce.net/v2/validate"));
-        HttpURLConnection con = mock(HttpURLConnection.class);
-        lenient().when(url.openConnection()).thenReturn(con);
-        lenient().when(con.getResponseCode()).thenReturn(status);
-        lenient().when(con.getOutputStream()).thenReturn(sentBody);
-        lenient().when(con.getInputStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-        lenient().when(con.getErrorStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-
-        lenient().doAnswer(invocation -> {
-            Recorded record = new Recorded();
-            record.url = invocation.getArgument(0);
-            recorded.add(record);
-            sentBody.reset();
-            return url;
-        }).when(zeroBounceSDK).createUrlFrom(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).method = invocation.getArgument(0);
-            }
-            return null;
-        }).when(con).setRequestMethod(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).headers
-                        .put(invocation.getArgument(0), invocation.getArgument(1));
-            }
-            return null;
-        }).when(con).setRequestProperty(anyString(), anyString());
-
-        // The body is written after setRequestMethod, so read it back lazily.
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).body = sentBody.toString(StandardCharsets.UTF_8);
-            }
-            return null;
-        }).when(con).disconnect();
-
-        return recorded;
-    }
-
-    private Recorded only() {
-        assertEquals(1, recorded.size(), "expected exactly one request");
-        Recorded record = recorded.get(0);
-        recorded.clear();
-        return record;
-    }
-
-    private void failOnError(ErrorResponse error) {
-        fail(error.getErrors().toString());
-    }
-
-    // ------------------------------------------------------------------
-    // Validate options
-    // ------------------------------------------------------------------
-
-    @Test
-    public void validateSendsTheNewOptionsOnlyWhenSet() throws IOException {
-        mockAll(200, """
-                {"address":"a@example.com","status":"valid","active_in_days":"3",
-                 "domain_website_exists":"true","domain_registrant_company_name":"Example Inc"}""");
-
-        zeroBounceSDK.validate("a@example.com", null, null, r -> {
-        }, this::failOnError);
-        Recorded record = only();
-        assertEquals("GET", record.method);
-        for (String absent : new String[]{"timeout", "activity_data", "verify_plus", "domain_info",
-                "greylist_processing", "callback_url"}) {
-            assertFalse(record.query().containsKey(absent), absent + " should not be sent");
-        }
-
-        ZBValidateOptions options = new ZBValidateOptions()
-                .setTimeout(30)
-                .setActivityData(true)
-                .setVerifyPlus(false)
-                .setDomainInfo(true)
-                .setGreylistProcessing(true)
-                .setCallbackUrl("https://example.com/greylist");
-        zeroBounceSDK.validate("a@example.com", null, options, response -> {
-            // The activity_data and domain_info blocks land on the response.
-            assertEquals("3", response.getActiveInDays());
-            assertEquals("true", response.getDomainWebsiteExists());
-            assertEquals("Example Inc", response.getDomainRegistrantCompanyName());
-        }, this::failOnError);
-        record = only();
-        Map<String, String> query = record.query();
-        assertEquals("30", query.get("timeout"));
-        // Booleans go on the wire as the strings "true"/"false".
-        assertEquals("true", query.get("activity_data"));
-        assertEquals("false", query.get("verify_plus"));
-        assertEquals("true", query.get("domain_info"));
-        assertEquals("true", query.get("greylist_processing"));
-        assertEquals("https://example.com/greylist", query.get("callback_url"));
-
-        // usePost sends the same fields as a form body instead of a query string.
-        zeroBounceSDK.validate("a@example.com", null,
-                new ZBValidateOptions().setUsePost(true).setDomainInfo(true), r -> {
-                }, this::failOnError);
-        record = only();
-        assertEquals("POST", record.method);
-        assertEquals("a@example.com", record.form().get("email"));
-        assertEquals("true", record.form().get("domain_info"));
-    }
-
-    @Test
-    public void greylistMessageLandsOnTheResponse() throws IOException {
-        // While a greylist retry is still running the API answers with "Message"
-        // instead of a result.
-        mockAll(200, """
-                {"address":"a@example.com","Message":"Greylisted email, we will retry"}""");
-
-        zeroBounceSDK.validate("a@example.com", null, null,
-                response -> assertEquals("Greylisted email, we will retry", response.getMessage()),
-                this::failOnError);
-        only();
-    }
-
-    @Test
-    public void invalidValidateOptionsSendNoRequest() throws IOException {
-        mockAll(200, "{}");
-
-        List<String> errors = new ArrayList<>();
-        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
-
-        zeroBounceSDK.validate("a@example.com", null,
-                new ZBValidateOptions().setCallbackUrl("https://example.com/greylist"),
-                r -> fail("success"), collect);
-        zeroBounceSDK.validate("a@example.com", null,
-                new ZBValidateOptions().setGreylistProcessing(false).setCallbackUrl("https://example.com/greylist"),
-                r -> fail("success"), collect);
-        assertEquals(2, errors.size());
-        assertTrue(errors.stream().allMatch(e -> e.contains("greylist_processing")), errors.toString());
-
-        errors.clear();
-        zeroBounceSDK.validate("a@example.com", null,
-                new ZBValidateOptions().setGreylistProcessing(true).setCallbackUrl("   "),
-                r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("callback_url"), errors.toString());
-
-        errors.clear();
-        zeroBounceSDK.validate("a@example.com", null, new ZBValidateOptions().setTimeout(2),
-                r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("timeout"), errors.toString());
-
-        assertTrue(recorded.isEmpty(), "no request should have been sent");
-    }
-
-    // ------------------------------------------------------------------
-    // Real-time AI scoring and filters
-    // ------------------------------------------------------------------
-
-    @Test
-    public void scoringAndFiltersUseTheMainHost() throws IOException {
-        mockAll(200, """
-                {"email":"a@example.com","score":"10","status":"valid"}""");
-
-        zeroBounceSDK.scoreEmail("a@example.com",
-                response -> assertEquals("10", response.getScore()), this::failOnError);
-        Recorded record = only();
-        assertEquals("GET", record.method);
-        assertTrue(record.path().endsWith("/v2/scoring"), record.path());
-        assertEquals("a@example.com", record.query().get("email"));
-
-        zeroBounceSDK.scoreEmail("a@example.com", true, r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("POST", record.method);
-        assertEquals("a@example.com", record.form().get("email"));
-
-        zeroBounceSDK.addFilter("exclude", "domain", "example.com", r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("POST", record.method);
-        assertTrue(record.path().endsWith("/v2/filters/add"), record.path());
-        assertEquals("exclude", record.form().get("rule"));
-
-        zeroBounceSDK.listFilters(false, r -> {
-        }, this::failOnError);
-        assertEquals("GET", only().method);
-        zeroBounceSDK.listFilters(true, r -> {
-        }, this::failOnError);
-        assertEquals("POST", only().method);
-
-        zeroBounceSDK.deleteFilter("exclude", "domain", "example.com", r -> {
-        }, this::failOnError);
-        assertTrue(only().path().endsWith("/v2/filters/delete"));
-    }
-
-    @Test
-    public void scoreEmailRejectsABlankAddressBeforeARequest() throws IOException {
-        mockAll(200, "{}");
-        List<String> errors = new ArrayList<>();
-        zeroBounceSDK.scoreEmail("   ", r -> fail("success"), e -> errors.addAll(e.getErrors()));
-        assertTrue(errors.toString().contains("email"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    // ------------------------------------------------------------------
-    // S3 and SFTP/FTP bulk
-    // ------------------------------------------------------------------
-
-    @Test
-    public void s3AndSftpFileJobsSendTheDocumentedFieldsOnly() throws IOException {
-        mockAll(200, """
-                {"success":true,"message":"ok","file_name":"f.csv","file_id":"fid"}""");
-
-        zeroBounceSDK.emailFinderS3File(
-                new ZBBulkFileJobOptions()
-                        .setFileName("lists/leads.csv")
-                        .setHasHeaderRow(true)
-                        .setReturnUrl("https://example.com/done"),
-                r -> {
-                }, this::failOnError);
-        Recorded record = only();
-        assertEquals("POST", record.method);
-        // The S3 and SFTP jobs live on the bulkapi root, WITHOUT /v2.
-        assertEquals("https://bulkapi.zerobounce.net/emailFinderS3file", record.path());
-        Map<String, String> form = record.form();
-        assertEquals("lists/leads.csv", form.get("file_name"));
-        assertEquals("true", form.get("has_header_row"));
-        assertEquals("https://example.com/done", form.get("return_url"));
-        // Unset options stay off the request entirely.
-        assertFalse(form.containsKey("remove_duplicates"));
-
-        zeroBounceSDK.domainSearchS3File(
-                new ZBBulkFileJobOptions()
-                        .setFileName("lists/leads.csv")
-                        .setHasHeaderRow(false)
-                        .setRemoveDuplicates(true)
-                        .setReturnUrl("https://example.com/done"),
-                r -> {
-                }, this::failOnError);
-        record = only();
-        assertEquals("https://bulkapi.zerobounce.net/domainSearchS3file", record.path());
-        form = record.form();
-        assertEquals("false", form.get("has_header_row"));
-        assertEquals("true", form.get("remove_duplicates"));
-        assertEquals("https://example.com/done", form.get("return_url"));
-
-        // LIVE: file_name is required here too, although the docs list it as
-        // optional for this one endpoint.
-        ZBBulkFileJobOptions named = new ZBBulkFileJobOptions()
-                .setFileName("my_file.txt")
-                .setReturnUrl("https://example.com/done");
-        zeroBounceSDK.validateSFTPFile(named, r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("https://bulkapi.zerobounce.net/validateSFTPfile", record.path());
-        assertEquals("my_file.txt", record.form().get("file_name"));
-        assertEquals("true", record.form().get("has_header_row"));
-        zeroBounceSDK.scoreSFTPFile(named, r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/scoreSFTPfile", only().path());
-        zeroBounceSDK.emailFinderSFTPFile(named, r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/emailFinderSFTPfile", only().path());
-        zeroBounceSDK.domainSearchSFTPFile(named, r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/domainSearchSFTPfile", only().path());
-        zeroBounceSDK.validateS3File(named, r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/validateS3file", only().path());
-        zeroBounceSDK.scoreS3File(named, r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/scoreS3file", only().path());
-
-        // exportSFTPfile takes export_path, not the export_bucket exportS3file uses.
-        zeroBounceSDK.exportSFTPFile("fid", "/exports", r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("https://bulkapi.zerobounce.net/exportSFTPfile", record.path());
-        assertEquals("fid", record.form().get("file_id"));
-        assertEquals("/exports", record.form().get("export_path"));
-        assertFalse(record.form().containsKey("export_bucket"));
-
-        zeroBounceSDK.exportSFTPFile("fid", null, r -> {
-        }, this::failOnError);
-        assertFalse(only().form().containsKey("export_path"));
-
-        zeroBounceSDK.exportS3File("fid", "bucket-out", r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("https://bulkapi.zerobounce.net/exportS3file", record.path());
-        assertEquals("bucket-out", record.form().get("export_bucket"));
-    }
-
-    @Test
-    public void listS3FilesAcceptsBothDocumentedShapes() throws IOException {
-        mockAll(200, """
-                {"success":true,"files":[{"Name":"lists/leads.csv","Size":12,"LastModified":"2026-01-01"}]}""");
-
-        zeroBounceSDK.listS3Files(null, null, files -> {
-            assertEquals(1, files.size());
-            assertEquals("lists/leads.csv", files.get(0).getName());
-            assertEquals(12, files.get(0).getSize());
-        }, this::failOnError);
-        Recorded record = only();
-        assertEquals("GET", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/listS3files", record.path());
-        assertFalse(record.query().containsKey("bucket"));
-        assertFalse(record.query().containsKey("search"));
-
-        zeroBounceSDK.listS3Files("inbox", "csv", files -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("inbox", record.query().get("bucket"));
-        assertEquals("csv", record.query().get("search"));
-
-        // A bare array is also returned by the API.
-        mockAll(200, """
-                [{"Name":"bare.csv","Size":1,"LastModified":""}]""");
-        recorded.clear();
-        zeroBounceSDK.listS3Files(null, null, files -> {
-            assertEquals(1, files.size());
-            assertEquals("bare.csv", files.get(0).getName());
-        }, this::failOnError);
-        only();
-    }
-
-    @Test
-    public void bulkJobsRejectInvalidArgumentsBeforeARequest() throws IOException {
-        mockAll(200, "{}");
-        List<String> errors = new ArrayList<>();
-        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
-
-        ZBBulkFileJobOptions blank = new ZBBulkFileJobOptions().setFileName("   ");
-        zeroBounceSDK.validateS3File(blank, r -> fail("success"), collect);
-        zeroBounceSDK.scoreS3File(blank, r -> fail("success"), collect);
-        zeroBounceSDK.emailFinderS3File(blank, r -> fail("success"), collect);
-        zeroBounceSDK.domainSearchS3File(blank, r -> fail("success"), collect);
-        zeroBounceSDK.scoreSFTPFile(blank, r -> fail("success"), collect);
-        zeroBounceSDK.emailFinderSFTPFile(blank, r -> fail("success"), collect);
-        zeroBounceSDK.domainSearchSFTPFile(blank, r -> fail("success"), collect);
-        // An unset name is allowed for validateSFTPfile, but a blank one is not.
-        zeroBounceSDK.validateSFTPFile(blank, r -> fail("success"), collect);
-        assertEquals(8, errors.size());
-        assertTrue(errors.stream().allMatch(e -> e.contains("file_name")), errors.toString());
-
-        errors.clear();
-        zeroBounceSDK.exportSFTPFile("  ", null, r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("file_id"), errors.toString());
-        errors.clear();
-        zeroBounceSDK.exportSFTPFile("fid", " ", r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("export_path"), errors.toString());
-        errors.clear();
-        zeroBounceSDK.exportS3File("fid", " ", r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("export_bucket"), errors.toString());
-
-        assertTrue(recorded.isEmpty(), "no request should have been sent");
-    }
-
-    // ------------------------------------------------------------------
-    // List evaluator and Inbox Placement Tester
-    // ------------------------------------------------------------------
-
-    @Test
-    public void listEvaluatorUsesItsOwnBaseUrlAndEncodesTheFileId() throws IOException {
-        mockAll(200, "{\"success\":true}");
-
-        // The file id is one path segment, so a slash in it must stay encoded.
-        zeroBounceSDK.getListEvaluatorResult("a b/c", r -> {
-        }, this::failOnError);
-        Recorded record = only();
-        assertEquals("GET", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/v2/listevaluator/a%20b%2Fc/", record.path());
-
-        List<String> errors = new ArrayList<>();
-        zeroBounceSDK.getListEvaluatorResult("  ", r -> fail("success"), e -> errors.addAll(e.getErrors()));
-        assertTrue(errors.toString().contains("file_id"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    @Test
-    public void successFalseOnAnHttp200IsAnError() throws IOException {
-        // LIVE: the API answers an unknown file id with an HTTP 200 whose body
-        // says success: false.
-        mockAll(200, """
-                {"success":false,"message":"File cannot be found."}""");
-
-        List<String> errors = new ArrayList<>();
-        int[] status = {-1};
-        zeroBounceSDK.fileStatus("0d1b7a4e-1111-2222-3333-444455556666",
-                r -> fail("success"),
-                error -> {
-                    errors.addAll(error.getErrors());
-                    status[0] = error.getStatusCode();
-                });
-        assertTrue(errors.toString().contains("File cannot be found."), errors.toString());
-        assertEquals(200, status[0]);
-    }
-
-    @Test
-    public void validateBatchSendsTimeoutAsAString() throws IOException {
-        // LIVE: sent as a JSON number the API rejects the whole batch with the
-        // account-level "Invalid API Key or your account ran out of credits".
-        mockAll(200, """
-                {"email_batch":[],"errors":[]}""");
-
-        zeroBounceSDK.validateBatch(
-                List.of(new ZBValidateBatchData("a@example.com", null)),
-                new ZBValidateOptions().setTimeout(30).setVerifyPlus(true),
-                r -> {
-                }, this::failOnError);
-        Recorded record = only();
-        assertTrue(record.body.contains("\"timeout\":\"30\""), record.body);
-        assertTrue(record.body.contains("\"verify_plus\":true"), record.body);
-
-        List<String> errors = new ArrayList<>();
-        zeroBounceSDK.validateBatch(
-                List.of(new ZBValidateBatchData("a@example.com", null)),
-                new ZBValidateOptions().setTimeout(5),
-                r -> fail("success"), error -> errors.addAll(error.getErrors()));
-        assertTrue(errors.toString().contains("timeout"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    @Test
-    public void sendEvaluatedFilePostsTheFileIdAsAFormField() throws IOException {
-        // LIVE: send-evaluated-file takes the evaluator's file_id as a form
-        // field, not the file upload the docs describe.
-        mockAll(200, """
-                {"success":true,"message":"ok","file_id":"new-fid"}""");
-
-        zeroBounceSDK.sendEvaluatedFile("eval-file-1", r -> {
-        }, this::failOnError);
-        Recorded record = only();
-        assertEquals("POST", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/v2/send-evaluated-file/", record.path());
-        assertEquals("eval-file-1", record.form().get("file_id"));
-
-        List<String> errors = new ArrayList<>();
-        zeroBounceSDK.sendEvaluatedFile("  ", r -> fail("success"),
-                error -> errors.addAll(error.getErrors()));
-        assertTrue(errors.toString().contains("file_id"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    @Test
-    public void s3AndSftpFileJobsRequireFileNameAndReturnUrl() throws IOException {
-        mockAll(200, "{}");
-        List<String> errors = new ArrayList<>();
-        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
-
-        // LIVE: both fields are required on every one of these jobs.
-        zeroBounceSDK.emailFinderS3File(
-                new ZBBulkFileJobOptions().setReturnUrl("https://example.com/done"),
-                r -> fail("success"), collect);
-        zeroBounceSDK.validateSFTPFile(
-                new ZBBulkFileJobOptions().setReturnUrl("https://example.com/done"),
-                r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("file_name"), errors.toString());
-
-        errors.clear();
-        zeroBounceSDK.domainSearchS3File(
-                new ZBBulkFileJobOptions().setFileName("f.csv"), r -> fail("success"), collect);
-        zeroBounceSDK.scoreSFTPFile(
-                new ZBBulkFileJobOptions().setFileName("f.csv"), r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("return_url"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    @Test
-    public void inboxPlacementUsesItsOwnHostAndCamelCaseJson() throws IOException {
-        mockAll(200, "{\"ok\":true}");
-
-        zeroBounceSDK.getInboxPlacementProviders(r -> {
-        }, this::failOnError);
-        Recorded record = only();
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/providers", record.path());
-        // LIVE: the Inbox Placement Tester authenticates with a Bearer header,
-        // and the key must not reach the query string, where it would be logged.
-        assertEquals("Bearer " + API_KEY, record.headers.get("Authorization"));
-        assertNull(record.query().get("api_key"));
-
-        zeroBounceSDK.getInboxPlacementTestTypes(r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/test-types", only().path());
-
-        zeroBounceSDK.createInboxPlacementTest("Launch",
-                new ZeroBounceSDK.CreateInboxPlacementTestOptions()
-                        .setTestType(1)
-                        .setSenderEmail("news@example.com")
-                        .setWebhookUrl("https://example.com/ipt"),
-                r -> {
-                }, this::failOnError);
-        record = only();
-        assertEquals("POST", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/test", record.path());
-        // Bodies are camelCase JSON, and unset fields are left out.
-        assertTrue(record.body.contains("\"testType\":1"), record.body);
-        assertTrue(record.body.contains("\"senderEmail\":\"news@example.com\""), record.body);
-        assertTrue(record.body.contains("\"webhookUrl\":\"https://example.com/ipt\""), record.body);
-        assertFalse(record.body.contains("providerIds"), record.body);
-        assertFalse(record.body.contains("seedIds"), record.body);
-
-        zeroBounceSDK.listInboxPlacementTests(
-                new ZeroBounceSDK.ListInboxPlacementTestsOptions()
-                        .setStatus("finished").setPage(1).setPageSize(25),
-                r -> {
-                }, this::failOnError);
-        record = only();
-        assertEquals("finished", record.query().get("status"));
-        assertEquals("1", record.query().get("page"));
-        assertEquals("25", record.query().get("pageSize"));
-
-        zeroBounceSDK.listInboxPlacementTests(null, r -> {
-        }, this::failOnError);
-        record = only();
-        assertFalse(record.query().containsKey("status"));
-        assertFalse(record.query().containsKey("page"));
-
-        zeroBounceSDK.deleteInboxPlacementTest("a b/c", r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("DELETE", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/test/a%20b%2Fc", record.path());
-
-        zeroBounceSDK.setInboxPlacementWebhook("https://example.com/ipt", r -> {
-        }, this::failOnError);
-        record = only();
-        assertEquals("PUT", record.method);
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/webhook", record.path());
-        assertTrue(record.body.contains("\"webhookUrl\":\"https://example.com/ipt\""), record.body);
-
-        zeroBounceSDK.getInboxPlacementWebhook(r -> {
-        }, this::failOnError);
-        assertEquals("https://bulkapi.zerobounce.net/api/ipt/webhook", only().path());
-
-        List<String> errors = new ArrayList<>();
-        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
-        zeroBounceSDK.getInboxPlacementTest("   ", r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("test_id"), errors.toString());
-        errors.clear();
-        zeroBounceSDK.createInboxPlacementTest(" ", null, r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("name"), errors.toString());
-        errors.clear();
-        zeroBounceSDK.setInboxPlacementWebhook("", r -> fail("success"), collect);
-        assertTrue(errors.toString().contains("webhook_url"), errors.toString());
-        assertTrue(recorded.isEmpty());
-    }
-
-    @Test
-    public void detailErrorBodyBecomesTheMessage() throws IOException {
-        // The Inbox Placement Tester is a Django REST framework app: it reports
-        // errors under "detail" rather than the "error"/"message" keys the rest
-        // of the API uses.
-        mockAll(404, "{\"detail\":\"Inbox placement test not found.\"}");
-
-        List<String> errors = new ArrayList<>();
-        zeroBounceSDK.getInboxPlacementTest("123", r -> fail("success"), e -> errors.addAll(e.getErrors()));
-        assertTrue(errors.toString().contains("Inbox placement test not found."), errors.toString());
-    }
-
-    @Test
-    public void listEvaluatorAndInboxPlacementBaseUrlsAreOverridable() {
-        // These are separate hosts, not paths built from the bulk base, so an
-        // override of the main base URL alone would leave them on the live API.
-        zeroBounceSDK.initialize(API_KEY, "https://api.example.test/v2",
-                "https://bulk.example.test/v2/listevaluator", "https://bulk.example.test/api/ipt");
-        assertEquals("https://bulk.example.test/v2/listevaluator", zeroBounceSDK.listEvaluatorBaseUrl);
-        assertEquals("https://bulk.example.test/api/ipt", zeroBounceSDK.inboxPlacementBaseUrl);
-        assertThrows(IllegalArgumentException.class, () ->
-                zeroBounceSDK.initialize(API_KEY, null, "http://evil.example", null));
+    private interface Call {
+        @SuppressWarnings("rawtypes")
+        void run(ZeroBounceSDK.OnSuccessCallback success, ZeroBounceSDK.OnErrorCallback error);
     }
 }

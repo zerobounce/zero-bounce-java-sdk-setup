@@ -25,10 +25,13 @@ jobs:
           java-version: 21
           distribution: 'temurin'
 
-      # Execute unit tests.
+      - name: Typecheck
+        run: cd zero-bounce-sdk && mvn -B -DskipTests compile
+
+      # Execute unit tests. This includes the offline fake-API suite.
       - name: Run unit tests
-        run: cd zero-bounce-sdk && mvn test
+        run: cd zero-bounce-sdk && mvn -B test
 
       # Compile the project to check for errors.
       - name: Compile project
-        run: cd zero-bounce-sdk && mvn clean install
+        run: cd zero-bounce-sdk && mvn -B clean install

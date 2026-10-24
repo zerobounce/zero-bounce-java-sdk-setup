@@ -1,21 +1,29 @@
 package com.zerobounce;
 
 import com.google.gson.annotations.SerializedName;
+
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
-/** One entry of a listS3files response. */
+/**
+ * One file entry from GET /listS3files.
+ *
+ * The public docs write the keys capitalised ("Name", "Size", "LastModified"),
+ * while the other ZeroBounce SDKs read them lower-cased. Rather than pick one
+ * and silently decode nulls when the API answers the other, each field accepts
+ * both spellings through Gson's {@code alternate}.
+ */
 public class ZBS3ListFileEntry {
 
-    @SerializedName("Name")
+    @SerializedName(value = "name", alternate = {"Name"})
     @Nullable
     private String name = null;
 
-    @SerializedName("Size")
+    @SerializedName(value = "size", alternate = {"Size"})
     private long size = 0;
 
-    @SerializedName("LastModified")
+    @SerializedName(value = "last_modified", alternate = {"LastModified", "lastModified"})
     @Nullable
     private String lastModified = null;
 

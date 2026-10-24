@@ -319,7 +319,11 @@ public class ZeroBounceSDKTest {
                           }
                       ]
                     }""";
-        ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
+        // The account-level batch error ("email_address": "all") is reported as
+        // the short message, and now also carries the HTTP status it arrived with.
+        ErrorResponse expectedResponse = ErrorResponse.parseError(
+                "Invalid API Key or your account ran out of credits", 400
+        );
 
         List<ZBValidateBatchData> emailsData = new ArrayList<>();
         emailsData.add(new ZBValidateBatchData("valid@example.com", "1.1.1.1"));
@@ -1323,6 +1327,45 @@ public class ZeroBounceSDKTest {
     }
 
     @Test
+    public void listS3Files_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                [
+                  {
+                    "name": "uploads/list.csv",
+                    "size": 100,
+                    "last_modified": "2024-01-01T00:00:00Z"
+                  }
+                ]""";
+
+        String urlPath = getEncodedUrl(
+                "https://bulkapi.zerobounce.net/listS3files",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("bucket", "my-bucket");
+                        put("search", "list");
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.listS3Files(
+                        "my-bucket",
+                        "list",
+                        response -> {
+                            assertEquals(1, response.size());
+                            assertEquals("uploads/list.csv", response.get(0).getName());
+                            assertEquals(100, response.get(0).getSize());
+                        },
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
     public void getActivityData_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
         String responseJson = """
@@ -1348,6 +1391,61 @@ public class ZeroBounceSDKTest {
                 responseJson,
                 "",
                 () -> zeroBounceSDK.getActivityData(
+                        email,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
+    public void scoreEmail_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                {
+                  "email": "mark@gmail.com",
+                  "score": 10
+                }""";
+        ZBScoreEmailResponse expectedResponse = gson.fromJson(responseJson, ZBScoreEmailResponse.class);
+
+        String email = "mark@gmail.com";
+        String urlPath = getEncodedUrl(
+                "https://api.zerobounce.net/v2/scoring",
+                new HashMap<>() {
+                    {
+                        put("api_key", API_KEY);
+                        put("email", email);
+                    }
+                }
+        );
+        mockRequest(
+                urlPath,
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.scoreEmail(
+                        email,
+                        response -> assertEquals(expectedResponse, response),
+                        errorResponse -> fail(errorResponse.toString())
+                )
+        );
+    }
+
+    @Test
+    public void scoreEmailPost_ReturnsSuccess() throws Exception {
+        String responseJson = """
+                {
+                  "email": "mark@gmail.com",
+                  "score": 10
+                }""";
+        ZBScoreEmailResponse expectedResponse = gson.fromJson(responseJson, ZBScoreEmailResponse.class);
+
+        String email = "mark@gmail.com";
+        mockRequest(
+                "https://api.zerobounce.net/v2/scoring",
+                200,
+                responseJson,
+                "",
+                () -> zeroBounceSDK.scoreEmailPost(
                         email,
                         response -> assertEquals(expectedResponse, response),
                         errorResponse -> fail(errorResponse.toString())

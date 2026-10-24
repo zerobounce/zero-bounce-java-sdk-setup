@@ -134,22 +134,6 @@ public class ZBValidateResponse {
     @Nullable
     private String error = null;
 
-    public @Nullable String getActiveInDays() {
-        return activeInDays;
-    }
-
-    public void setActiveInDays(@Nullable String activeInDays) {
-        this.activeInDays = activeInDays;
-    }
-
-    public @Nullable String getActiveFirstSeen() {
-        return activeFirstSeen;
-    }
-
-    public void setActiveFirstSeen(@Nullable String activeFirstSeen) {
-        this.activeFirstSeen = activeFirstSeen;
-    }
-
     public @Nullable String getDomainWebsiteExists() {
         return domainWebsiteExists;
     }
@@ -228,6 +212,22 @@ public class ZBValidateResponse {
 
     public void setDomainAgeDays(@Nullable String domainAgeDays) {
         this.domainAgeDays = domainAgeDays;
+    }
+
+    public @Nullable String getActiveInDays() {
+        return activeInDays;
+    }
+
+    public void setActiveInDays(@Nullable String activeInDays) {
+        this.activeInDays = activeInDays;
+    }
+
+    public @Nullable String getActiveFirstSeen() {
+        return activeFirstSeen;
+    }
+
+    public void setActiveFirstSeen(@Nullable String activeFirstSeen) {
+        this.activeFirstSeen = activeFirstSeen;
     }
 
     public @Nullable Boolean getFreeEmail() {
@@ -377,7 +377,8 @@ public class ZBValidateResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays, freeEmail,
+        return Objects.hash(address, status, subStatus, account, domain, didYouMean, domainAgeDays,
+                freeEmail,
                 mxFound, mxRecord, smtpProvider, catchallDomain, firstName, lastName, gender, city, region, zipCode,
                 country, processedAt, activeInDays, activeFirstSeen, domainWebsiteExists,
                 domainRegistrantCompanyName, message, error
