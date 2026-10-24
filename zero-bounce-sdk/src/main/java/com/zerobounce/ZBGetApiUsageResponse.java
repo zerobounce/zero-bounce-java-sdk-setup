@@ -149,6 +149,14 @@ public class ZBGetApiUsageResponse {
     @SerializedName("sub_status_role_based_accept_all")
     private int subStatusRoleBasedAcceptAll = 0;
 
+    // Total emails with a leading period that was removed
+    @SerializedName("sub_status_leading_period_removed")
+    private int subStatusLeadingPeriodRemoved = 0;
+
+    // Total number of times the API has a sub status of "alias_address"
+    @SerializedName("sub_status_alias_address")
+    private int subStatusAliasAddress = 0;
+
     // Start date of query
     @SerializedName("start_date")
     @Nullable
