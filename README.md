@@ -592,24 +592,29 @@ ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
 // Amazon S3. The file name is the full path, as returned by listS3Files.
 zb.listS3Files(null, null, onSuccess, onError);   // optional bucket, search
 
-zb.validateS3File(new ZBBulkFileJobOptions()
+// file_name and return_url are required on every one of these jobs.
+ZBBulkFileJobOptions s3 = new ZBBulkFileJobOptions()
         .setFileName("lists/leads.csv")
-        .setHasHeaderRow(true), onSuccess, onError);
-zb.scoreS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
-zb.emailFinderS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
-zb.domainSearchS3File(new ZBBulkFileJobOptions()
-        .setFileName("lists/leads.csv")
-        .setRemoveDuplicates(true)
-        .setReturnUrl("https://example.com/zerobounce-done"), onSuccess, onError);
+        .setHasHeaderRow(true)
+        .setReturnUrl("https://example.com/zerobounce-done");
+
+zb.validateS3File(s3, onSuccess, onError);
+zb.scoreS3File(s3, onSuccess, onError);
+zb.emailFinderS3File(s3, onSuccess, onError);
+zb.domainSearchS3File(s3, onSuccess, onError);
 zb.exportS3File("<FILE_ID>", "my-export-bucket", onSuccess, onError);
 
 // SFTP/FTP. The server, path and protocol come from your ZeroBounce settings.
-// The file name may be left unset for validateSFTPFile alone, which then uses
-// the input bucket from those settings.
-zb.validateSFTPFile(new ZBBulkFileJobOptions().setHasHeaderRow(true), onSuccess, onError);
-zb.scoreSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
-zb.emailFinderSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
-zb.domainSearchSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
+// The docs list file_name as optional for validateSFTPFile, but the live API
+// requires it there too.
+ZBBulkFileJobOptions sftp = new ZBBulkFileJobOptions()
+        .setFileName("my_file.txt")
+        .setReturnUrl("https://example.com/zerobounce-done");
+
+zb.validateSFTPFile(sftp, onSuccess, onError);
+zb.scoreSFTPFile(sftp, onSuccess, onError);
+zb.emailFinderSFTPFile(sftp, onSuccess, onError);
+zb.domainSearchSFTPFile(sftp, onSuccess, onError);
 
 // Note the field: this one takes export_path, not export_bucket.
 // Pass null to use the export path from your settings.
@@ -623,12 +628,16 @@ the file id is URL-encoded as a single path segment.
 
 ```java
 ZeroBounceSDK.getInstance().getListEvaluatorResult("<FILE_ID>", onSuccess, onError);
+
+// Submit a finished evaluation for validation. This takes the evaluator's
+// file_id as a form field, not a file upload.
+ZeroBounceSDK.getInstance().sendEvaluatedFile("<FILE_ID>", onSuccess, onError);
 ```
 
 ## Inbox Placement Tester
 
-Runs on its own host, takes the API key on the query string, and sends camelCase
-JSON bodies. It spends the account's inbox-test credits.
+Runs on its own host, authenticates with an `Authorization: Bearer` header, and
+sends camelCase JSON bodies. It spends the account's inbox-test credits.
 
 ```java
 ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
@@ -883,6 +892,67 @@ You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login
     gpg --list-keys
     gpg --list-secret-keys
     ```
+
+## Warmup API
+
+The Warmup API is a separate product. It has its own host, its own team-scoped key, and its own client; your validation key will not work with it.
+
+```java
+ZeroBounceWarmup warmup = ZeroBounceWarmup.getInstance();
+warmup.initialize("<YOUR_WARMUP_API_KEY>");
+
+warmup.listSendingAccounts(onSuccess, onError);
+warmup.getProgressToday(onSuccess, onError);
+warmup.downloadSeeds(csv -> { /* CSV text, columns seed,provider */ }, onError);
+```
+
+Add a from-address you run yourself, with one of the five standard engagement rules (0 Default, 1 Slow Pace, 2 Repair, 3 Boost, 4 Protect):
+
+```java
+warmup.addSendingAccount("sender@example.com", "self_managed",
+        new ZeroBounceWarmup.AddSendingAccountOptions().setEngagementRuleId(0),
+        onSuccess, onError);
+```
+
+A custom engagement rule can be changed only once every seven days; inside that window the API answers 429.
+
+```java
+warmup.createCustomEngagement("sender@example.com", 20, 20, 35, onSuccess, onError);  // reply, important, click %
+```
+
+`checkDomainDmarc` takes an **email address**, not a domain — the live API rejects a bare domain even though the docs describe one:
+
+```java
+warmup.checkDomainDmarc("sender@example.com", null, onSuccess, onError);
+```
+
+Every documented empty success (204, or an empty 200) arrives as a `null` payload. A payload that is not a JSON object — `/seeds` is an array, `/seed-count` a bare number — comes back wrapped under `data`. Failures carry the HTTP status on `ErrorResponse.getStatusCode()`. Nothing is stored by `testSmtpConfiguration`, and the credentials you pass it are masked out of any error it raises.
+
+## Live API suite
+
+`mvn test` never touches the network: the live suite lives outside the Maven module's source root, so CI does not even compile it. It needs real keys, which come from the environment and are never written anywhere:
+
+```bash
+mvn -f zero-bounce-sdk/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
+mvn -f zero-bounce-sdk/pom.xml compile
+CP="zero-bounce-sdk/target/classes:$(cat /tmp/cp.txt)"
+javac -cp "$CP" -d live/out live/LiveApi.java
+
+export ZEROBOUNCE_API_KEY=...          # validation API
+export ZEROBOUNCE_WARMUP_API_KEY=...   # Warmup API
+java -cp "$CP:live/out" com.zerobounce.live.LiveApi
+```
+
+By default it only makes free calls: sandbox addresses, reads, and requests that are expected to fail but still prove the API accepts the payload. It checks that the credit balance did not move. Two flags opt in to more:
+
+| Flag | What it adds |
+| --- | --- |
+| `ZEROBOUNCE_LIVE_SPEND=1` | billable calls (scoring, activity, email finder) and a bulk round trip that deletes its own job |
+| `ZEROBOUNCE_LIVE_CHANGES=1` | reversible account changes — a test filter and a self-managed Warmup sending account — each undone in cleanup even when a test fails |
+
+It never creates an Inbox Placement test, sets the Inbox Placement webhook, or starts ZB-managed Warmup onboarding, because the API cannot undo any of those.
+
+Run it by hand before every release: the offline suite proves the SDK sends what we think it sends, and only the live suite proves the API accepts it.
 
 ## Publish
 
