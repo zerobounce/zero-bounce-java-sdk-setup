@@ -196,6 +196,10 @@ Then you can use any of the SDK methods, for example:
     ```
 
 * ##### Find the email formats based on a given first name and domain
+
+    The first name is optional: pass `null` to look up the domain's format
+    without one. At least one of the domain and the company name is required.
+
     ```java
     ZeroBounceSDK.getInstance().findEmail(
         "<FIRST_NAME_TO_TEST>"
@@ -604,6 +608,20 @@ zb.emailFinderS3File(s3, onSuccess, onError);
 zb.domainSearchS3File(s3, onSuccess, onError);
 zb.exportS3File("<FILE_ID>", "my-export-bucket", onSuccess, onError);
 
+// validateS3File and scoreS3File also take an options object with the column
+// indexes those two jobs accept. They send the same required fields, so
+// file_name and return_url are required on these overloads as well.
+zb.validateS3File(new ZeroBounceSDK.ValidateS3FileOptions()
+        .setFileName("lists/leads.csv")
+        .setReturnUrl("https://example.com/zerobounce-done")
+        .setEmailAddressColumn(1)
+        .setAllowPhase2(true), onSuccess, onError);
+
+zb.scoreS3File(new ZeroBounceSDK.ScoreS3FileOptions()
+        .setFileName("lists/leads.csv")
+        .setReturnUrl("https://example.com/zerobounce-done")
+        .setEmailAddressColumn(1), onSuccess, onError);
+
 // SFTP/FTP. The server, path and protocol come from your ZeroBounce settings.
 // The docs list file_name as optional for validateSFTPFile, but the live API
 // requires it there too.
@@ -624,9 +642,13 @@ zb.exportSFTPFile("<FILE_ID>", "/exports", onSuccess, onError);
 ## List evaluator
 
 The list evaluator has its own base URL, not a path built from the bulk one, and
-the file id is URL-encoded as a single path segment.
+the file id is URL-encoded as a single path segment. The upload and the result
+read that same base URL, so overriding it moves both.
 
 ```java
+// Upload a list to evaluate. The email column is 1-based.
+ZeroBounceSDK.getInstance().sendListEvaluatorFile(new File("list.csv"), 1, onSuccess, onError);
+
 ZeroBounceSDK.getInstance().getListEvaluatorResult("<FILE_ID>", onSuccess, onError);
 
 // Submit a finished evaluation for validation. This takes the evaluator's
@@ -645,6 +667,9 @@ ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
 zb.getInboxPlacementProviders(onSuccess, onError);
 zb.getInboxPlacementTestTypes(onSuccess, onError);
 
+// The name is at most 64 characters and testType is 1, 2 or 3. A type 1 test
+// mails from your own address, so senderEmail is required with it. All three
+// are rejected before the request is sent.
 zb.createInboxPlacementTest("Launch",
         new ZeroBounceSDK.CreateInboxPlacementTestOptions()
                 .setTestType(1)
@@ -655,8 +680,15 @@ zb.createInboxPlacementTest("Launch",
 // Send your campaign to the seeds you got back, then read the results.
 zb.getInboxPlacementTest("<TEST_ID>", onSuccess, onError);
 
+// The page size goes on the wire as page_size; as pageSize the API ignores it
+// and answers with the whole list.
 zb.listInboxPlacementTests(
-        new ZeroBounceSDK.ListInboxPlacementTestsOptions().setStatus("finished").setPage(1),
+        new ZeroBounceSDK.ListInboxPlacementTestsOptions()
+                .setStatus("finished")
+                .setPage(1)
+                .setPageSize(25)
+                .setCreatedAfter("2026-01-01")
+                .setCreatedBefore("2026-02-01"),
         onSuccess, onError);
 zb.setInboxPlacementWebhook("https://example.com/ipt-webhook", onSuccess, onError);
 zb.getInboxPlacementWebhook(onSuccess, onError);

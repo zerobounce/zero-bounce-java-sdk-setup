@@ -66,11 +66,11 @@ class OfflineApiTest {
     }
 
     @Test
-    void validateSendsZeroTimeoutFalseFlagsAndPostForm() {
+    void validateWithOptionsSendsFalseFlagsAndPostForm() {
         Probe probe = probe("key a/b");
         ZBValidateRequestOptions options = new ZBValidateRequestOptions();
         options.setIpAddress("203.0.113.5");
-        options.setTimeout(0);
+        options.setTimeout(3);
         options.setActivityData(false);
         options.setVerifyPlus(true);
         options.setUsePost(true);
@@ -82,12 +82,40 @@ class OfflineApiTest {
         assertEquals("application/x-www-form-urlencoded", request.contentType);
         assertEquals("key a/b", request.apiKey);
         assertEquals("a b+c@example.com", request.field("email"));
-        assertEquals("0", request.field("timeout"));
+        assertEquals("203.0.113.5", request.field("ip_address"));
+        assertEquals("3", request.field("timeout"));
         assertEquals("false", request.field("activity_data"));
         assertEquals("true", request.field("verify_plus"));
         assertTrue(request.rawBody.contains("email="));
         assertFalse(request.rawBody.contains(" "));
         assertFalse(request.url.contains(" "));
+    }
+
+    @Test
+    void validateWithOptionsIsGatedLikeValidate() {
+        // validateWithOptions is a wrapper over validate, so the documented
+        // 3-60 second timeout is rejected before the request on both.
+        Probe probe = probe("key-gate");
+        ZBValidateRequestOptions tooSmall = new ZBValidateRequestOptions();
+        tooSmall.setTimeout(0);
+        ErrorResponse error = probe.failure(
+                (ok, err) -> probe.sdk.validateWithOptions("person@example.com", tooSmall, ok, err)
+        );
+        assertEquals(0, probe.api.records().size());
+        assertTrue(error.getErrors().toString().contains("timeout"), error.getErrors().toString());
+
+        ErrorResponse blank = probe.failure(
+                (ok, err) -> probe.sdk.validateWithOptions("  ", null, ok, err)
+        );
+        assertEquals(0, probe.api.records().size());
+        assertTrue(blank.getErrors().toString().contains("email"), blank.getErrors().toString());
+
+        // A null options object still sends the two required parameters.
+        probe.success((ok, err) -> probe.sdk.validateWithOptions("person@example.com", null, ok, err));
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("GET", request.method);
+        assertEquals("person@example.com", request.field("email"));
+        assertEquals("", request.field("ip_address"));
     }
 
     @Test
@@ -400,7 +428,9 @@ class OfflineApiTest {
 
         probe.api.clear();
         InputStream stream = new ByteArrayInputStream("domain\nexample.com\n".getBytes(StandardCharsets.UTF_8));
-        probe.success((ok, err) -> probe.sdk.sendEmailFinderFileStream(stream, "names.csv", 2, null, ok, err));
+        ZeroBounceSDK.EmailFinderSendFileOptions streamOptions =
+                new ZeroBounceSDK.EmailFinderSendFileOptions().setFirstNameColumn(2);
+        probe.success((ok, err) -> probe.sdk.sendEmailFinderFileStream(stream, "names.csv", 2, streamOptions, ok, err));
         assertEquals("names.csv", probe.only().field("file"));
         assertNull(probe.only().field("has_header_row"));
 
@@ -462,8 +492,13 @@ class OfflineApiTest {
         probe.success((ok, err) -> probe.sdk.getListEvaluatorResult("fid", ok, err));
         assertEquals("/v2/listevaluator/fid/", probe.only().path);
         probe.api.clear();
-        probe.success((ok, err) -> probe.sdk.sendEvaluatedFile(csv, ok, err));
-        assertEquals("/v2/send-evaluated-file/", probe.only().path);
+        // LIVE: send-evaluated-file takes the evaluator's file_id as a form
+        // field. There is no file-upload overload.
+        probe.success((ok, err) -> probe.sdk.sendEvaluatedFile("eval-fid", ok, err));
+        FakeApi.RecordedRequest evaluated = probe.only();
+        assertEquals("POST", evaluated.method);
+        assertEquals("/v2/send-evaluated-file/", evaluated.path);
+        assertEquals("eval-fid", evaluated.field("file_id"));
 
         probe.api.clear();
         probe.success((ok, err) -> probe.sdk.addFilter("exclude", "email", "spam@", ok, err));
@@ -503,6 +538,7 @@ class OfflineApiTest {
         probe.api.clear();
         ZeroBounceSDK.ValidateS3FileOptions validate = new ZeroBounceSDK.ValidateS3FileOptions()
                 .setFileName("emails.csv")
+                .setReturnUrl("https://example.com/done")
                 .setEmailAddressColumn(0)
                 .setHasHeaderRow(false)
                 .setAllowPhase2(false)
@@ -510,7 +546,12 @@ class OfflineApiTest {
         probe.success((ok, err) -> probe.sdk.validateS3File(validate, ok, err));
         FakeApi.RecordedRequest validation = probe.only();
         assertEquals("POST", validation.method);
+        assertEquals("bulkapi.zerobounce.net", validation.host);
         assertEquals("/validateS3file", validation.path);
+        assertEquals("s3-key", validation.apiKey);
+        assertEquals("emails.csv", validation.field("file_name"));
+        // LIVE: required on every S3 / SFTP job, on this overload too.
+        assertEquals("https://example.com/done", validation.field("return_url"));
         assertEquals("0", validation.field("email_address_column"));
         assertEquals("false", validation.field("has_header_row"));
         assertEquals("false", validation.field("allow_phase_2"));
@@ -519,10 +560,15 @@ class OfflineApiTest {
         probe.api.clear();
         ZeroBounceSDK.ScoreS3FileOptions score = new ZeroBounceSDK.ScoreS3FileOptions()
                 .setFileName("emails.csv")
+                .setReturnUrl("https://example.com/done")
                 .setRemoveDuplicate(false);
         probe.success((ok, err) -> probe.sdk.scoreS3File(score, ok, err));
         FakeApi.RecordedRequest scoring = probe.only();
         assertEquals("/scoreS3file", scoring.path);
+        assertEquals("emails.csv", scoring.field("file_name"));
+        assertEquals("https://example.com/done", scoring.field("return_url"));
+        // has_header_row defaults to true, like the ZBBulkFileJobOptions overload.
+        assertEquals("true", scoring.field("has_header_row"));
         assertEquals("false", scoring.field("remove_duplicate"));
         assertNull(scoring.field("allow_phase_2"));
         assertNull(scoring.field("email_address_column"));
@@ -533,6 +579,115 @@ class OfflineApiTest {
         assertEquals("/exportS3file", exported.path);
         assertEquals("fid", exported.field("file_id"));
         assertEquals("bucket", exported.field("export_bucket"));
+    }
+
+    @Test
+    void s3OptionOverloadsRequireTheSameFields() {
+        // The ValidateS3FileOptions and ScoreS3FileOptions overloads share the
+        // ZBBulkFileJobOptions implementation, so the required-field gate is
+        // the same on all four entry points.
+        Probe probe = probe("s3-gate");
+
+        ErrorResponse validateName = probe.failure((ok, err) -> probe.sdk.validateS3File(
+                new ZeroBounceSDK.ValidateS3FileOptions().setReturnUrl("https://example.com/done"), ok, err));
+        assertTrue(validateName.getErrors().toString().contains("file_name"),
+                validateName.getErrors().toString());
+
+        ErrorResponse validateReturn = probe.failure((ok, err) -> probe.sdk.validateS3File(
+                new ZeroBounceSDK.ValidateS3FileOptions().setFileName("emails.csv"), ok, err));
+        assertTrue(validateReturn.getErrors().toString().contains("return_url"),
+                validateReturn.getErrors().toString());
+
+        ErrorResponse scoreName = probe.failure((ok, err) -> probe.sdk.scoreS3File(
+                new ZeroBounceSDK.ScoreS3FileOptions().setReturnUrl("https://example.com/done"), ok, err));
+        assertTrue(scoreName.getErrors().toString().contains("file_name"),
+                scoreName.getErrors().toString());
+
+        // ScoreS3FileOptions had no returnUrl at all, so return_url was never
+        // sent and the live call failed with "This field is required".
+        ErrorResponse scoreReturn = probe.failure((ok, err) -> probe.sdk.scoreS3File(
+                new ZeroBounceSDK.ScoreS3FileOptions().setFileName("emails.csv"), ok, err));
+        assertTrue(scoreReturn.getErrors().toString().contains("return_url"),
+                scoreReturn.getErrors().toString());
+
+        assertEquals(0, probe.api.records().size());
+    }
+
+    @Test
+    void emailFinderUploadNeedsAFirstNameOrFullNameColumn() throws Exception {
+        Probe probe = probe("finder-key");
+        File csv = tempDir.resolve("names.csv").toFile();
+        Files.writeString(csv.toPath(), "domain\nexample.com\n");
+
+        ErrorResponse none = probe.failure(
+                (ok, err) -> probe.sdk.sendEmailFinderFile(csv, 1, null, ok, err));
+        assertTrue(none.getErrors().toString().contains("first_name_column"), none.getErrors().toString());
+
+        ErrorResponse neither = probe.failure((ok, err) -> probe.sdk.sendEmailFinderFile(
+                csv, 1, new ZeroBounceSDK.EmailFinderSendFileOptions().setLastNameColumn(2), ok, err));
+        assertTrue(neither.getErrors().toString().contains("full_name_column"), neither.getErrors().toString());
+
+        ErrorResponse stream = probe.failure((ok, err) -> probe.sdk.sendEmailFinderFileStream(
+                new ByteArrayInputStream("d\n".getBytes(StandardCharsets.UTF_8)), "n.csv", 1, null, ok, err));
+        assertFalse(stream.getErrors().isEmpty());
+        assertEquals(0, probe.api.records().size());
+
+        // Either one on its own is enough.
+        probe.success((ok, err) -> probe.sdk.sendEmailFinderFile(
+                csv, 1, new ZeroBounceSDK.EmailFinderSendFileOptions().setFirstNameColumn(2), ok, err));
+        assertEquals("2", probe.only().field("first_name_column"));
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.sendEmailFinderFile(
+                csv, 1, new ZeroBounceSDK.EmailFinderSendFileOptions().setFullNameColumn(3), ok, err));
+        assertEquals("3", probe.only().field("full_name_column"));
+    }
+
+    @Test
+    void findEmailLeavesOutABlankFirstName() {
+        // first_name is optional on guessformat.
+        Probe probe = probe("finder");
+        probe.success((ok, err) -> probe.sdk.findEmail(null, "example.com", null, null, "Doe", ok, err));
+        FakeApi.RecordedRequest request = probe.only();
+        assertEquals("GET", request.method);
+        assertEquals("api.zerobounce.net", request.host);
+        assertEquals("/v2/guessformat", request.path);
+        assertNull(request.field("first_name"));
+        assertEquals("example.com", request.field("domain"));
+        assertEquals("Doe", request.field("last_name"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.findEmail("   ", null, "Example Inc", null, null, ok, err));
+        assertNull(probe.only().field("first_name"));
+        assertEquals("Example Inc", probe.only().field("company_name"));
+
+        probe.api.clear();
+        probe.success((ok, err) -> probe.sdk.findEmail("John", "example.com", null, null, null, ok, err));
+        assertEquals("John", probe.only().field("first_name"));
+    }
+
+    @Test
+    void listEvaluatorUploadFollowsTheListEvaluatorBaseUrl() throws Exception {
+        // The upload and the result are a pair: overriding the list evaluator
+        // host must not leave the upload on the bulk host.
+        ZeroBounceSDK sdk = new ZeroBounceSDK();
+        FakeApi api = new FakeApi();
+        sdk.transport = api;
+        sdk.initialize("eval-key", null, "https://bulk.example.test/v2/listevaluator", null);
+
+        File csv = tempDir.resolve("list.csv").toFile();
+        Files.writeString(csv.toPath(), "email\na@example.com\n");
+        sdk.sendListEvaluatorFile(csv, 1, response -> {
+        }, error -> fail(error.getErrors().toString()));
+        sdk.getListEvaluatorResult("fid", response -> {
+        }, error -> fail(error.getErrors().toString()));
+
+        List<FakeApi.RecordedRequest> records = api.records();
+        assertEquals(2, records.size(), records.toString());
+        assertEquals("bulk.example.test", records.get(0).host);
+        assertEquals("/v2/listevaluator/", records.get(0).path);
+        assertEquals("1", records.get(0).field("email_address_column"));
+        assertEquals("bulk.example.test", records.get(1).host);
+        assertEquals("/v2/listevaluator/fid/", records.get(1).path);
     }
 
     @Test
