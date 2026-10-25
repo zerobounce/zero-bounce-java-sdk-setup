@@ -9,15 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `validateWithOptions` takes `ZBValidateRequestOptions`: `timeout`, `activityData`, `verifyPlus`, and `usePost` (form-encoded `POST /v2/validate`).
+- `validateWithOptions` takes `ZBValidateRequestOptions`: `timeout`, `activityData`, `verifyPlus`, and `usePost` (form-encoded `POST /v2/validate`). It is a wrapper over `validate(String, String, ZBValidateOptions, ...)`, so a timeout outside 3-60 seconds is rejected before the request. Prefer `ZBValidateOptions`, which also carries `domainInfo`, `greylistProcessing`, and `callbackUrl`.
 - `validateBatchWithOptions` sends `timeout`, `activityData`, and `verifyPlus` on `POST /v2/validatebatch`.
 - `ZBValidateResponse` reads `active_in_days` and `active_first_seen`.
 - `scoreEmail` (`GET /v2/scoring`) and `scoreEmailPost` (form-encoded `POST /v2/scoring`).
-- Bulk email finder (`sendEmailFinderFile`, `emailFinderFileStatus`, `emailFinderGetFile`, `emailFinderDeleteFile`). `has_header_row` is sent as `true` or `false` when it is set.
+- Bulk email finder (`sendEmailFinderFile`, `emailFinderFileStatus`, `emailFinderGetFile`, `emailFinderDeleteFile`). `has_header_row` is sent as `true` or `false` when it is set. The upload requires `first_name_column` or `full_name_column`.
 - Bulk domain search (`sendDomainSearchFile`, `domainSearchFileStatus`, `domainSearchGetFile`, `domainSearchDeleteFile`). `has_header_row` is sent as `true` or `false` when it is set.
-- List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`).
+- List evaluator (`sendListEvaluatorFile`, `getListEvaluatorResult`, `sendEvaluatedFile`). The upload and the result share the list evaluator base URL, so overriding that host moves both. `sendEvaluatedFile` takes the evaluator's `file_id` as a form field; there is no file-upload overload, because the live API rejects one with "file_id: This field is required".
 - Filters (`addFilter`, `listFilters`, `deleteFilter`).
-- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`). `email_address_column` is sent when it is set, including `0`.
+- S3 bulk (`validateS3File`, `scoreS3File`, `exportS3File`, `listS3Files`). `email_address_column` is sent when it is set, including `0`. `validateS3File` and `scoreS3File` also take `ValidateS3FileOptions` and `ScoreS3FileOptions` for the column indexes those two jobs accept; both overloads require `file_name` and `return_url`, and `ScoreS3FileOptions.setReturnUrl` was added for it.
+- Inbox Placement Tester (`getInboxPlacementProviders`, `getInboxPlacementTestTypes`, `createInboxPlacementTest`, `getInboxPlacementTest`, `listInboxPlacementTests`, `deleteInboxPlacementTest`, `getInboxPlacementWebhook`, `setInboxPlacementWebhook`). It authenticates with an `Authorization: Bearer` header and lists from `GET /tests`. `createInboxPlacementTest` rejects a name over 64 characters, a `testType` other than 1, 2, or 3, and a type 1 test without a `senderEmail`, before the request is sent. `ListInboxPlacementTestsOptions` takes `status`, `page`, `pageSize`, `createdAfter`, and `createdBefore`; the page size goes on the wire as `page_size`, which is the name the API honours.
 - `new ZeroBounceSDK()` builds a client for one API key. `getInstance()` remains a process-wide singleton.
 
 ### Changed
@@ -32,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Cloudflare JSON 403 (`error_code` 1020) is the title "Error 1020: Access denied", not the raw body.
 - `validateBatch` reports an account-level failure (HTTP 200, error for address `all`, such as an invalid API key or no credits) through the error callback. An error for one address stays on the successful result.
 - An empty API key, a blank email, a blank file id, and a blank filter rule, target, or value are rejected before a request is sent.
-- `findEmail` and `findDomain` treat a blank domain or company name as unset.
+- `findEmail` and `findDomain` treat a blank domain or company name as unset. `findEmail` takes a nullable `firstName` and leaves `first_name` out when it is blank: it is optional on `guessformat`.
+- A `POST`, `PUT`, or `DELETE` that answers HTTP 200 with a JSON `error`, an HTML page, or a body that is not JSON reaches the error callback, as a `GET` already did.
 
 ### Security
 

@@ -266,13 +266,19 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        ZBValidateRequestOptions options = new ZBValidateRequestOptions();
-        options.setIpAddress(ipAddress);
-        validateWithOptions(email, options, successCallback, errorCallback);
+        validate(email, ipAddress, null, successCallback, errorCallback);
     }
 
     /**
      * Validates the given email with optional v2 query parameters.
+     * <p>
+     * A thin wrapper over
+     * {@link #validate(String, String, ZBValidateOptions, OnSuccessCallback, OnErrorCallback)},
+     * which is the single implementation: it sends every documented option and
+     * rejects an out-of-range timeout before the request.
+     * {@link ZBValidateRequestOptions} carries a subset of
+     * {@link ZBValidateOptions}, so prefer the latter for {@code domain_info},
+     * {@code greylist_processing} and {@code callback_url}.
      */
     public void validateWithOptions(
             @NotNull String email,
@@ -280,50 +286,16 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        if (invalidApiKey(errorCallback)) return;
-        if (isBlank(email)) {
-            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+        if (options == null) {
+            validate(email, null, null, successCallback, errorCallback);
             return;
         }
-
-        HashMap<String, String> params = new HashMap<>();
-        params.put("api_key", apiKey);
-        params.put("email", email);
-        String ip = options != null && options.getIpAddress() != null ? options.getIpAddress() : "";
-        params.put("ip_address", ip);
-        if (options != null) {
-            if (options.getTimeout() != null) {
-                params.put("timeout", String.valueOf(options.getTimeout()));
-            }
-            if (options.getActivityData() != null) {
-                params.put("activity_data", options.getActivityData() ? "true" : "false");
-            }
-            if (options.getVerifyPlus() != null) {
-                params.put("verify_plus", options.getVerifyPlus() ? "true" : "false");
-            }
-        }
-
-        if (options != null && options.isUsePost()) {
-            sendFormPostRequest(
-                    apiBaseUrl + "/validate",
-                    params,
-                    new TypeToken<>() {
-                    },
-                    successCallback,
-                    errorCallback
-            );
-            return;
-        }
-
-        sendRequest(
-                apiBaseUrl + "/validate",
-                params,
-                null,
-                new TypeToken<>() {
-                },
-                successCallback,
-                errorCallback
-        );
+        ZBValidateOptions mapped = new ZBValidateOptions()
+                .setTimeout(options.getTimeout())
+                .setActivityData(options.getActivityData())
+                .setVerifyPlus(options.getVerifyPlus())
+                .setUsePost(options.isUsePost());
+        validate(email, options.getIpAddress(), mapped, successCallback, errorCallback);
     }
 
     /**
@@ -461,7 +433,8 @@ public class ZeroBounceSDK {
      * <p>
      * **Note**: At least one of [domain] or [companyName] must be provided.
      *
-     * @param firstName       the first name of the person whose email format is being searched
+     * @param firstName       the first name of the person whose email format is being searched;
+     *                        optional, and left out of the request when it is blank
      * @param domain          the email domain for which to find the email format
      * @param companyName     the company name for which to find the email format
      * @param middleName      the middle name of the person whose email format is being searched;
@@ -471,7 +444,7 @@ public class ZeroBounceSDK {
      * @param errorCallback   the error callback
      */
     public void findEmail(
-            @NotNull String firstName,
+            @Nullable String firstName,
             @Nullable String domain,
             @Nullable String companyName,
             @Nullable String middleName,
@@ -492,7 +465,11 @@ public class ZeroBounceSDK {
                 new HashMap<>() {
                     {
                         put("api_key", apiKey);
-                        put("first_name", firstName);
+                        // first_name is optional on guessformat: an empty one
+                        // is noise on the wire, so it is left out when blank.
+                        if (!isBlank(firstName)) {
+                            put("first_name", firstName);
+                        }
                         if (!isBlank(domain)) {
                             put("domain", domain);
                         }
@@ -1333,6 +1310,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
 
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("api_key", apiKey);
@@ -1691,6 +1672,22 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        bulkRootFileJob(path, options, Map.of(), successCallback, errorCallback);
+    }
+
+    /**
+     * The same job with the extra fields only some of them accept, such as the
+     * column indexes and {@code allow_phase_2} of {@code validateS3File}. The
+     * shared fields still go through {@link ZBBulkFileJobOptions#fill}, so the
+     * required-field gate is the same on every path.
+     */
+    private void bulkRootFileJob(
+            @NotNull String path,
+            @NotNull ZBBulkFileJobOptions options,
+            @NotNull Map<String, String> extraFields,
+            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
+            @NotNull OnErrorCallback errorCallback
+    ) {
         if (invalidApiKey(errorCallback)) return;
 
         Map<String, String> fields = new LinkedHashMap<>();
@@ -1700,6 +1697,7 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
             return;
         }
+        fields.putAll(extraFields);
         fields.put("api_key", apiKey);
 
         sendRequestWithMethod(
@@ -1861,7 +1859,7 @@ public class ZeroBounceSDK {
     /**
      * Starts a test and returns its seed list (POST /api/ipt/test).
      *
-     * @param name    the test name, required
+     * @param name    the test name, required, at most 64 characters
      * @param options the optional fields, or null. Only the fields that are set are sent.
      */
     public void createInboxPlacementTest(
@@ -1874,10 +1872,20 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: name"));
             return;
         }
+        if (name.length() > 64) {
+            errorCallback.onError(ErrorResponse.parseError("name must be at most 64 characters"));
+            return;
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", name);
-        if (options != null) {
-            options.fill(body);
+        try {
+            if (options != null) {
+                options.fill(body);
+            }
+        } catch (IllegalArgumentException e) {
+            // Rejected before any request is sent.
+            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            return;
         }
         inboxPlacementRequest("POST", "/test", null, body, successCallback, errorCallback);
     }
@@ -2031,8 +2039,22 @@ public class ZeroBounceSDK {
             return this;
         }
 
+        /**
+         * Adds the fields that are set to the request body.
+         *
+         * @throws IllegalArgumentException if the options cannot produce a valid request
+         */
         void fill(@NotNull Map<String, Object> body) {
-            if (testType != null) body.put("testType", testType);
+            if (testType != null) {
+                if (testType < 1 || testType > 3) {
+                    throw new IllegalArgumentException("testType must be 1, 2 or 3");
+                }
+                // A type 1 test mails from your own address, so the API needs it.
+                if (testType == 1 && (senderEmail == null || senderEmail.trim().isEmpty())) {
+                    throw new IllegalArgumentException("senderEmail is required when testType is 1");
+                }
+                body.put("testType", testType);
+            }
             if (senderEmail != null) body.put("senderEmail", senderEmail);
             if (providerIds != null) body.put("providerIds", providerIds);
             if (seedIds != null) body.put("seedIds", seedIds);
@@ -2050,6 +2072,10 @@ public class ZeroBounceSDK {
         private Integer page = null;
         @Nullable
         private Integer pageSize = null;
+        @Nullable
+        private String createdAfter = null;
+        @Nullable
+        private String createdBefore = null;
 
         public ListInboxPlacementTestsOptions setStatus(@Nullable String status) {
             this.status = status;
@@ -2066,10 +2092,27 @@ public class ZeroBounceSDK {
             return this;
         }
 
+        /** Keeps only the tests created at or after this date. */
+        public ListInboxPlacementTestsOptions setCreatedAfter(@Nullable String createdAfter) {
+            this.createdAfter = createdAfter;
+            return this;
+        }
+
+        /** Keeps only the tests created at or before this date. */
+        public ListInboxPlacementTestsOptions setCreatedBefore(@Nullable String createdBefore) {
+            this.createdBefore = createdBefore;
+            return this;
+        }
+
         void fill(@NotNull Map<String, String> query) {
             if (status != null) query.put("status", status);
             if (page != null) query.put("page", String.valueOf(page));
-            if (pageSize != null) query.put("pageSize", String.valueOf(pageSize));
+            // LIVE: the page size is page_size. Sent as pageSize it is ignored
+            // and the whole list comes back, so this listing mixes conventions
+            // with the camelCase created* filters beside it.
+            if (pageSize != null) query.put("page_size", String.valueOf(pageSize));
+            if (createdAfter != null) query.put("createdAfter", createdAfter);
+            if (createdBefore != null) query.put("createdBefore", createdBefore);
         }
     }
 
@@ -2227,31 +2270,48 @@ public class ZeroBounceSDK {
         priority3Api.sendListEvaluatorFileStream(inputStream, fileName, emailAddressColumn, successCallback, errorCallback);
     }
 
-    public void sendEvaluatedFile(
-            @NotNull File file,
-            @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
-            @NotNull OnErrorCallback errorCallback
-    ) {
-        if (invalidApiKey(errorCallback)) return;
-        priority3Api.sendEvaluatedFile(file, successCallback, errorCallback);
-    }
-
+    /**
+     * Validates a file in your Amazon S3 bucket (POST /validateS3file) with the
+     * column indexes and {@code allow_phase_2} that only this job takes.
+     * <p>
+     * Shares its implementation with
+     * {@link #validateS3File(ZBBulkFileJobOptions, OnSuccessCallback, OnErrorCallback)},
+     * so {@code file_name} and {@code return_url} are required here too.
+     */
     public void validateS3File(
             @NotNull ValidateS3FileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        if (invalidApiKey(errorCallback)) return;
-        priority3Api.validateS3File(options, successCallback, errorCallback);
+        bulkRootFileJob(
+                "/validateS3file",
+                options.toJobOptions(),
+                options.extraFields(),
+                successCallback,
+                errorCallback
+        );
     }
 
+    /**
+     * Scores a file in your Amazon S3 bucket (POST /scoreS3file) with the
+     * column index this job takes.
+     * <p>
+     * Shares its implementation with
+     * {@link #scoreS3File(ZBBulkFileJobOptions, OnSuccessCallback, OnErrorCallback)},
+     * so {@code file_name} and {@code return_url} are required here too.
+     */
     public void scoreS3File(
             @NotNull ScoreS3FileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
-        if (invalidApiKey(errorCallback)) return;
-        priority3Api.scoreS3File(options, successCallback, errorCallback);
+        bulkRootFileJob(
+                "/scoreS3file",
+                options.toJobOptions(),
+                options.extraFields(),
+                successCallback,
+                errorCallback
+        );
     }
 
     /**
@@ -2601,7 +2661,10 @@ public class ZeroBounceSDK {
                 successCallback.onSuccess(null);
                 return;
             }
-            successCallback.onSuccess(gson.fromJson(rsp, typeToken.getType()));
+            // The same body checks as sendRequest: an HTTP 200 that carries
+            // {"error": ...}, an HTML page or a non-JSON body is a failure, not
+            // a result to decode.
+            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
             errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
@@ -3012,6 +3075,46 @@ public class ZeroBounceSDK {
             this.allowPhase2 = allowPhase2;
             return this;
         }
+
+        /** The fields shared with every S3 / SFTP job, including the required ones. */
+        ZBBulkFileJobOptions toJobOptions() {
+            ZBBulkFileJobOptions job = new ZBBulkFileJobOptions()
+                    .setFileName(fileName)
+                    .setReturnUrl(returnUrl)
+                    .setRemoveDuplicates(removeDuplicates);
+            if (hasHeaderRow != null) {
+                job.setHasHeaderRow(hasHeaderRow);
+            }
+            return job;
+        }
+
+        /** The fields only validateS3file takes. */
+        Map<String, String> extraFields() {
+            Map<String, String> fields = new LinkedHashMap<>();
+            if (removeDuplicate != null) {
+                fields.put("remove_duplicate", String.valueOf(removeDuplicate));
+            }
+            // An email column of 0 is meaningful here, so it is sent when set.
+            if (emailAddressColumn != null) {
+                fields.put("email_address_column", String.valueOf(emailAddressColumn));
+            }
+            if (firstNameColumn > 0) {
+                fields.put("first_name_column", String.valueOf(firstNameColumn));
+            }
+            if (lastNameColumn > 0) {
+                fields.put("last_name_column", String.valueOf(lastNameColumn));
+            }
+            if (genderColumn > 0) {
+                fields.put("gender_column", String.valueOf(genderColumn));
+            }
+            if (ipAddressColumn > 0) {
+                fields.put("ip_address_column", String.valueOf(ipAddressColumn));
+            }
+            if (allowPhase2 != null) {
+                fields.put("allow_phase_2", String.valueOf(allowPhase2));
+            }
+            return fields;
+        }
     }
 
     public static class ScoreS3FileOptions {
@@ -3020,6 +3123,7 @@ public class ZeroBounceSDK {
         @Nullable Boolean removeDuplicates;
         @Nullable Boolean removeDuplicate;
         @Nullable Integer emailAddressColumn;
+        @Nullable String returnUrl;
 
         public ScoreS3FileOptions setFileName(@NotNull String fileName) {
             this.fileName = fileName;
@@ -3045,22 +3149,44 @@ public class ZeroBounceSDK {
             this.emailAddressColumn = emailAddressColumn;
             return this;
         }
+
+        /** LIVE: required, like on every other S3 / SFTP job. */
+        public ScoreS3FileOptions setReturnUrl(@Nullable String returnUrl) {
+            this.returnUrl = returnUrl;
+            return this;
+        }
+
+        /** The fields shared with every S3 / SFTP job, including the required ones. */
+        ZBBulkFileJobOptions toJobOptions() {
+            ZBBulkFileJobOptions job = new ZBBulkFileJobOptions()
+                    .setFileName(fileName)
+                    .setReturnUrl(returnUrl)
+                    .setRemoveDuplicates(removeDuplicates);
+            if (hasHeaderRow != null) {
+                job.setHasHeaderRow(hasHeaderRow);
+            }
+            return job;
+        }
+
+        /** The fields only scoreS3file takes. {@code allow_phase_2} is not one of them. */
+        Map<String, String> extraFields() {
+            Map<String, String> fields = new LinkedHashMap<>();
+            if (removeDuplicate != null) {
+                fields.put("remove_duplicate", String.valueOf(removeDuplicate));
+            }
+            if (emailAddressColumn != null) {
+                fields.put("email_address_column", String.valueOf(emailAddressColumn));
+            }
+            return fields;
+        }
     }
 
     String priority3ApiKey() {
         return apiKey;
     }
 
-    String priority3ApiBaseUrl() {
-        return apiBaseUrl;
-    }
-
-    String priority3BulkApiBaseUrl() {
-        return bulkApiBaseUrl;
-    }
-
-    String priority3BulkApiRootUrl() {
-        return bulkApiRootUrl;
+    String priority3ListEvaluatorBaseUrl() {
+        return listEvaluatorBaseUrl;
     }
 
     String priority3EmailFinderBaseUrl() {
@@ -3088,15 +3214,5 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         sendRequest(urlPath, queryParameters, body, typeToken, successCallback, errorCallback);
-    }
-
-    <T> void priority3SendFormPost(
-            @NotNull String urlPath,
-            @NotNull Map<String, String> formFields,
-            @NotNull TypeToken<T> typeToken,
-            @NotNull OnSuccessCallback<T> successCallback,
-            @NotNull OnErrorCallback errorCallback
-    ) {
-        sendFormPostRequest(urlPath, formFields, typeToken, successCallback, errorCallback);
     }
 }

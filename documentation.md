@@ -577,6 +577,9 @@ ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
 zb.getInboxPlacementProviders(onSuccess, onError);
 zb.getInboxPlacementTestTypes(onSuccess, onError);
 
+// The name is at most 64 characters and testType is 1, 2 or 3. A type 1 test
+// mails from your own address, so senderEmail is required with it. All three
+// are rejected before the request is sent.
 zb.createInboxPlacementTest("Launch",
         new ZeroBounceSDK.CreateInboxPlacementTestOptions()
                 .setTestType(1)
@@ -587,8 +590,15 @@ zb.createInboxPlacementTest("Launch",
 // Send your campaign to the seeds you got back, then read the results.
 zb.getInboxPlacementTest("<TEST_ID>", onSuccess, onError);
 
+// The page size goes on the wire as page_size; as pageSize the API ignores it
+// and answers with the whole list.
 zb.listInboxPlacementTests(
-        new ZeroBounceSDK.ListInboxPlacementTestsOptions().setStatus("finished").setPage(1),
+        new ZeroBounceSDK.ListInboxPlacementTestsOptions()
+                .setStatus("finished")
+                .setPage(1)
+                .setPageSize(25)
+                .setCreatedAfter("2026-01-01")
+                .setCreatedBefore("2026-02-01"),
         onSuccess, onError);
 zb.setInboxPlacementWebhook("https://example.com/ipt-webhook", onSuccess, onError);
 zb.getInboxPlacementWebhook(onSuccess, onError);

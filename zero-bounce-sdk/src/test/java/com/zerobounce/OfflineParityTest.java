@@ -399,6 +399,48 @@ public class OfflineParityTest {
     }
 
     @Test
+    public void s3OptionOverloadsPostTheSameJobWithTheirExtraFields() throws IOException {
+        mockAll(200, """
+                {"success":true,"message":"ok","file_id":"fid"}""");
+
+        zeroBounceSDK.validateS3File(
+                new ZeroBounceSDK.ValidateS3FileOptions()
+                        .setFileName("emails.csv")
+                        .setReturnUrl("https://example.com/done")
+                        .setEmailAddressColumn(0)
+                        .setFirstNameColumn(2)
+                        .setAllowPhase2(true),
+                r -> {
+                }, this::failOnError);
+        Recorded record = only();
+        assertEquals("POST", record.method);
+        assertEquals("https://bulkapi.zerobounce.net/validateS3file", record.path());
+        Map<String, String> form = record.form();
+        assertEquals(API_KEY, form.get("api_key"));
+        assertEquals("emails.csv", form.get("file_name"));
+        assertEquals("https://example.com/done", form.get("return_url"));
+        assertEquals("true", form.get("has_header_row"));
+        assertEquals("0", form.get("email_address_column"));
+        assertEquals("2", form.get("first_name_column"));
+        assertEquals("true", form.get("allow_phase_2"));
+
+        zeroBounceSDK.scoreS3File(
+                new ZeroBounceSDK.ScoreS3FileOptions()
+                        .setFileName("emails.csv")
+                        .setReturnUrl("https://example.com/done")
+                        .setHasHeaderRow(false),
+                r -> {
+                }, this::failOnError);
+        record = only();
+        assertEquals("https://bulkapi.zerobounce.net/scoreS3file", record.path());
+        form = record.form();
+        assertEquals("https://example.com/done", form.get("return_url"));
+        assertEquals("false", form.get("has_header_row"));
+        // Scoring uploads ignore allow_phase_2, so it is not offered or sent.
+        assertFalse(form.containsKey("allow_phase_2"));
+    }
+
+    @Test
     public void listS3FilesAcceptsBothDocumentedShapes() throws IOException {
         mockAll(200, """
                 {"success":true,"files":[{"Name":"lists/leads.csv","Size":12,"LastModified":"2026-01-01"}]}""");
@@ -609,19 +651,32 @@ public class OfflineParityTest {
 
         zeroBounceSDK.listInboxPlacementTests(
                 new ZeroBounceSDK.ListInboxPlacementTestsOptions()
-                        .setStatus("finished").setPage(1).setPageSize(25),
+                        .setStatus("finished").setPage(1).setPageSize(25)
+                        .setCreatedAfter("2026-01-01").setCreatedBefore("2026-02-01"),
                 r -> {
                 }, this::failOnError);
         record = only();
+        assertEquals("https://bulkapi.zerobounce.net/api/ipt/tests", record.path());
+        assertEquals("GET", record.method);
+        assertEquals("Bearer " + API_KEY, record.headers.get("Authorization"));
+        assertNull(record.query().get("api_key"));
         assertEquals("finished", record.query().get("status"));
         assertEquals("1", record.query().get("page"));
-        assertEquals("25", record.query().get("pageSize"));
+        // LIVE: the page size is page_size. As pageSize it is ignored and the
+        // whole list comes back.
+        assertEquals("25", record.query().get("page_size"));
+        assertFalse(record.query().containsKey("pageSize"));
+        assertEquals("2026-01-01", record.query().get("createdAfter"));
+        assertEquals("2026-02-01", record.query().get("createdBefore"));
 
         zeroBounceSDK.listInboxPlacementTests(null, r -> {
         }, this::failOnError);
         record = only();
         assertFalse(record.query().containsKey("status"));
         assertFalse(record.query().containsKey("page"));
+        assertFalse(record.query().containsKey("page_size"));
+        assertFalse(record.query().containsKey("createdAfter"));
+        assertFalse(record.query().containsKey("createdBefore"));
 
         zeroBounceSDK.deleteInboxPlacementTest("a b/c", r -> {
         }, this::failOnError);
@@ -651,6 +706,64 @@ public class OfflineParityTest {
         zeroBounceSDK.setInboxPlacementWebhook("", r -> fail("success"), collect);
         assertTrue(errors.toString().contains("webhook_url"), errors.toString());
         assertTrue(recorded.isEmpty());
+    }
+
+    @Test
+    public void createInboxPlacementTestRejectsTheDocumentedLimits() throws IOException {
+        mockAll(200, "{\"ok\":true}");
+        List<String> errors = new ArrayList<>();
+        ZeroBounceSDK.OnErrorCallback collect = error -> errors.addAll(error.getErrors());
+
+        // name is at most 64 characters.
+        zeroBounceSDK.createInboxPlacementTest("n".repeat(65), null, r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("64"), errors.toString());
+
+        errors.clear();
+        zeroBounceSDK.createInboxPlacementTest("Launch",
+                new ZeroBounceSDK.CreateInboxPlacementTestOptions().setTestType(4),
+                r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("testType"), errors.toString());
+        errors.clear();
+        zeroBounceSDK.createInboxPlacementTest("Launch",
+                new ZeroBounceSDK.CreateInboxPlacementTestOptions().setTestType(0),
+                r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("testType"), errors.toString());
+
+        // A type 1 test mails from your own address, so senderEmail is required.
+        errors.clear();
+        zeroBounceSDK.createInboxPlacementTest("Launch",
+                new ZeroBounceSDK.CreateInboxPlacementTestOptions().setTestType(1),
+                r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("senderEmail"), errors.toString());
+        errors.clear();
+        zeroBounceSDK.createInboxPlacementTest("Launch",
+                new ZeroBounceSDK.CreateInboxPlacementTestOptions().setTestType(1).setSenderEmail("  "),
+                r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("senderEmail"), errors.toString());
+
+        assertTrue(recorded.isEmpty(), "no request should have been sent");
+
+        // Types 2 and 3 do not need one, and a name of exactly 64 is allowed.
+        zeroBounceSDK.createInboxPlacementTest("n".repeat(64),
+                new ZeroBounceSDK.CreateInboxPlacementTestOptions().setTestType(2),
+                r -> {
+                }, this::failOnError);
+        Recorded record = only();
+        assertEquals("POST", record.method);
+        assertEquals("https://bulkapi.zerobounce.net/api/ipt/test", record.path());
+        assertTrue(record.body.contains("\"testType\":2"), record.body);
+        assertFalse(record.body.contains("senderEmail"), record.body);
+    }
+
+    @Test
+    public void createInboxPlacementTestReportsTheApiErrorBody() throws IOException {
+        // The Inbox Placement Tester reports a rejected field under "detail".
+        mockAll(400, "{\"detail\":{\"name\":[\"Ensure this field has no more than 64 characters.\"]}}");
+
+        List<String> errors = new ArrayList<>();
+        zeroBounceSDK.createInboxPlacementTest("Launch", null,
+                r -> fail("success"), e -> errors.addAll(e.getErrors()));
+        assertTrue(errors.toString().contains("64 characters"), errors.toString());
     }
 
     @Test
