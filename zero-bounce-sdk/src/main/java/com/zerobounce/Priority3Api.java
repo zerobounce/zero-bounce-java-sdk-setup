@@ -202,7 +202,8 @@ final class Priority3Api {
             con.setReadTimeout(sdk.priority3TimeoutMillis());
             int status = con.getResponseCode();
             InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
-            byte[] body = stream.readAllBytes();
+            // A failed response with no body has no error stream at all.
+            byte[] body = stream == null ? new byte[0] : stream.readAllBytes();
             con.disconnect();
             finishBulkDownload(downloadPath, status, body, successCallback, errorCallback);
         } catch (Exception e) {
@@ -336,9 +337,9 @@ final class Priority3Api {
         if (downloadError != null) {
             String text = new String(body, StandardCharsets.UTF_8);
             if (HttpMessages.preferShortMessage(text)) {
-                errorCallback.onError(ErrorResponse.parseError(downloadError));
+                errorCallback.onError(ErrorResponse.parseError(downloadError, status));
             } else {
-                errorCallback.onError(ErrorResponse.parseError(text));
+                errorCallback.onError(ErrorResponse.parseError(text, status));
             }
             return;
         }
@@ -347,11 +348,11 @@ final class Priority3Api {
             try {
                 JsonObject obj = JsonParser.parseString(bodyStr).getAsJsonObject();
                 if (obj.has("success") && obj.get("success").isJsonPrimitive() && !obj.get("success").getAsBoolean()) {
-                    errorCallback.onError(ErrorResponse.parseError(bodyStr));
+                    errorCallback.onError(ErrorResponse.parseError(bodyStr, status));
                     return;
                 }
                 if (obj.has("message") || obj.has("error") || obj.has("error_message")) {
-                    errorCallback.onError(ErrorResponse.parseError(bodyStr));
+                    errorCallback.onError(ErrorResponse.parseError(bodyStr, status));
                     return;
                 }
             } catch (Exception ignored) {

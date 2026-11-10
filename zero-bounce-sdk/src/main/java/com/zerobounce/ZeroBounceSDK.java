@@ -150,14 +150,15 @@ public class ZeroBounceSDK {
      * Initializes the SDK.
      *
      * @param apiKey          the API key
-     * @param apiBaseUrl      the API base URL
+     * @param apiBaseUrl      the API base URL, such as {@link ZBConstants#API_EU_URL}; a
+     *                        trailing slash is removed
      */
     public void initialize(String apiKey, @Nullable String apiBaseUrl) {
         this.apiKey = apiKey;
         timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
         if (apiBaseUrl != null) {
             requireHttpsUrl(apiBaseUrl);
-            this.apiBaseUrl = apiBaseUrl;
+            this.apiBaseUrl = withoutTrailingSlashes(apiBaseUrl);
         }
     }
 
@@ -183,12 +184,24 @@ public class ZeroBounceSDK {
         initialize(apiKey, apiBaseUrl);
         if (listEvaluatorBaseUrl != null) {
             requireHttpsUrl(listEvaluatorBaseUrl);
-            this.listEvaluatorBaseUrl = listEvaluatorBaseUrl;
+            this.listEvaluatorBaseUrl = withoutTrailingSlashes(listEvaluatorBaseUrl);
         }
         if (inboxPlacementBaseUrl != null) {
             requireHttpsUrl(inboxPlacementBaseUrl);
-            this.inboxPlacementBaseUrl = inboxPlacementBaseUrl;
+            this.inboxPlacementBaseUrl = withoutTrailingSlashes(inboxPlacementBaseUrl);
         }
+    }
+
+    /**
+     * Every endpoint path starts with a slash, so a base URL is kept without a
+     * trailing one. The {@link ZBConstants} values end in a slash.
+     */
+    static String withoutTrailingSlashes(String url) {
+        int end = url.length();
+        while (end > 0 && url.charAt(end - 1) == '/') {
+            end--;
+        }
+        return url.substring(0, end);
     }
 
     static void requireHttpsUrl(String url) {
@@ -234,19 +247,11 @@ public class ZeroBounceSDK {
 
     boolean reportHttpFailure(int status, @Nullable String body, @NotNull OnErrorCallback errorCallback) {
         String text = body == null ? "" : body;
-        if (HttpMessages.looksLikeHtml(text, null) || text.trim().isEmpty()) {
-            errorCallback.onError(
-                    ErrorResponse.parseError(HttpMessages.jsonCallFailure(status, text, null), status));
-            return true;
-        }
-        if (status > 299) {
-            errorCallback.onError(ErrorResponse.parseError(text, status));
-            return true;
-        }
-        if (apiSuccessIsFalse(text)) {
-            // LIVE: {"success": false} on an HTTP 200 is a failure, not a
-            // result. The API answers an unknown bulk file id that way.
-            errorCallback.onError(ErrorResponse.parseError(text, status));
+        // LIVE: {"success": false} on an HTTP 200 is a failure, not a
+        // result. The API answers an unknown bulk file id that way.
+        if (status > 299 || HttpMessages.looksLikeHtml(text, null) || text.trim().isEmpty()
+                || apiSuccessIsFalse(text)) {
+            reportFailure(status, text, errorCallback);
             return true;
         }
         return false;
@@ -424,7 +429,8 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback
+                errorCallback,
+                true
         );
     }
 
@@ -488,7 +494,8 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback
+                errorCallback,
+                true
         );
     }
 
@@ -533,7 +540,8 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback
+                errorCallback,
+                true
         );
     }
 
@@ -1238,6 +1246,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
 
         sendRequest(
                 (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/deletefile",
@@ -1269,6 +1278,10 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (isBlank(email)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
+            return;
+        }
 
         sendRequest(
                 apiBaseUrl + "/activity",
@@ -1607,9 +1620,11 @@ public class ZeroBounceSDK {
     /**
      * Validates a file from your SFTP/FTP server (POST /validateSFTPfile).
      * <p>
-     * This is the one job whose file_name the docs list as optional: leave
-     * {@link ZBBulkFileJobOptions#setFileName(String)} unset to use the input
-     * bucket from your settings.
+     * LIVE: the docs list file_name as optional on this job, but the API
+     * requires it, so {@link ZBBulkFileJobOptions#setFileName(String)} and
+     * {@link ZBBulkFileJobOptions#setReturnUrl(String)} are required here as on
+     * every other S3 and SFTP job; a missing one reaches the error callback
+     * before the request.
      */
     public void validateSFTPFile(
             @NotNull ZBBulkFileJobOptions options,
@@ -1835,8 +1850,9 @@ public class ZeroBounceSDK {
 
     // ---------------------------------------------------------------------
     // Inbox Placement Tester (bulkapi.zerobounce.net/api/ipt).
-    // The API key goes on the query string, bodies are camelCase JSON, and
-    // errors come back under a "detail" key (Django REST framework).
+    // The API key goes in an "Authorization: Bearer" header, never on the
+    // query string; bodies are camelCase JSON, and errors come back under a
+    // "detail" key (Django REST framework).
     // Spends the account's inbox-test credits.
     // ---------------------------------------------------------------------
 
@@ -2176,6 +2192,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootFileStatus(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
     }
 
@@ -2186,6 +2203,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootGetFile(emailFinderBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
     }
 
@@ -2195,6 +2213,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootDeleteFile(emailFinderBulkBaseUrl, fileId, successCallback, errorCallback);
     }
 
@@ -2227,6 +2246,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootFileStatus(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
     }
 
@@ -2237,6 +2257,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootGetFile(domainSearchBulkBaseUrl, fileId, downloadPath, successCallback, errorCallback);
     }
 
@@ -2246,6 +2267,7 @@ public class ZeroBounceSDK {
             @NotNull OnErrorCallback errorCallback
     ) {
         if (invalidApiKey(errorCallback)) return;
+        if (blankFileId(fileId, errorCallback)) return;
         priority3Api.bulkRootDeleteFile(domainSearchBulkBaseUrl, fileId, successCallback, errorCallback);
     }
 
@@ -2336,6 +2358,15 @@ public class ZeroBounceSDK {
         return value == null || value.isBlank();
     }
 
+    /** A missing or blank file id is rejected before anything is sent. */
+    private static boolean blankFileId(@Nullable String fileId, @NotNull OnErrorCallback errorCallback) {
+        if (isBlank(fileId)) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
+            return true;
+        }
+        return false;
+    }
+
     /**
      * An interface that provides a single method for a success callback.
      */
@@ -2368,6 +2399,22 @@ public class ZeroBounceSDK {
             @NotNull TypeToken<T> typeToken,
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
+        sendRequest(urlPath, queryParameters, body, typeToken, successCallback, errorCallback, false);
+    }
+
+    /**
+     * @param messageOnlyIsFailure for the email finder and domain search, whose
+     *                             result is never a bare message: see
+     *                             {@link HttpMessages#messageOnlyFailure(String)}
+     */
+    private <T> void sendRequest(
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, Object> body,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback,
+            boolean messageOnlyIsFailure) {
         try {
             logDebug("ZeroBounceSDK::sendRequest preparing request: " + urlPath);
             URIBuilder ub = new URIBuilder(urlPath);
@@ -2417,25 +2464,17 @@ public class ZeroBounceSDK {
                 logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
                 status = con.getResponseCode();
                 logDebug("ZeroBounceSDK::sendRequest status: " + status);
-                Reader streamReader;
-                if (status > 299) {
-                    streamReader = new InputStreamReader(con.getErrorStream());
-                } else {
-                    streamReader = new InputStreamReader(con.getInputStream());
-                }
-
-                StringBuilder content = new StringBuilder();
-                try (BufferedReader in = new BufferedReader(streamReader)) {
-                    String inputLine;
-                    while ((inputLine = in.readLine()) != null) {
-                        content.append(inputLine);
-                    }
-                }
-                con.disconnect();
-                rsp = content.toString();
+                rsp = readResponse(con, status);
             }
 
             logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
+            if (messageOnlyIsFailure && status <= 299) {
+                String messageOnly = HttpMessages.messageOnlyFailure(rsp);
+                if (messageOnly != null) {
+                    errorCallback.onError(ErrorResponse.parseError(messageOnly, status));
+                    return;
+                }
+            }
             deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequest failed", e);
@@ -2492,22 +2531,7 @@ public class ZeroBounceSDK {
                 }
 
                 status = con.getResponseCode();
-                Reader streamReader;
-                if (status > 299) {
-                    streamReader = new InputStreamReader(con.getErrorStream());
-                } else {
-                    streamReader = new InputStreamReader(con.getInputStream());
-                }
-
-                StringBuilder content = new StringBuilder();
-                try (BufferedReader in = new BufferedReader(streamReader)) {
-                    String inputLine;
-                    while ((inputLine = in.readLine()) != null) {
-                        content.append(inputLine);
-                    }
-                }
-                con.disconnect();
-                rsp = content.toString();
+                rsp = readResponse(con, status);
             }
             logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
             deliverJson(status, rsp, typeToken, successCallback, errorCallback);
@@ -2620,30 +2644,17 @@ public class ZeroBounceSDK {
                 logDebug("ZeroBounceSDK::sendRequestWithMethod executing " + method + " " + urlPath);
 
                 status = con.getResponseCode();
-                Reader streamReader = status > 299
-                        ? new InputStreamReader(con.getErrorStream())
-                        : new InputStreamReader(con.getInputStream());
-
-                StringBuilder content = new StringBuilder();
-                try (BufferedReader in = new BufferedReader(streamReader)) {
-                    String inputLine;
-                    while ((inputLine = in.readLine()) != null) {
-                        content.append(inputLine);
-                    }
-                }
-                con.disconnect();
-                rsp = content.toString();
+                rsp = readResponse(con, status);
             }
             logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
 
-            if (status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
-                return;
-            }
-            // LIVE: {"success": false} on an HTTP 200 is a failure, not a
-            // result. The API answers an unknown bulk file id that way.
-            if (apiSuccessIsFalse(rsp)) {
-                errorCallback.onError(ErrorResponse.parseError(rsp, status));
+            // The same failure handling as sendRequest: a short message for an
+            // HTML page, an empty or non-JSON body and a Cloudflare block, the
+            // Error: prefix stripped, and the HTTP status kept. LIVE: {"success":
+            // false} on an HTTP 200 is a failure, not a result. The API answers
+            // an unknown bulk file id that way.
+            if (status > 299 || apiSuccessIsFalse(rsp)) {
+                reportFailure(status, rsp, errorCallback);
                 return;
             }
             if (successCallback == null) {
@@ -2667,8 +2678,30 @@ public class ZeroBounceSDK {
             deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
-            errorCallback.onError(ErrorResponse.parseError(e.getMessage()));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
         }
+    }
+
+    /**
+     * The body of a response. A failed response with no body has no error
+     * stream at all, so that reads as an empty body rather than a
+     * NullPointerException that would lose the status.
+     */
+    private static String readResponse(@NotNull HttpURLConnection con, int status) throws IOException {
+        InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
+        if (stream == null) {
+            con.disconnect();
+            return "";
+        }
+        StringBuilder content = new StringBuilder();
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(stream))) {
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            }
+        }
+        con.disconnect();
+        return content.toString();
     }
 
     /**
@@ -2724,26 +2757,55 @@ public class ZeroBounceSDK {
             OnSuccessCallback<T> successCallback,
             OnErrorCallback errorCallback
     ) {
+        if (reportJsonFailure(status, rsp, errorCallback)) {
+            return;
+        }
+        T response = gson.fromJson(rsp, typeToken.getType());
+        successCallback.onSuccess(response);
+    }
+
+    /**
+     * Reports a JSON call's failure: an account-level batch error, an HTTP
+     * status above 299, an HTML, empty or non-JSON body, or an API error in a
+     * 2xx body. The message is short, the {@code Error:} prefix is stripped,
+     * a Cloudflare block is its title, and the HTTP status is kept.
+     *
+     * @return true when the error callback was called
+     */
+    private boolean reportJsonFailure(int status, @Nullable String rsp, @NotNull OnErrorCallback errorCallback) {
         String accountError = HttpMessages.batchAccountError(rsp);
         if (accountError != null) {
             errorCallback.onError(ErrorResponse.parseError(accountError, status));
-            return;
+            return true;
         }
         String failure = HttpMessages.jsonCallFailure(status, rsp, null);
         if (failure == null) {
             failure = HttpMessages.successPayloadError(rsp);
         }
-        if (failure != null) {
-            String body = rsp == null ? "" : rsp;
-            if (HttpMessages.preferShortMessage(body)) {
-                errorCallback.onError(ErrorResponse.parseError(failure, status));
-            } else {
-                errorCallback.onError(ErrorResponse.parseError(body, status));
-            }
-            return;
+        if (failure == null) {
+            return false;
         }
-        T response = gson.fromJson(rsp, typeToken.getType());
-        successCallback.onSuccess(response);
+        String body = rsp == null ? "" : rsp;
+        if (HttpMessages.preferShortMessage(body)) {
+            errorCallback.onError(ErrorResponse.parseError(failure, status));
+        } else {
+            // Every value of the JSON error, as before, but without a repeated
+            // "Error:" prefix such as {"error": "Error: Error: ..."}.
+            ErrorResponse parsed = ErrorResponse.parseError(body, status);
+            parsed.getErrors().replaceAll(HttpMessages::stripPrefix);
+            errorCallback.onError(parsed);
+        }
+        return true;
+    }
+
+    /**
+     * {@link #reportJsonFailure} for a response already known to be a failure,
+     * such as a {@code {"success": false}} on an HTTP 200.
+     */
+    private void reportFailure(int status, @Nullable String rsp, @NotNull OnErrorCallback errorCallback) {
+        if (!reportJsonFailure(status, rsp, errorCallback)) {
+            errorCallback.onError(ErrorResponse.parseError(rsp, status));
+        }
     }
 
     private void deliverGetFile(

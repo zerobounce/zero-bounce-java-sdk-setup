@@ -3,6 +3,9 @@ package com.zerobounce;
 /**
  * Defines API endpoint constants. This object is a singleton and provides
  * global access to the constants.
+ * <p>
+ * Each value ends in a slash; {@code ZeroBounceSDK.initialize(apiKey, apiBaseUrl)}
+ * removes it, so requests go to {@code .../v2/validate} and not {@code .../v2//validate}.
  */
 public class ZBConstants {
 

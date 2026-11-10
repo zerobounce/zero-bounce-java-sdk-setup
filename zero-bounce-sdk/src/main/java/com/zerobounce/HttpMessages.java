@@ -130,10 +130,73 @@ final class HttpMessages {
                     return stripPrefix(message);
                 }
             }
+            // LIVE: the filters spell it "Error": an invalid or drained key
+            // answers them with {"Error": "Invalid API key or your account ran
+            // out of credits"} on an HTTP 200.
+            if (object.has("Error")) {
+                String message = text(object.get("Error"));
+                if (message != null && !message.isBlank()) {
+                    return stripPrefix(message);
+                }
+            }
         } catch (RuntimeException ignored) {
             return null;
         }
         return null;
+    }
+
+    private static final java.util.Set<String> MESSAGE_KEYS = java.util.Set.of(
+            "error", "message", "error_message", "Message", "Error", "detail");
+
+    private static JsonObject objectWithoutSuccess(String body) {
+        if (body == null || !body.trim().startsWith("{")) {
+            return null;
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(body);
+            if (!parsed.isJsonObject() || parsed.getAsJsonObject().has("success")) {
+                return null;
+            }
+            return parsed.getAsJsonObject();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static String nonBlankString(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+            return null;
+        }
+        String text = value.getAsString().trim();
+        return text.isEmpty() ? null : stripPrefix(text);
+    }
+
+    /**
+     * The message when a body is nothing but a message: an object with no
+     * "success" field whose keys are all message keys, at least one a
+     * non-empty string; null otherwise. Only for the email finder and domain
+     * search, whose result is never a bare message. LIVE: guessformat answers
+     * an invalid or drained key with an HTTP 200 and
+     * {"Message": "Invalid API key or your account ran out of credits"}.
+     * Not for validate: a repeated greylist_processing request answers
+     * {"Message": "Greylist validation still in progress..."}, a result.
+     */
+    static String messageOnlyFailure(String body) {
+        JsonObject object = objectWithoutSuccess(body);
+        if (object == null || object.size() == 0) {
+            return null;
+        }
+        String message = null;
+        for (String key : object.keySet()) {
+            if (!MESSAGE_KEYS.contains(key)) {
+                return null;
+            }
+            if (message == null) {
+                message = nonBlankString(object, key);
+            }
+        }
+        return message;
     }
 
     private static String firstText(JsonObject object, String... keys) {

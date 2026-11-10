@@ -58,9 +58,17 @@ public class ZeroBounceWarmup {
     /** Why the client is unusable, or null when it is ready. */
     private String setupProblem = "ZeroBounceWarmup is not initialized. Call initialize(\"API_KEY\") first";
 
-    ZeroBounceWarmup() {
+    /**
+     * A client that holds one Warmup API key, on the default host until
+     * {@link #initialize(String, String)} says otherwise. Every field is
+     * per-instance, so each client keeps its own key, base URL and timeout.
+     * Prefer this over {@link #getInstance()} when more than one key is in
+     * use: the singleton shares one key across the process.
+     */
+    public ZeroBounceWarmup() {
     }
 
+    /** A process-wide shared client. */
     public static ZeroBounceWarmup getInstance() {
         return instance;
     }
@@ -186,14 +194,17 @@ public class ZeroBounceWarmup {
             String contentType = con.getHeaderField("Content-Type");
             result.contentType = contentType != null ? contentType : "";
 
-            Reader streamReader = result.status > 299
-                    ? new InputStreamReader(con.getErrorStream(), StandardCharsets.UTF_8)
-                    : new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8);
+            // A failed response with no body has no error stream at all; read
+            // it as an empty body so the status is kept.
+            java.io.InputStream stream = result.status > 299 ? con.getErrorStream() : con.getInputStream();
             StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(streamReader)) {
-                String line;
-                while ((line = in.readLine()) != null) {
-                    content.append(line);
+            if (stream != null) {
+                Reader streamReader = new InputStreamReader(stream, StandardCharsets.UTF_8);
+                try (BufferedReader in = new BufferedReader(streamReader)) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        content.append(line);
+                    }
                 }
             }
             con.disconnect();

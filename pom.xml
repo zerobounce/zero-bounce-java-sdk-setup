@@ -14,10 +14,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <!-- The JavaFX 21 is the latest LTS version that supports Java 17+.
-        The latest JavaFX LTS version requires Java 23+.
-        For the time being, we'll use JavaFX 21. -->
-        <javafx.version>26.0.2</javafx.version>
+        <!-- Keep JavaFX on the 21 LTS line: it runs on Java 21, the JDK the SDK
+        is built and tested with. Newer JavaFX lines need a newer JDK (the 26.0.2
+        jars are class file version 68, Java 24) and fail to compile here. -->
+        <javafx.version>21.0.13</javafx.version>
     </properties>
 
     <repositories>
@@ -58,7 +58,7 @@
         <dependency>
             <groupId>com.zerobounce.java</groupId>
             <artifactId>zerobouncesdk</artifactId>
-            <version>2.1.5</version>
+            <version>2.2.0</version>
         </dependency>
 
     </dependencies>

@@ -102,6 +102,32 @@ final class FakeApi implements SdkHttp.Transport {
         if (key.startsWith("batchitem")) {
             return json(batchItem());
         }
+        // LIVE (2026-11-11): what an invalid or drained key gets back, each with
+        // an HTTP 200 and no "success" field.
+        if (key.startsWith("dead-key-")) {
+            String path = recorded.path;
+            if (path.contains("guessformat")) {
+                return json("{\"Message\":\"Invalid API key or your account ran out of credits\"}");
+            }
+            if (path.contains("filters")) {
+                return json("{  \"Error\": \"Invalid API key or your account ran out of credits\"}");
+            }
+            if (path.contains("getapiusage")) {
+                return json("{\"error\":\"Invalid API key\"}");
+            }
+            if (path.contains("getcredits")) {
+                return json("{\"Credits\":\"-1\"}");
+            }
+            return json("{\"error\":\"Invalid API key or your account ran out of credits\"}");
+        }
+        // The documented answer to a repeated greylist_processing validate: a
+        // result whose only field is Message, not an error.
+        if (key.startsWith("greylist-pending-") && recorded.path.endsWith("/validate")) {
+            return json("{\"Message\":\"Greylist validation still in progress. Please try again later.\"}");
+        }
+        if (key.startsWith("filter-message-") && recorded.path.contains("filters")) {
+            return json("{\"Message\":\"Filter has been added.\"}");
+        }
         if (key.startsWith("badkey")) {
             return json("{\"error\":\"Invalid API Key or your account ran out of credits\"}");
         }

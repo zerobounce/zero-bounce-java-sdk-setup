@@ -174,6 +174,39 @@ public class OfflineWarmupTest {
     }
 
     @Test
+    public void aClientCanBeConstructedAndKeepsItsOwnKey() throws Exception {
+        // The notes say "call ZeroBounceWarmup.getInstance() or construct one".
+        assertTrue(java.lang.reflect.Modifier.isPublic(
+                ZeroBounceWarmup.class.getConstructor().getModifiers()));
+
+        ZeroBounceWarmup other = spy(new ZeroBounceWarmup());
+        // Nothing below may reach a network: the first call must fail before
+        // it builds a URL, and the second one never runs on this client.
+        lenient().doThrow(new AssertionError("no request expected"))
+                .when(other).createUrlFrom(anyString());
+        assertNotSame(ZeroBounceWarmup.getInstance(), other);
+        other.getSeedCount(r -> fail("success"), collect);
+        assertTrue(errors.toString().contains("not initialized"), errors.toString());
+
+        other.initialize("other-team-key");
+        mockAll(200, "{\"ok\":true}");
+        warmup.getSeedCount(succeed, this::failOnError);
+        assertEquals(API_KEY, only().headers.get("API-Key"));
+    }
+
+    @Test
+    public void aFailureWithNoBodyKeepsItsStatus() throws IOException {
+        // HttpURLConnection has no error stream for a failed response with no body.
+        mockAll(500, "");
+        HttpURLConnection con = (HttpURLConnection) warmup.createUrlFrom("https://x").openConnection();
+        recorded.clear();
+        when(con.getErrorStream()).thenReturn(null);
+        warmup.getSeedCount(r -> fail("success"), collect);
+        assertEquals(List.of("Empty response from ZeroBounce (HTTP 500)"), errors);
+        assertEquals(500, lastStatus);
+    }
+
+    @Test
     public void aKeyThatIsEmptyOrPaddedIsRejected() throws IOException {
         mockAll(200, "{}");
         for (String bad : new String[]{"", " key ", "key\n", "key\tx"}) {

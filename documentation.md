@@ -59,7 +59,9 @@ We highly recommend you use the latest version available on Maven. However, if y
 
 #### How to deploy the SDK
 
-1. Be sure to set the *autoReleaseAfterClose* field to *false* in the `pom.xml` file of the **zero-bounce-sdk** if you don't want the artifact to be automatically deployed on Maven Central.
+Releases are published with the GitHub Actions `Publish` workflow; see ***Publication*** below. To publish by hand:
+
+1. Set *autoPublish* to *false* for the `central-publishing-maven-plugin` in the `release` profile of the **zero-bounce-sdk** `pom.xml` if you don't want the artifact to be published on Maven Central automatically.
 2. Use the command: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
 
 
@@ -121,11 +123,10 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("validate error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("validate error=" + errorResponse.getErrors());
             }
         });
-    );
     ```
 
 * ####### Validate batch a list of email addresses
@@ -144,11 +145,10 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("validateBatch error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("validateBatch error=" + errorResponse.getErrors());
             }
         });
-    );
     ```
 
 * ####### Find the email and other domain formats based on a given domain name
@@ -165,11 +165,10 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("guessFormat error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("guessFormat error=" + errorResponse.getErrors());
             }
         });
-    );
     ```
 
 * ####### Check how many credits you have left on your account
@@ -182,8 +181,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("getCredits error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("getCredits error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -203,8 +202,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("getApiUsage error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("getApiUsage error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -214,21 +213,27 @@ Then you can use any of the SDK methods, for example:
     File myFile = new File("<FILE_PATH>");  // The csv or txt file
     int emailAddressColumn = 3;             // The column index of the email address in the file. Index starts at 1
     
-    ZeroBounceSDK.getInstance().sendFile(
-        myFile,
-        emailAddressColumn,
-        null,
-        new ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse>() {
-            @Override
-            public void onSuccess(ZBSendFileResponse response) {
-                System.out.println("sendFile response=" + response.toString());
-            }
-        }, new ZeroBounceSDK.OnErrorCallback() {
-            @Override
-            public void onError(String errorMessage) {
-                System.out.println("sendFile error=" + errorMessage);
-            }
-        });
+    // sendFile and scoringSendFile throw the checked ZBException for an invalid argument,
+    // such as an email column below 1, before anything is sent.
+    try {
+        ZeroBounceSDK.getInstance().sendFile(
+            myFile,
+            emailAddressColumn,
+            null,
+            new ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse>() {
+                @Override
+                public void onSuccess(ZBSendFileResponse response) {
+                    System.out.println("sendFile response=" + response.toString());
+                }
+            }, new ZeroBounceSDK.OnErrorCallback() {
+                @Override
+                public void onError(ErrorResponse errorResponse) {
+                    System.out.println("sendFile error=" + errorResponse.getErrors());
+                }
+            });
+    } catch (ZBException e) {
+        System.out.println("sendFile rejected its arguments: " + e.getMessage());
+    }
     ```
 
     Bulk validation uses `https://bulkapi.zerobounce.net/v2`. See [v2 send file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-send-file), [v2 file status](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-file-status), and [v2 get file](https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-get-file).
@@ -239,12 +244,16 @@ Then you can use any of the SDK methods, for example:
     ZeroBounceSDK.SendFileOptions opts = new ZeroBounceSDK.SendFileOptions()
             .setAllowPhase2(true);
 
-    ZeroBounceSDK.getInstance().sendFile(
-        myFile,
-        emailAddressColumn,
-        opts,
-        successCallback,
-        errorCallback);
+    try {
+        ZeroBounceSDK.getInstance().sendFile(
+            myFile,
+            emailAddressColumn,
+            opts,
+            successCallback,
+            errorCallback);
+    } catch (ZBException e) {
+        System.out.println("sendFile rejected its arguments: " + e.getMessage());
+    }
     ```
 
 * ####### The *getFile* API allows users to get the validation results file for the file been submitted using *sendFile* API
@@ -262,8 +271,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("getfile error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("getfile error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -308,8 +317,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("fileStatus error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("fileStatus error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -327,8 +336,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("deleteFile error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("deleteFile error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -344,8 +353,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("getActivityData error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("getActivityData error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -358,21 +367,27 @@ Then you can use any of the SDK methods, for example:
     File myFile = new File("<FILE_PATH>");  // The csv or txt file
     int emailAddressColumn = 3;             // The column index of the email address in the file. Index starts at 1
     
-    ZeroBounceSDK.getInstance().scoringSendFile(
-        myFile,
-        emailAddressColumn,
-        null,
-        new ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse>() {
-            @Override
-            public void onSuccess(ZBSendFileResponse response) {
-                System.out.println("scoringSendFile response=" + response.toString());
-            }
-        }, new ZeroBounceSDK.OnErrorCallback() {
-            @Override
-            public void onError(String errorMessage) {
-                System.out.println("scoringSendFile error=" + errorMessage);
-            }
-        });
+    // sendFile and scoringSendFile throw the checked ZBException for an invalid argument,
+    // such as an email column below 1, before anything is sent.
+    try {
+        ZeroBounceSDK.getInstance().scoringSendFile(
+            myFile,
+            emailAddressColumn,
+            null,
+            new ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse>() {
+                @Override
+                public void onSuccess(ZBSendFileResponse response) {
+                    System.out.println("scoringSendFile response=" + response.toString());
+                }
+            }, new ZeroBounceSDK.OnErrorCallback() {
+                @Override
+                public void onError(ErrorResponse errorResponse) {
+                    System.out.println("scoringSendFile error=" + errorResponse.getErrors());
+                }
+            });
+    } catch (ZBException e) {
+        System.out.println("scoringSendFile rejected its arguments: " + e.getMessage());
+    }
     ```
 
 * ####### The *scoringGetFile* API allows users to get the validation results file for the file been submitted using *scoringSendFile* API
@@ -390,8 +405,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("scoringGetfile error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("scoringGetfile error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -409,8 +424,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("scoringFileStatus error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("scoringFileStatus error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -428,8 +443,8 @@ Then you can use any of the SDK methods, for example:
             }
         }, new ZeroBounceSDK.OnErrorCallback() {
             @Override
-            public void onError(String errorMessage) {
-                System.out.println("scoringDeleteFile error=" + errorMessage);
+            public void onError(ErrorResponse errorResponse) {
+                System.out.println("scoringDeleteFile error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -440,25 +455,28 @@ You can generate the documentation using your desired IDE or using's maven's jav
 
 
 #### Publication
-Every time a new release is created, the CI/CD pipeline will execute and a new artifact will be released on Maven Central. **The pipeline updates the version automatically!**
-If you ever change the OSSRH login credentials, you'll need to also update the repository variables on Github.
 
+Publishing to Maven Central goes through the Sonatype Central Portal, using the **GitHub Actions `Publish` workflow** (`.github/workflows/publish.yml`). It is triggered **manually per tag**; it does not run on a push or on release creation.
+
+1. Set `sdk.version` in `zero-bounce-sdk/pom.xml` to the new version, create a **git tag** for it (e.g. `v2.2.0`), and push the tag.
+2. In the repo go to **Actions → Publish**, click **Run workflow**, enter the tag (e.g. `v2.2.0`), and run.
+3. The workflow checks that the tag exists, then runs `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=... clean deploy -Prelease` in `zero-bounce-sdk`. That builds and tests the SDK, signs the jars with GPG, and the `central-publishing-maven-plugin` uploads them to the Central Portal. `autoPublish` is `true` in the `release` profile, so the deployment is published once the Portal has validated it, without a manual step.
+4. When the publish job succeeds, the workflow creates a GitHub Release for the tag with generated release notes.
+
+The workflow reads these secrets: `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` (a Central Portal user token, for the `central` server), `SIGNING_KEY` (the GPG private key) and `SIGNING_PASSWORD` (its passphrase). If any of them changes, update it on GitHub.
 
 ##### Local setup for manual release
-In order to be able to publish to the Nexus repository from you local machine, you'll need to do the following step:
-If you want to manually publish to the Nexus repository (and then release it to Maven Central), you should:
+To publish from your local machine instead of the workflow:
 
-1. Import the GPG key to your local machine (see below)
-2. Set the *autoReleaseAfterClose* inside the zero-bounce-sdk's `pom.xml` to *false*.
-3. Run the following command:
+1. Import the GPG key to your local machine (see below).
+2. Add a `<server>` with the id `central` to your `~/.m2/settings.xml`, with a Central Portal user token as its username and password.
+3. If you want to check the deployment before it goes to Maven Central, set *autoPublish* to *false* for the `central-publishing-maven-plugin` in the `release` profile of `zero-bounce-sdk/pom.xml`.
+4. From the **zero-bounce-sdk** folder, run:
     ```shell
-    ### For publishing to the staging repository
     mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease
     ```
 
-You should then go to the [Nexus Sonatype](https://s01.oss.sonatype.org/), login and then open *Staging Repositories* and click on *Refresh*. Here you'll see the artifact you just uploaded. In order to publish it, you have to **close** it and then **release** it. These actions will take a few minutes to complete. After **releasing** the artifact, it will take:
-- a few hours before you can see it on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on the [Sonatype Search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk)
-- 1-3 days before you can see it on the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
+With *autoPublish* set to *false*, the upload waits on the [Central Portal deployments page](https://central.sonatype.com/publishing/deployments) until you publish (or drop) it there. Once published, the artifact appears on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on [Central search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk); the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk) index picks it up later.
 
 
 #### Exporting and importing PGP keys
@@ -515,9 +533,9 @@ ZeroBounceSDK.getInstance().scoreEmail("<EMAIL>", true, onSuccess, onError);  //
 ## Filters
 
 ```java
-ZeroBounceSDK.getInstance().addFilter("exclude", "domain", "example.com", onSuccess, onError);
+ZeroBounceSDK.getInstance().addFilter("block", "domain", "example.com", onSuccess, onError);
 ZeroBounceSDK.getInstance().listFilters(false, onSuccess, onError); // true sends a POST
-ZeroBounceSDK.getInstance().deleteFilter("exclude", "domain", "example.com", onSuccess, onError);
+ZeroBounceSDK.getInstance().deleteFilter("block", "domain", "example.com", onSuccess, onError);
 ```
 
 ## S3 and SFTP/FTP bulk
@@ -533,24 +551,46 @@ ZeroBounceSDK zb = ZeroBounceSDK.getInstance();
 // Amazon S3. The file name is the full path, as returned by listS3Files.
 zb.listS3Files(null, null, onSuccess, onError);   // optional bucket, search
 
-zb.validateS3File(new ZBBulkFileJobOptions()
+// file_name and return_url are required on every one of these jobs.
+ZBBulkFileJobOptions s3 = new ZBBulkFileJobOptions()
         .setFileName("lists/leads.csv")
-        .setHasHeaderRow(true), onSuccess, onError);
-zb.scoreS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
-zb.emailFinderS3File(new ZBBulkFileJobOptions().setFileName("lists/leads.csv"), onSuccess, onError);
+        .setHasHeaderRow(true)
+        .setReturnUrl("https://example.com/zerobounce-done");
+
+zb.validateS3File(s3, onSuccess, onError);
+zb.scoreS3File(s3, onSuccess, onError);
+zb.emailFinderS3File(s3, onSuccess, onError);
 zb.domainSearchS3File(new ZBBulkFileJobOptions()
         .setFileName("lists/leads.csv")
         .setRemoveDuplicates(true)
         .setReturnUrl("https://example.com/zerobounce-done"), onSuccess, onError);
 zb.exportS3File("<FILE_ID>", "my-export-bucket", onSuccess, onError);
 
+// validateS3File and scoreS3File also take an options object with the column
+// indexes those two jobs accept. They send the same required fields, so
+// file_name and return_url are required on these overloads as well.
+zb.validateS3File(new ZeroBounceSDK.ValidateS3FileOptions()
+        .setFileName("lists/leads.csv")
+        .setReturnUrl("https://example.com/zerobounce-done")
+        .setEmailAddressColumn(1)
+        .setAllowPhase2(true), onSuccess, onError);
+
+zb.scoreS3File(new ZeroBounceSDK.ScoreS3FileOptions()
+        .setFileName("lists/leads.csv")
+        .setReturnUrl("https://example.com/zerobounce-done")
+        .setEmailAddressColumn(1), onSuccess, onError);
+
 // SFTP/FTP. The server, path and protocol come from your ZeroBounce settings.
-// The file name may be left unset for validateSFTPFile alone, which then uses
-// the input bucket from those settings.
-zb.validateSFTPFile(new ZBBulkFileJobOptions().setHasHeaderRow(true), onSuccess, onError);
-zb.scoreSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
-zb.emailFinderSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
-zb.domainSearchSFTPFile(new ZBBulkFileJobOptions().setFileName("my_file.txt"), onSuccess, onError);
+// The docs list file_name as optional for validateSFTPFile, but the live API
+// requires it there too, so the SDK rejects a job without it.
+ZBBulkFileJobOptions sftp = new ZBBulkFileJobOptions()
+        .setFileName("my_file.txt")
+        .setReturnUrl("https://example.com/zerobounce-done");
+
+zb.validateSFTPFile(sftp, onSuccess, onError);
+zb.scoreSFTPFile(sftp, onSuccess, onError);
+zb.emailFinderSFTPFile(sftp, onSuccess, onError);
+zb.domainSearchSFTPFile(sftp, onSuccess, onError);
 
 // Note the field: this one takes export_path, not export_bucket.
 // Pass null to use the export path from your settings.
@@ -568,8 +608,8 @@ ZeroBounceSDK.getInstance().getListEvaluatorResult("<FILE_ID>", onSuccess, onErr
 
 ## Inbox Placement Tester
 
-Runs on its own host, takes the API key on the query string, and sends camelCase
-JSON bodies. It spends the account's inbox-test credits.
+Runs on its own host, authenticates with an `Authorization: Bearer` header (the
+key never goes on the query string), and sends camelCase JSON bodies. It spends the account's inbox-test credits.
 
 ```java
 ZeroBounceSDK zb = ZeroBounceSDK.getInstance();

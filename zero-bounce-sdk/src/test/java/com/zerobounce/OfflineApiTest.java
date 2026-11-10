@@ -24,10 +24,13 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import com.google.gson.JsonElement;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -159,6 +162,45 @@ class OfflineApiTest {
         ));
         assertShort(error, "batchall-key");
         assertTrue(error.getErrors().stream().anyMatch(message -> message.contains("Invalid API Key")));
+    }
+
+    @Test
+    void aDeadKeyIsAnErrorOnEveryCall() {
+        Probe probe = probe("dead-key-user");
+        String drained = "Invalid API key or your account ran out of credits";
+        Map<String, Object[]> calls = new LinkedHashMap<>();
+        calls.put("validate", new Object[]{(Call) (ok, err) -> probe.sdk.validate("a@example.com", "", ok, err), drained});
+        calls.put("getActivityData", new Object[]{(Call) (ok, err) -> probe.sdk.getActivityData("a@example.com", ok, err), drained});
+        calls.put("getApiUsage", new Object[]{(Call) (ok, err) -> probe.sdk.getApiUsage(new Date(0), new Date(86_400_000L), ok, err), "Invalid API key"});
+        calls.put("findEmail", new Object[]{(Call) (ok, err) -> probe.sdk.findEmail("john", "example.com", null, null, null, ok, err), drained});
+        calls.put("findDomain", new Object[]{(Call) (ok, err) -> probe.sdk.findDomain("example.com", null, ok, err), drained});
+        calls.put("guessFormat", new Object[]{(Call) (ok, err) -> probe.sdk.guessFormat("example.com", "john", null, null, ok, err), drained});
+        calls.put("addFilter", new Object[]{(Call) (ok, err) -> probe.sdk.addFilter("allow", "email", "x@example.com", ok, err), drained});
+        calls.put("deleteFilter", new Object[]{(Call) (ok, err) -> probe.sdk.deleteFilter("allow", "email", "x@example.com", ok, err), drained});
+        calls.put("listFilters GET", new Object[]{(Call) (ok, err) -> probe.sdk.listFilters(false, ok, err), drained});
+        calls.put("listFilters POST", new Object[]{(Call) (ok, err) -> probe.sdk.listFilters(true, ok, err), drained});
+        for (Map.Entry<String, Object[]> entry : calls.entrySet()) {
+            AtomicReference<Object> value = new AtomicReference<>();
+            AtomicReference<ErrorResponse> error = new AtomicReference<>();
+            ((Call) entry.getValue()[0]).run(value::set, error::set);
+            assertNull(value.get(), entry.getKey() + " returned a result");
+            assertNotNull(error.get(), entry.getKey() + " reported nothing");
+            assertEquals(List.of(entry.getValue()[1]), error.get().getErrors(), entry.getKey());
+        }
+        // -1 is the documented credit balance of an invalid key, not an error.
+        ZBCreditsResponse credits = probe.success((ok, err) -> probe.sdk.getCredits(ok, err));
+        assertEquals("-1", credits.getCredits());
+    }
+
+    @Test
+    void aBareMessageIsStillAResultWhereTheApiMeansOne() {
+        Probe pending = probe("greylist-pending-user");
+        ZBValidateResponse validated = pending.success((ok, err) -> pending.sdk.validate("a@example.com", "", ok, err));
+        assertEquals("Greylist validation still in progress. Please try again later.", validated.getMessage());
+
+        Probe filter = probe("filter-message-user");
+        JsonElement added = filter.success((ok, err) -> filter.sdk.addFilter("allow", "email", "x@example.com", ok, err));
+        assertEquals("Filter has been added.", added.getAsJsonObject().get("Message").getAsString());
     }
 
     @Test
@@ -816,6 +858,233 @@ class OfflineApiTest {
         right.setActiveInDays("5");
         right.setActiveFirstSeen("2024-02-01");
         assertNotEquals(left, right);
+    }
+
+    // -----------------------------------------------------------------
+    // sendRequestWithMethod: validate (GET and POST), scoreEmail, the
+    // filters, the S3/SFTP jobs and exports, listS3Files, the list
+    // evaluator result, sendEvaluatedFile and the Inbox Placement Tester.
+    // Its failures get the same handling as sendRequest's.
+    // -----------------------------------------------------------------
+
+    private static final String METHOD_PATH_KEY = "method-path-secret-key";
+
+    /** One call per entry point built on sendRequestWithMethod. */
+    private static Map<String, Call> methodPathCalls(ZeroBounceSDK sdk) {
+        ZBBulkFileJobOptions job = new ZBBulkFileJobOptions()
+                .setFileName("emails.csv")
+                .setReturnUrl("https://example.com/done");
+        Map<String, Call> calls = new LinkedHashMap<>();
+        calls.put("validate GET", (ok, err) -> sdk.validate("a@example.com", "", ok, err));
+        calls.put("validate POST", (ok, err) -> sdk.validate("a@example.com", "",
+                new ZBValidateOptions().setUsePost(true), ok, err));
+        calls.put("scoreEmail", (ok, err) -> sdk.scoreEmail("a@example.com", ok, err));
+        calls.put("scoreEmail POST", (ok, err) -> sdk.scoreEmail("a@example.com", true, ok, err));
+        calls.put("listFilters", (ok, err) -> sdk.listFilters(false, ok, err));
+        calls.put("addFilter", (ok, err) -> sdk.addFilter("block", "email", "x@example.com", ok, err));
+        calls.put("listS3Files", (ok, err) -> sdk.listS3Files(null, null, ok, err));
+        calls.put("validateS3File", (ok, err) -> sdk.validateS3File(job, ok, err));
+        calls.put("validateSFTPFile", (ok, err) -> sdk.validateSFTPFile(job, ok, err));
+        calls.put("exportS3File", (ok, err) -> sdk.exportS3File("fid", null, ok, err));
+        calls.put("exportSFTPFile", (ok, err) -> sdk.exportSFTPFile("fid", null, ok, err));
+        calls.put("getListEvaluatorResult", (ok, err) -> sdk.getListEvaluatorResult("fid", ok, err));
+        calls.put("sendEvaluatedFile", (ok, err) -> sdk.sendEvaluatedFile("fid", ok, err));
+        calls.put("getInboxPlacementProviders", (ok, err) -> sdk.getInboxPlacementProviders(ok, err));
+        calls.put("setInboxPlacementWebhook", (ok, err) -> sdk.setInboxPlacementWebhook("https://example.com/hook", ok, err));
+        calls.put("deleteInboxPlacementTest", (ok, err) -> sdk.deleteInboxPlacementTest("42", ok, err));
+        return calls;
+    }
+
+    /** Runs every sendRequestWithMethod call against one canned transport answer. */
+    private static Map<String, ErrorResponse> methodPathFailures(SdkHttp.Transport transport) {
+        ZeroBounceSDK sdk = new ZeroBounceSDK();
+        List<SdkHttp> sent = new java.util.ArrayList<>();
+        sdk.transport = call -> {
+            sent.add(call);
+            return transport.exchange(call);
+        };
+        sdk.initialize(METHOD_PATH_KEY);
+        Map<String, ErrorResponse> failures = new LinkedHashMap<>();
+        for (Map.Entry<String, Call> entry : methodPathCalls(sdk).entrySet()) {
+            int before = sent.size();
+            AtomicReference<Object> value = new AtomicReference<>();
+            AtomicReference<ErrorResponse> error = new AtomicReference<>();
+            entry.getValue().run(value::set, error::set);
+            assertEquals(before + 1, sent.size(), entry.getKey() + " did not send exactly one request");
+            assertNull(value.get(), entry.getKey() + " returned a result");
+            assertNotNull(error.get(), entry.getKey() + " reported nothing");
+            failures.put(entry.getKey(), error.get());
+        }
+        return failures;
+    }
+
+    @Test
+    void methodPathHtml403IsShortAndKeepsItsStatus() {
+        byte[] page = ("<!DOCTYPE html><html><head><title>Access denied | zerobounce.net</title></head><body><!--"
+                + METHOD_PATH_KEY + "-->" + "<p>blocked</p>".repeat(100_000) + "</body></html>")
+                .getBytes(StandardCharsets.UTF_8);
+        methodPathFailures(call -> new SdkHttp.Result(403, "text/html; charset=UTF-8", page))
+                .forEach((name, error) -> {
+                    assertShort(error, METHOD_PATH_KEY);
+                    assertTrue(error.getErrors().get(0).contains("Access denied"), name + ": " + error.getErrors());
+                    assertEquals(403, error.getStatusCode(), name);
+                });
+    }
+
+    @Test
+    void methodPathExceptionNeverCarriesTheKey() {
+        methodPathFailures(call -> {
+            throw new java.io.IOException("Error: could not reach " + call.url + " with api_key=" + METHOD_PATH_KEY);
+        }).forEach((name, error) -> {
+            assertShort(error, METHOD_PATH_KEY);
+            assertTrue(String.join("\n", error.getErrors()).contains("***"), name + ": " + error.getErrors());
+            assertFalse(error.getErrors().get(0).startsWith("Error:"), name + ": " + error.getErrors());
+            assertEquals(0, error.getStatusCode(), name);
+        });
+    }
+
+    @Test
+    void methodPathEmpty500IsAMessageWithItsStatus() {
+        methodPathFailures(call -> new SdkHttp.Result(500, "", new byte[0]))
+                .forEach((name, error) -> {
+                    assertEquals(List.of("Empty response from ZeroBounce (HTTP 500)"), error.getErrors(), name);
+                    assertEquals(500, error.getStatusCode(), name);
+                });
+    }
+
+    @Test
+    void methodPathEmpty500WithNoErrorStreamKeepsItsStatus() throws Exception {
+        // HttpURLConnection has no error stream at all for a failed response
+        // with no body. That used to be a NullPointerException with no message:
+        // an empty error list and status 0.
+        ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
+        sdk.initialize(METHOD_PATH_KEY);
+        URL url = mock(URL.class);
+        HttpURLConnection connection = mock(HttpURLConnection.class);
+        when(url.openConnection()).thenReturn(connection);
+        when(connection.getResponseCode()).thenReturn(500);
+        when(connection.getErrorStream()).thenReturn(null);
+        doReturn(url).when(sdk).createUrlFrom(anyString());
+        for (Map.Entry<String, Call> entry : Map.of(
+                "validate", (Call) (ok, err) -> sdk.validate("a@example.com", "", ok, err),
+                "getCredits", (Call) (ok, err) -> sdk.getCredits(ok, err)
+        ).entrySet()) {
+            AtomicReference<Object> value = new AtomicReference<>();
+            AtomicReference<ErrorResponse> error = new AtomicReference<>();
+            entry.getValue().run(value::set, error::set);
+            assertNull(value.get(), entry.getKey());
+            assertNotNull(error.get(), entry.getKey());
+            assertEquals(List.of("Empty response from ZeroBounce (HTTP 500)"), error.get().getErrors(), entry.getKey());
+            assertEquals(500, error.get().getStatusCode(), entry.getKey());
+        }
+    }
+
+    @Test
+    void methodPathStripsADoubledErrorPrefix() {
+        methodPathFailures(call -> new SdkHttp.Result(400, "text/plain", "Error: Error: boom".getBytes(StandardCharsets.UTF_8)))
+                .forEach((name, error) -> {
+                    assertEquals(List.of("boom"), error.getErrors(), name);
+                    assertEquals(400, error.getStatusCode(), name);
+                });
+        methodPathFailures(call -> new SdkHttp.Result(400, "application/json",
+                "{\"error\":\"Error: Error: boom\"}".getBytes(StandardCharsets.UTF_8)))
+                .forEach((name, error) -> {
+                    assertEquals(List.of("boom"), error.getErrors(), name);
+                    assertEquals(400, error.getStatusCode(), name);
+                });
+    }
+
+    @Test
+    void methodPathCloudflare1020IsItsTitle() {
+        String body = "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1020/\","
+                + "\"title\":\"Error 1020: Access denied\",\"status\":403,\"detail\":\"The request was blocked by a Cloudflare firewall rule configured by the site owner.\","
+                + "\"error_code\":1020,\"cloudflare_error\":true,\"what_you_should_do\":\"Do not retry. This block is intentional.\"}";
+        methodPathFailures(call -> new SdkHttp.Result(403, "application/json", body.getBytes(StandardCharsets.UTF_8)))
+                .forEach((name, error) -> {
+                    assertEquals(List.of("Error 1020: Access denied"), error.getErrors(), name);
+                    assertEquals(403, error.getStatusCode(), name);
+                });
+    }
+
+    @Test
+    void methodPathSuccessFalseIsAnErrorWithItsMessage() {
+        methodPathFailures(call -> new SdkHttp.Result(200, "application/json",
+                "{\"success\":false,\"message\":\"File cannot be found.\"}".getBytes(StandardCharsets.UTF_8)))
+                .forEach((name, error) -> {
+                    assertTrue(error.getErrors().contains("File cannot be found."), name + ": " + error.getErrors());
+                    assertEquals(Boolean.FALSE, error.getSuccess(), name);
+                    assertEquals(200, error.getStatusCode(), name);
+                });
+    }
+
+    @Test
+    void uploadFailuresGetTheSameShortMessages() throws Exception {
+        File csv = tempDir.resolve("upload.csv").toFile();
+        Files.writeString(csv.toPath(), "email\na@example.com\n");
+
+        Probe cloudflare = probe("cf-json-upload");
+        ErrorResponse blocked = cloudflare.failure((ok, err) -> {
+            try {
+                cloudflare.sdk.sendFile(csv, 1, null, ok, err);
+            } catch (ZBException e) {
+                fail(e);
+            }
+        });
+        assertEquals(List.of("Error 1020: Access denied"), blocked.getErrors());
+        assertEquals(403, blocked.getStatusCode());
+
+        Probe prefixed = probe("errprefix-upload");
+        ErrorResponse boom = prefixed.failure((ok, err) -> prefixed.sdk.sendEmailFinderFile(
+                csv, 1, new ZeroBounceSDK.EmailFinderSendFileOptions().setFirstNameColumn(2), ok, err));
+        assertEquals(List.of("boom"), boom.getErrors());
+        assertEquals(400, boom.getStatusCode());
+    }
+
+    @Test
+    void blankEmailAndFileIdsAreRejectedBeforeARequest() {
+        Probe probe = probe("blank-key");
+        String path = tempDir.resolve("never.csv").toString();
+        Map<String, Call> calls = new LinkedHashMap<>();
+        calls.put("getActivityData", (ok, err) -> probe.sdk.getActivityData(" ", ok, err));
+        calls.put("deleteFile", (ok, err) -> probe.sdk.deleteFile(" ", ok, err));
+        calls.put("scoringDeleteFile", (ok, err) -> probe.sdk.scoringDeleteFile(" ", ok, err));
+        calls.put("emailFinderFileStatus", (ok, err) -> probe.sdk.emailFinderFileStatus(" ", ok, err));
+        calls.put("emailFinderGetFile", (ok, err) -> probe.sdk.emailFinderGetFile(" ", path, ok, err));
+        calls.put("emailFinderDeleteFile", (ok, err) -> probe.sdk.emailFinderDeleteFile(" ", ok, err));
+        calls.put("domainSearchFileStatus", (ok, err) -> probe.sdk.domainSearchFileStatus(" ", ok, err));
+        calls.put("domainSearchGetFile", (ok, err) -> probe.sdk.domainSearchGetFile(" ", path, ok, err));
+        calls.put("domainSearchDeleteFile", (ok, err) -> probe.sdk.domainSearchDeleteFile(" ", ok, err));
+        for (Map.Entry<String, Call> entry : calls.entrySet()) {
+            ErrorResponse error = probe.failure(entry.getValue());
+            assertEquals(0, probe.api.records().size(), entry.getKey() + " sent a request");
+            String expected = entry.getKey().equals("getActivityData") ? "Empty parameter: email" : "Empty parameter: file_id";
+            assertEquals(List.of(expected), error.getErrors(), entry.getKey());
+        }
+        assertFalse(Files.exists(tempDir.resolve("never.csv")));
+    }
+
+    @Test
+    void bulkRootDownloadsKeepTheHttpStatus() {
+        Probe finder = probe("html403-finder-status");
+        ErrorResponse finderError = finder.failure((ok, err) -> finder.sdk.emailFinderGetFile(
+                "fid", tempDir.resolve("f.csv").toString(), ok, err));
+        assertShort(finderError, "html403-finder-status");
+        assertEquals(403, finderError.getStatusCode());
+
+        Probe domain = probe("html403-domain-status");
+        ErrorResponse domainError = domain.failure((ok, err) -> domain.sdk.domainSearchGetFile(
+                "fid", tempDir.resolve("d.csv").toString(), ok, err));
+        assertEquals(403, domainError.getStatusCode());
+
+        Probe html200 = probe("html200-domain-status");
+        ErrorResponse okPage = html200.failure((ok, err) -> html200.sdk.domainSearchGetFile(
+                "fid", tempDir.resolve("h.csv").toString(), ok, err));
+        assertEquals(200, okPage.getStatusCode());
+
+        Probe dead = probe("badkey-finder-status");
+        ErrorResponse deadKey = dead.failure((ok, err) -> dead.sdk.emailFinderGetFile(
+                "fid", tempDir.resolve("k.csv").toString(), ok, err));
+        assertEquals(200, deadKey.getStatusCode());
     }
 
     private static void runCredits(
