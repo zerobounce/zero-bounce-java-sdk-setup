@@ -76,6 +76,15 @@ public class ErrorResponse {
         return Objects.hash(success, errors, statusCode);
     }
 
+    @Override
+    public String toString() {
+        return "ErrorResponse{" +
+                "success=" + success +
+                ", errors=" + errors +
+                ", statusCode=" + statusCode +
+                '}';
+    }
+
     /**
      * Tries to parse the given [error] String into a LinkedHashMap (i.e.: a dictionary structure) in order to provide
      * a standardized way of handling the various error responses.

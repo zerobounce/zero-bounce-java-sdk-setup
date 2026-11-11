@@ -70,6 +70,41 @@ final class HttpMessages {
     }
 
     /**
+     * Whether a download body is a JSON error rather than a results file,
+     * whatever its content type: a JSON object with a "success" field, or
+     * with an error, message, error_message, Error, Message or detail field.
+     * The C++ and Rust SDKs test "success", "message", "error" and
+     * "error_message" the same way; the capitalised keys and "detail" are
+     * added. A CSV never parses as a JSON object, so a results file is not
+     * mistaken for one.
+     */
+    static boolean downloadJsonError(String body) {
+        String trimmed = body == null ? "" : body.trim();
+        if (!trimmed.startsWith("{")) {
+            return false;
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(trimmed);
+            if (!parsed.isJsonObject()) {
+                return false;
+            }
+            JsonObject object = parsed.getAsJsonObject();
+            if (object.has("success")) {
+                return true;
+            }
+            for (String key : MESSAGE_KEYS) {
+                JsonElement value = object.get(key);
+                if (value != null && !value.isJsonNull()) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /**
      * Account-level batch error text, or null when the payload is a normal or partial result.
      */
     static String batchAccountError(String body) {
@@ -114,8 +149,10 @@ final class HttpMessages {
             if (object.has("email_batch")) {
                 return batchAccountError(body);
             }
+            // Strict, like the models: a "success" that is not a boolean is
+            // left for the decoder to report, rather than read as false.
             if (object.has("success") && object.get("success").isJsonPrimitive()
-                    && !object.get("success").getAsBoolean()) {
+                    && Boolean.FALSE.equals(StrictBooleanAdapter.fromElement(object.get("success"), "success"))) {
                 return firstText(object, "message", "error", "error_message");
             }
             if (object.has("error") && !object.get("error").isJsonNull()) {

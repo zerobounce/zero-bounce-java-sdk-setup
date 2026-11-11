@@ -621,4 +621,39 @@ public class OfflineWarmupTest {
         warmup.getSeeds(failOnSuccess, collect);
         assertTrue(errors.toString().contains("not valid JSON"), errors.toString());
     }
+    @Test
+    public void anExceptionFromTheSuccessCallbackPropagates() throws IOException {
+        IllegalStateException thrown = new IllegalStateException("from the caller's success callback");
+        mockAll(200, "{\"seeds\":[]}");
+        RuntimeException caught = assertThrows(RuntimeException.class, () -> warmup.getSeeds(r -> {
+            throw thrown;
+        }, collect));
+        assertSame(thrown, caught);
+        mockAll(200, "[1, 2]");
+        caught = assertThrows(RuntimeException.class, () -> warmup.getSeeds(r -> {
+            throw thrown;
+        }, collect));
+        assertSame(thrown, caught);
+        mockAll(200, "email\nseed@example.com\n", "text/csv");
+        caught = assertThrows(RuntimeException.class, () -> warmup.downloadSeeds(r -> {
+            throw thrown;
+        }, collect));
+        assertSame(thrown, caught);
+        assertTrue(errors.isEmpty(), "the caller's exception reached the error callback: " + errors);
+    }
+
+    @Test
+    public void anExceptionFromTheErrorCallbackPropagatesOnce() throws IOException {
+        IllegalStateException thrown = new IllegalStateException("from the caller's error callback");
+        for (int status : new int[]{200, 302, 500}) {
+            mockAll(status, status == 200 ? "<<<not-json>>>" : "{\"message\":\"failed\"}");
+            java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+            RuntimeException caught = assertThrows(RuntimeException.class, () -> warmup.getSeeds(failOnSuccess, e -> {
+                calls.incrementAndGet();
+                throw thrown;
+            }));
+            assertSame(thrown, caught);
+            assertEquals(1, calls.get(), "HTTP " + status);
+        }
+    }
 }

@@ -32,6 +32,14 @@ public class ZBValidateBatchResponse {
         return Objects.hash(emailBatch, errors);
     }
 
+    @Override
+    public String toString() {
+        return "ZBValidateBatchResponse{" +
+                "emailBatch=" + emailBatch +
+                ", errors=" + errors +
+                '}';
+    }
+
     public List<ZBValidateResponse> getEmailBatch() {
         return this.emailBatch;
     }

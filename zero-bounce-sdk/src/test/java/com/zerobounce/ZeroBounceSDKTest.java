@@ -892,7 +892,8 @@ public class ZeroBounceSDKTest {
                 getFileUrlPath,
                 200,
                 ContentType.DEFAULT_BINARY.getMimeType(),
-                responseJson,
+                // A results file. A JSON body is an error whatever its content type.
+                "email,status\nvalid@example.com,valid\n",
                 () -> zeroBounceSDK.getFile(
                         fileId,
                         "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
@@ -1022,7 +1023,8 @@ public class ZeroBounceSDKTest {
                 getFileUrlPath,
                 200,
                 ContentType.DEFAULT_BINARY.getMimeType(),
-                responseJson,
+                // A results file. A JSON body is an error whatever its content type.
+                "email,status\nvalid@example.com,valid\n",
                 () -> zeroBounceSDK.scoringGetFile(
                         fileId,
                         "./downloads/b222a0fd-90d5-416c-8f1a-9cc3851fc823.csv",
