@@ -1001,3 +1001,7 @@ Run it by hand before every release: the offline suite proves the SDK sends what
 2. **Actions → Publish → Run workflow** with that tag.
 
 Registry: [com.zerobounce.java:zerobouncesdk on Maven Central](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
