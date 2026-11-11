@@ -49,7 +49,7 @@ public class ZBActivityDataResponse {
 
     @Override
     public String toString() {
-        return "ZBActivityData{" +
+        return "ZBActivityDataResponse{" +
                 "found=" + found +
                 ", activeInDays='" + activeInDays + '\'' +
                 '}';
