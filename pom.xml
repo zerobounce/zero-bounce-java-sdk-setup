@@ -58,7 +58,7 @@
         <dependency>
             <groupId>com.zerobounce.java</groupId>
             <artifactId>zerobouncesdk</artifactId>
-            <version>2.2.0</version>
+            <version>3.0.0</version>
         </dependency>
 
     </dependencies>
