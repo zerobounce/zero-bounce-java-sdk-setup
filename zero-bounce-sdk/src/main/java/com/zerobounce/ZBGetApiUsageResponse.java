@@ -559,6 +559,8 @@ public class ZBGetApiUsageResponse {
                 ", subStatusBlocked=" + subStatusBlocked +
                 ", subStatusGold=" + subStatusGold +
                 ", subStatusRoleBasedAcceptAll=" + subStatusRoleBasedAcceptAll +
+                ", subStatusLeadingPeriodRemoved=" + subStatusLeadingPeriodRemoved +
+                ", subStatusAliasAddress=" + subStatusAliasAddress +
                 ", startDate='" + startDate + '\'' +
                 ", endDate='" + endDate + '\'' +
                 '}';

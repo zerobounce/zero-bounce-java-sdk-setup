@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `ZBActivityDataResponse.toString()` starts with `ZBActivityDataResponse{`; 3.0.0 printed `ZBActivityData{`.
+- `ZBGetApiUsageResponse.toString()` includes `subStatusLeadingPeriodRemoved` and `subStatusAliasAddress`, which 3.0.0 left out.
+- Repository only: a test sweeps every public request method of `ZeroBounceSDK`, found and invoked by reflection, and fails if any of them sends a request over anything but HTTPS, or if a public request method is missing from the sweep. Another checks the `toString()` of every response model for its type name and every field.
+
 ## [3.0.0] - 2026-11-12
 
 ### Breaking
