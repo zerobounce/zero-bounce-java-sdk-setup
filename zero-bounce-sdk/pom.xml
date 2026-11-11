@@ -46,12 +46,16 @@
     </properties>
 
     <dependencies>
+        <!-- @NotNull/@Nullable have CLASS retention: needed to compile, not at run time. -->
         <dependency>
             <groupId>org.jetbrains</groupId>
             <artifactId>annotations</artifactId>
             <version>26.1.0</version>
+            <scope>provided</scope>
         </dependency>
 
+        <!-- Not imported by the SDK: it pins the commons-codec that httpclient 4.5.14
+             brings in (1.11) to a current release. -->
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
@@ -64,10 +68,18 @@
             <version>2.14.0</version>
         </dependency>
 
+        <!-- The SDK uses Apache HttpClient 4 (org.apache.http) for the multipart
+             uploads and file downloads, and nothing from HttpClient 5. -->
         <dependency>
-            <groupId>org.apache.httpcomponents.client5</groupId>
-            <artifactId>httpclient5</artifactId>
-            <version>5.6.4</version>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.5.14</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>4.4.16</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.httpcomponents/httpmime -->
@@ -108,6 +120,34 @@
 
     <build>
         <plugins>
+            <!-- Writes the installed and published POM with ${sdk.version} resolved to
+                 the literal version, and without the build section and profiles. The
+                 source POM keeps <sdk.version> as the one place to bump. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.8.0</version>
+                <configuration>
+                    <flattenMode>ossrh</flattenMode>
+                    <updatePomFile>true</updatePomFile>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>

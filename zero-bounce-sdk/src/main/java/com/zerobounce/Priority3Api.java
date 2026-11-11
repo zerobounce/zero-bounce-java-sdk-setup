@@ -1,7 +1,5 @@
 package com.zerobounce;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -17,7 +15,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
-import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -187,28 +184,36 @@ final class Priority3Api {
             @NotNull ZeroBounceSDK.OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull ZeroBounceSDK.OnErrorCallback errorCallback
     ) {
+        int status;
+        String contentType;
+        byte[] body;
         try {
             String url = baseUrl + "/getfile?api_key="
                     + java.net.URLEncoder.encode(sdk.priority3ApiKey(), StandardCharsets.UTF_8)
                     + "&file_id=" + java.net.URLEncoder.encode(fileId, StandardCharsets.UTF_8);
             if (sdk.transport != null) {
                 SdkHttp.Result result = sdk.transport.exchange(new SdkHttp("GET", url, null, null, null));
-                finishBulkDownload(downloadPath, result.status, result.body, successCallback, errorCallback);
-                return;
+                status = result.status;
+                contentType = result.contentType;
+                body = result.body;
+            } else {
+                java.net.HttpURLConnection con = (java.net.HttpURLConnection) sdk.createUrlFrom(url).openConnection();
+                con.setInstanceFollowRedirects(false);
+                con.setConnectTimeout(sdk.priority3TimeoutMillis());
+                con.setReadTimeout(sdk.priority3TimeoutMillis());
+                status = con.getResponseCode();
+                contentType = con.getContentType();
+                InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
+                // A failed response with no body has no error stream at all.
+                body = stream == null ? new byte[0] : stream.readAllBytes();
+                con.disconnect();
             }
-            java.net.HttpURLConnection con = (java.net.HttpURLConnection) sdk.createUrlFrom(url).openConnection();
-            con.setInstanceFollowRedirects(false);
-            con.setConnectTimeout(sdk.priority3TimeoutMillis());
-            con.setReadTimeout(sdk.priority3TimeoutMillis());
-            int status = con.getResponseCode();
-            InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
-            // A failed response with no body has no error stream at all.
-            byte[] body = stream == null ? new byte[0] : stream.readAllBytes();
-            con.disconnect();
-            finishBulkDownload(downloadPath, status, body, successCallback, errorCallback);
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
+            return;
         }
+        // Outside the try, so an exception from either callback reaches the caller.
+        finishBulkDownload(downloadPath, status, contentType, body, successCallback, errorCallback);
     }
 
     void bulkRootDeleteFile(
@@ -283,6 +288,7 @@ final class Priority3Api {
         if (deliverMultipartTransport(url, fields, file.getName(), successCallback, errorCallback)) {
             return;
         }
+        MultipartResponse response;
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(url);
             uploadFile.setConfig(sdk.apacheRequestConfig());
@@ -293,10 +299,12 @@ final class Priority3Api {
             builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
             builder.addPart("file", new FileBody(file));
             uploadFile.setEntity(builder.build());
-            handleMultipartResponse(httpClient.execute(uploadFile), successCallback, errorCallback);
+            response = readMultipartResponse(httpClient.execute(uploadFile));
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
+            return;
         }
+        sdk.deliverSendFileResponse(response.status, response.body, successCallback, errorCallback);
     }
 
     private void sendBulkRootMultipartStream(
@@ -310,6 +318,7 @@ final class Priority3Api {
         if (deliverMultipartTransport(url, fields, fileName, successCallback, errorCallback)) {
             return;
         }
+        MultipartResponse response;
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(url);
             uploadFile.setConfig(sdk.apacheRequestConfig());
@@ -320,52 +329,36 @@ final class Priority3Api {
             builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
             builder.addPart("file", new InputStreamBody(inputStream, ContentType.DEFAULT_BINARY, fileName));
             uploadFile.setEntity(builder.build());
-            handleMultipartResponse(httpClient.execute(uploadFile), successCallback, errorCallback);
+            response = readMultipartResponse(httpClient.execute(uploadFile));
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
+            return;
         }
+        sdk.deliverSendFileResponse(response.status, response.body, successCallback, errorCallback);
     }
 
     private void finishBulkDownload(
             String downloadPath,
             int status,
+            String contentType,
             byte[] body,
             ZeroBounceSDK.OnSuccessCallback<ZBGetFileResponse> successCallback,
             ZeroBounceSDK.OnErrorCallback errorCallback
-    ) throws IOException {
-        String downloadError = HttpMessages.downloadFailure(status, body, null);
-        if (downloadError != null) {
-            String text = new String(body, StandardCharsets.UTF_8);
-            if (HttpMessages.preferShortMessage(text)) {
-                errorCallback.onError(ErrorResponse.parseError(downloadError, status));
-            } else {
-                errorCallback.onError(ErrorResponse.parseError(text, status));
-            }
+    ) {
+        // The same checks as getFile: a JSON error body is an error whatever
+        // its content type, and nothing is written for it.
+        ErrorResponse error = ZeroBounceSDK.downloadError(status, body, contentType);
+        if (error != null) {
+            errorCallback.onError(error);
             return;
-        }
-        String bodyStr = new String(body, StandardCharsets.UTF_8).trim();
-        if (bodyStr.startsWith("{")) {
-            try {
-                JsonObject obj = JsonParser.parseString(bodyStr).getAsJsonObject();
-                if (obj.has("success") && obj.get("success").isJsonPrimitive() && !obj.get("success").getAsBoolean()) {
-                    errorCallback.onError(ErrorResponse.parseError(bodyStr, status));
-                    return;
-                }
-                if (obj.has("message") || obj.has("error") || obj.has("error_message")) {
-                    errorCallback.onError(ErrorResponse.parseError(bodyStr, status));
-                    return;
-                }
-            } catch (Exception ignored) {
-                // not a JSON error payload — treat as file bytes
-            }
         }
         File out = new File(downloadPath);
         File parent = out.getParentFile();
         if (parent != null) {
             parent.mkdirs();
         }
-        try (FileOutputStream fos = new FileOutputStream(out)) {
-            fos.write(body);
+        if (!ZeroBounceSDK.saveDownload(out, body, errorCallback)) {
+            return;
         }
         ZBGetFileResponse response = new ZBGetFileResponse();
         response.setLocalFilePath(downloadPath);
@@ -386,24 +379,30 @@ final class Priority3Api {
         String key = sdk.priority3ApiKey();
         recorded.put("api_key", key == null ? "" : key);
         recorded.put("file", fileName == null || fileName.isBlank() ? "<file>" : fileName);
+        SdkHttp.Result result;
         try {
-            SdkHttp.Result result = sdk.transport.exchange(
-                    new SdkHttp("POST", url, "multipart/form-data", null, recorded));
-            String rsp = new String(result.body, StandardCharsets.UTF_8);
-            if (!sdk.reportHttpFailure(result.status, rsp, errorCallback)) {
-                successCallback.onSuccess(sdk.priority3Gson().fromJson(rsp, ZBSendFileResponse.class));
-            }
+            result = sdk.transport.exchange(new SdkHttp("POST", url, "multipart/form-data", null, recorded));
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
+            return true;
         }
+        sdk.deliverSendFileResponse(result.status, new String(result.body, StandardCharsets.UTF_8),
+                successCallback, errorCallback);
         return true;
     }
 
-    private void handleMultipartResponse(
-            CloseableHttpResponse response,
-            ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse> successCallback,
-            ZeroBounceSDK.OnErrorCallback errorCallback
-    ) throws IOException {
+    /** What an upload answered. */
+    private static final class MultipartResponse {
+        final int status;
+        final String body;
+
+        MultipartResponse(int status, String body) {
+            this.status = status;
+            this.body = body;
+        }
+    }
+
+    private static MultipartResponse readMultipartResponse(CloseableHttpResponse response) throws IOException {
         HttpEntity responseEntity = response.getEntity();
         int status = response.getStatusLine().getStatusCode();
         StringBuilder content = new StringBuilder();
@@ -413,12 +412,6 @@ final class Priority3Api {
                 content.append(inputLine);
             }
         }
-        String rsp = content.toString();
-        if (!sdk.reportHttpFailure(status, rsp, errorCallback)) {
-            Type type = new TypeToken<ZBSendFileResponse>() {
-            }.getType();
-            ZBSendFileResponse sendFileResponse = sdk.priority3Gson().fromJson(rsp, type);
-            successCallback.onSuccess(sendFileResponse);
-        }
+        return new MultipartResponse(status, content.toString());
     }
 }

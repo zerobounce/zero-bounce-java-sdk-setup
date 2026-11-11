@@ -98,8 +98,9 @@ public class ZBSendFileResponse {
 
             JsonObject jobject = jsonElement.getAsJsonObject();
             ZBSendFileResponse r = new ZBSendFileResponse();
-            if (jobject.has("success")) {
-                r.success = jobject.get("success").getAsBoolean();
+            Boolean success = StrictBooleanAdapter.fromElement(jobject.get("success"), "success");
+            if (success != null) {
+                r.success = success;
             }
             if (jobject.has("message")) {
                 if (jobject.get("message").isJsonArray()) {

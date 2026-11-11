@@ -169,6 +169,9 @@ public class ZeroBounceWarmup {
             @NotNull ZeroBounceSDK.OnErrorCallback errorCallback,
             String... secrets
     ) {
+        // Only the exchange is inside the try: an exception thrown by the
+        // caller's error callback must reach the caller, not be reported again.
+        Result result = new Result();
         try {
             HttpURLConnection con = (HttpURLConnection) createUrlFrom(url).openConnection();
             con.setRequestMethod(method);
@@ -189,7 +192,6 @@ public class ZeroBounceWarmup {
                 }
             }
 
-            Result result = new Result();
             result.status = con.getResponseCode();
             String contentType = con.getHeaderField("Content-Type");
             result.contentType = contentType != null ? contentType : "";
@@ -209,24 +211,24 @@ public class ZeroBounceWarmup {
             }
             con.disconnect();
             result.body = content.toString();
-
-            if (result.status >= 300 && result.status < 400) {
-                errorCallback.onError(ErrorResponse.parseError(
-                        "ZeroBounce returned a redirect, which this client does not follow.",
-                        result.status));
-                return null;
-            }
-            if (result.status > 299) {
-                errorCallback.onError(ErrorResponse.parseError(
-                        redact(messageFromBody(result.body, result.status), secrets), result.status));
-                return null;
-            }
-            return result;
         } catch (Exception e) {
             // Rebuilt rather than wrapped: the original holds the URL and headers.
             errorCallback.onError(ErrorResponse.parseError(redact(e.getMessage(), secrets)));
             return null;
         }
+
+        if (result.status >= 300 && result.status < 400) {
+            errorCallback.onError(ErrorResponse.parseError(
+                    "ZeroBounce returned a redirect, which this client does not follow.",
+                    result.status));
+            return null;
+        }
+        if (result.status > 299) {
+            errorCallback.onError(ErrorResponse.parseError(
+                    redact(messageFromBody(result.body, result.status), secrets), result.status));
+            return null;
+        }
+        return result;
     }
 
     /**
@@ -256,22 +258,25 @@ public class ZeroBounceWarmup {
                     redact(messageFromBody(result.body, result.status), secrets), result.status));
             return;
         }
+        com.google.gson.JsonElement parsed;
         try {
-            // LIVE: not every endpoint answers with an object. /seeds is a JSON
-            // array and /seed-count is a bare number, so anything that is not
-            // an object is wrapped under "data" and one return type covers all.
-            com.google.gson.JsonElement parsed = JsonParser.parseString(result.body);
-            if (parsed.isJsonObject()) {
-                successCallback.onSuccess(parsed.getAsJsonObject());
-                return;
-            }
-            JsonObject wrapper = new JsonObject();
-            wrapper.add("data", parsed);
-            successCallback.onSuccess(wrapper);
+            parsed = JsonParser.parseString(result.body);
         } catch (RuntimeException e) {
             errorCallback.onError(ErrorResponse.parseError(
                     redact(messageFromBody(result.body, result.status), secrets), result.status));
+            return;
         }
+        // Outside the try, so an exception from the caller's callback reaches
+        // the caller. LIVE: not every endpoint answers with an object. /seeds
+        // is a JSON array and /seed-count is a bare number, so anything that is
+        // not an object is wrapped under "data" and one return type covers all.
+        if (parsed.isJsonObject()) {
+            successCallback.onSuccess(parsed.getAsJsonObject());
+            return;
+        }
+        JsonObject wrapper = new JsonObject();
+        wrapper.add("data", parsed);
+        successCallback.onSuccess(wrapper);
     }
 
     /** A CSV download, returned as text. */

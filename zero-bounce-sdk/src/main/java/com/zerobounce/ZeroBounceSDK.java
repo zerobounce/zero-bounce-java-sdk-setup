@@ -3,7 +3,6 @@ package com.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
@@ -102,6 +101,8 @@ public class ZeroBounceSDK {
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private String apiKey;
+    /** Why the key given to initialize was refused, or null when it was accepted. */
+    private String apiKeyProblem;
     private int timeoutInMillis;
     private final Gson gson;
 
@@ -120,6 +121,9 @@ public class ZeroBounceSDK {
         gsonBuilder.setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES);
         gsonBuilder.registerTypeAdapter(ZBSendFileResponse.class, new ZBSendFileResponse.Deserializer());
         gsonBuilder.registerTypeAdapter(Date.class, new GsonDateDeserializer());
+        StrictBooleanAdapter booleans = new StrictBooleanAdapter();
+        gsonBuilder.registerTypeAdapter(Boolean.class, booleans);
+        gsonBuilder.registerTypeAdapter(boolean.class, booleans);
         gson = gsonBuilder.create();
     }
 
@@ -128,10 +132,12 @@ public class ZeroBounceSDK {
      * <p>
      * [timeoutInMillis] is set to 120000 (120 seconds) by default
      *
-     * @param apiKey the API key
+     * @param apiKey the API key. A key with surrounding whitespace or control
+     *               characters is refused: every later call then fails with that
+     *               message instead of sending it.
      */
     public void initialize(String apiKey) {
-        this.apiKey = apiKey;
+        setApiKey(apiKey);
         timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
     }
 
@@ -142,7 +148,7 @@ public class ZeroBounceSDK {
      * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
      */
     public void initialize(String apiKey, int timeoutInMillis) {
-        this.apiKey = apiKey;
+        setApiKey(apiKey);
         this.timeoutInMillis = timeoutInMillis;
     }
 
@@ -154,7 +160,7 @@ public class ZeroBounceSDK {
      *                        trailing slash is removed
      */
     public void initialize(String apiKey, @Nullable String apiBaseUrl) {
-        this.apiKey = apiKey;
+        setApiKey(apiKey);
         timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
         if (apiBaseUrl != null) {
             requireHttpsUrl(apiBaseUrl);
@@ -190,6 +196,33 @@ public class ZeroBounceSDK {
             requireHttpsUrl(inboxPlacementBaseUrl);
             this.inboxPlacementBaseUrl = withoutTrailingSlashes(inboxPlacementBaseUrl);
         }
+    }
+
+    /**
+     * Keeps the key, unless it has surrounding whitespace or control characters
+     * (a key read from a file with its newline, say). Such a key is not stored,
+     * so it is never sent or quoted, unredacted, in a transport error, and every
+     * call reports why through its error callback, as {@link ZeroBounceWarmup}
+     * does. An empty key is still reported as "not initialized".
+     */
+    private void setApiKey(String apiKey) {
+        if (apiKey != null && !apiKey.isBlank()
+                && (!apiKey.equals(apiKey.trim()) || hasControlCharacters(apiKey))) {
+            this.apiKey = null;
+            apiKeyProblem = "api_key has surrounding whitespace or control characters";
+            return;
+        }
+        this.apiKey = apiKey;
+        apiKeyProblem = null;
+    }
+
+    private static boolean hasControlCharacters(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -750,6 +783,8 @@ public class ZeroBounceSDK {
             return;
         }
 
+        int status;
+        String rsp;
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
             uploadFile.setConfig(apacheRequestConfig());
@@ -815,7 +850,7 @@ public class ZeroBounceSDK {
 
             CloseableHttpResponse response = httpClient.execute(uploadFile);
             HttpEntity responseEntity = response.getEntity();
-            int status = response.getStatusLine().getStatusCode();
+            status = response.getStatusLine().getStatusCode();
 
             logDebug("ZeroBounceSDK::sendFile status: " + status);
 
@@ -827,26 +862,18 @@ public class ZeroBounceSDK {
                 }
             }
 
-            String rsp = content.toString();
+            rsp = content.toString();
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
-
-            if (reportHttpFailure(status, rsp, errorCallback)) {
-                // Covers status > 299, an HTML or empty body, and a
-                // {"success": false} answered on an HTTP 200.
-            } else {
-                Type type = new TypeToken<ZBSendFileResponse>() {
-                }.getType();
-                ZBSendFileResponse sendFileResponse = gson.fromJson(rsp, type);
-
-                successCallback.onSuccess(sendFileResponse);
-            }
-
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
+            return;
         }
+        // Covers status > 299, an HTML or empty body, and a {"success": false}
+        // answered on an HTTP 200; the callbacks are called outside the try.
+        deliverSendFileResponse(status, rsp, successCallback, errorCallback);
     }
 
     private void _sendFileStream(
@@ -871,6 +898,8 @@ public class ZeroBounceSDK {
             return;
         }
 
+        int status;
+        String rsp;
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpPost uploadFile = new HttpPost(urlPath);
             uploadFile.setConfig(apacheRequestConfig());
@@ -936,7 +965,7 @@ public class ZeroBounceSDK {
 
             CloseableHttpResponse response = httpClient.execute(uploadFile);
             HttpEntity responseEntity = response.getEntity();
-            int status = response.getStatusLine().getStatusCode();
+            status = response.getStatusLine().getStatusCode();
 
             logDebug("ZeroBounceSDK::sendFile status: " + status);
 
@@ -948,26 +977,18 @@ public class ZeroBounceSDK {
                 }
             }
 
-            String rsp = content.toString();
+            rsp = content.toString();
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
-
-            if (reportHttpFailure(status, rsp, errorCallback)) {
-                // Covers status > 299, an HTML or empty body, and a
-                // {"success": false} answered on an HTTP 200.
-            } else {
-                Type type = new TypeToken<ZBSendFileResponse>() {
-                }.getType();
-                ZBSendFileResponse sendFileResponse = gson.fromJson(rsp, type);
-
-                successCallback.onSuccess(sendFileResponse);
-            }
-
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
+            return;
         }
+        // Covers status > 299, an HTML or empty body, and a {"success": false}
+        // answered on an HTTP 200; the callbacks are called outside the try.
+        deliverSendFileResponse(status, rsp, successCallback, errorCallback);
     }
 
     /**
@@ -1114,42 +1135,6 @@ public class ZeroBounceSDK {
         return ub.build();
     }
 
-    private static boolean getFileJsonIndicatesFailure(@NotNull JsonObject o) {
-        if (o.has("success") && !o.get("success").isJsonNull()) {
-            try {
-                if (!o.get("success").getAsBoolean()) {
-                    return true;
-                }
-            } catch (Exception ignored) {
-                // non-boolean success — treat as non-failure here; other fields may still signal error
-            }
-        }
-        return nonEmptyStringField(o, "message")
-                || nonEmptyStringField(o, "error")
-                || nonEmptyStringField(o, "error_message");
-    }
-
-    private static boolean nonEmptyStringField(@NotNull JsonObject o, @NotNull String key) {
-        if (!o.has(key) || o.get(key).isJsonNull()) {
-            return false;
-        }
-        JsonElement e = o.get(key);
-        if (e.isJsonPrimitive() && e.getAsJsonPrimitive().isString()) {
-            return !e.getAsString().trim().isEmpty();
-        }
-        if (e.isJsonArray()) {
-            JsonArray arr = e.getAsJsonArray();
-            for (JsonElement item : arr) {
-                if (item != null && item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()) {
-                    if (!item.getAsString().trim().isEmpty()) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
     /**
      * The getFile API allows users to get the validation results file for the file that has  been submitted.
      * This method implements the actual request logic.
@@ -1167,12 +1152,15 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
             return;
         }
+        File file = new File(downloadPath);
+        if (file.isDirectory()) {
+            errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
+            return;
+        }
+        int statusCode;
+        String contentTypeRaw;
+        byte[] bodyBytes;
         try {
-            File file = new File(downloadPath);
-            if (file.isDirectory()) {
-                errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
-                return;
-            }
             File parent = file.getParentFile();
             if (parent != null) {
                 parent.mkdirs();
@@ -1180,25 +1168,29 @@ public class ZeroBounceSDK {
             URI uri = buildGetFileUri(scoring, fileId, options);
             if (transport != null) {
                 SdkHttp.Result result = transport.exchange(new SdkHttp("GET", uri.toString(), null, null, null));
-                deliverGetFile(file, downloadPath, result.status, result.contentType, result.body, successCallback, errorCallback);
-                return;
-            }
-            try (CloseableHttpClient client = HttpClients.createDefault()) {
-                HttpGet downloadFile = new HttpGet(uri);
-                downloadFile.setConfig(apacheRequestConfig());
-                try (CloseableHttpResponse response = client.execute(downloadFile)) {
-                    int statusCode = response.getStatusLine().getStatusCode();
-                    HttpEntity entity = response.getEntity();
-                    Header ctHeader = response.getFirstHeader("Content-Type");
-                    String contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
-                    byte[] bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
-                    deliverGetFile(file, downloadPath, statusCode, contentTypeRaw, bodyBytes, successCallback, errorCallback);
+                statusCode = result.status;
+                contentTypeRaw = result.contentType;
+                bodyBytes = result.body;
+            } else {
+                try (CloseableHttpClient client = HttpClients.createDefault()) {
+                    HttpGet downloadFile = new HttpGet(uri);
+                    downloadFile.setConfig(apacheRequestConfig());
+                    try (CloseableHttpResponse response = client.execute(downloadFile)) {
+                        statusCode = response.getStatusLine().getStatusCode();
+                        HttpEntity entity = response.getEntity();
+                        Header ctHeader = response.getFirstHeader("Content-Type");
+                        contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
+                        bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
+                    }
                 }
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
         }
+        // Outside the try, so an exception from either callback reaches the caller.
+        deliverGetFile(file, downloadPath, statusCode, contentTypeRaw, bodyBytes, successCallback, errorCallback);
     }
 
     /**
@@ -1539,7 +1531,18 @@ public class ZeroBounceSDK {
                 null,
                 new TypeToken<JsonElement>() {
                 },
-                payload -> successCallback.onSuccess(parseS3FileList(payload)),
+                payload -> {
+                    // A payload the SDK cannot read is its own error; the
+                    // caller's callback runs outside the try.
+                    List<ZBS3ListFileEntry> files;
+                    try {
+                        files = parseS3FileList(payload);
+                    } catch (RuntimeException e) {
+                        errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+                        return;
+                    }
+                    successCallback.onSuccess(files);
+                },
                 errorCallback
         );
     }
@@ -2344,6 +2347,10 @@ public class ZeroBounceSDK {
      * @return **true** if the [apiKey] is null or **false** otherwise
      */
     private boolean invalidApiKey(@NotNull OnErrorCallback errorCallback) {
+        if (apiKeyProblem != null) {
+            errorCallback.onError(ErrorResponse.parseError(apiKeyProblem));
+            return true;
+        }
         if (apiKey == null || apiKey.isBlank()) {
             ErrorResponse errorResponse = ErrorResponse.parseError(
                     "ZeroBounce SDK is not initialized. Please call ZeroBounceSDK.initialize(apiKey) first"
@@ -2415,6 +2422,11 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback,
             boolean messageOnlyIsFailure) {
+        // Only the exchange itself is inside the try: an exception thrown by
+        // the caller's own callback must reach the caller, not come back
+        // through the error callback as if the API had failed.
+        int status;
+        String rsp;
         try {
             logDebug("ZeroBounceSDK::sendRequest preparing request: " + urlPath);
             URIBuilder ub = new URIBuilder(urlPath);
@@ -2428,8 +2440,6 @@ public class ZeroBounceSDK {
             String httpMethod = body == null ? "GET" : "POST";
             byte[] payload = body == null ? null : gson.toJson(body).getBytes(StandardCharsets.UTF_8);
             String urlString = ub.toString();
-            int status;
-            String rsp;
             if (transport != null) {
                 SdkHttp.Result result = transport.exchange(new SdkHttp(
                         httpMethod,
@@ -2466,21 +2476,22 @@ public class ZeroBounceSDK {
                 logDebug("ZeroBounceSDK::sendRequest status: " + status);
                 rsp = readResponse(con, status);
             }
-
-            logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
-            if (messageOnlyIsFailure && status <= 299) {
-                String messageOnly = HttpMessages.messageOnlyFailure(rsp);
-                if (messageOnly != null) {
-                    errorCallback.onError(ErrorResponse.parseError(messageOnly, status));
-                    return;
-                }
-            }
-            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequest failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
             errorCallback.onError(errorResponse);
+            return;
         }
+
+        logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
+        if (messageOnlyIsFailure && status <= 299) {
+            String messageOnly = HttpMessages.messageOnlyFailure(rsp);
+            if (messageOnly != null) {
+                errorCallback.onError(ErrorResponse.parseError(messageOnly, status));
+                return;
+            }
+        }
+        deliverJson(status, rsp, typeToken, successCallback, errorCallback);
     }
 
     private <T> void sendFormPostRequest(
@@ -2490,6 +2501,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        int status;
+        String rsp;
         try {
             logDebug("ZeroBounceSDK::sendFormPostRequest preparing request: " + urlPath);
             StringBuilder formBody = new StringBuilder();
@@ -2502,8 +2515,6 @@ public class ZeroBounceSDK {
                 formBody.append(java.net.URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
             }
             byte[] out = formBody.toString().getBytes(StandardCharsets.UTF_8);
-            int status;
-            String rsp;
             if (transport != null) {
                 SdkHttp.Result result = transport.exchange(new SdkHttp(
                         "POST",
@@ -2533,12 +2544,13 @@ public class ZeroBounceSDK {
                 status = con.getResponseCode();
                 rsp = readResponse(con, status);
             }
-            logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
-            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFormPostRequest failed", e);
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
         }
+        logPayload("ZeroBounceSDK::sendFormPostRequest rsp=" + rsp);
+        deliverJson(status, rsp, typeToken, successCallback, errorCallback);
     }
 
     /**
@@ -2575,6 +2587,8 @@ public class ZeroBounceSDK {
             @Nullable Map<String, String> extraHeaders,
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
+        int status;
+        String rsp;
         try {
             URIBuilder ub = new URIBuilder(urlPath);
             if (queryParameters != null) {
@@ -2599,8 +2613,6 @@ public class ZeroBounceSDK {
                 contentType = "application/json";
             }
 
-            int status;
-            String rsp;
             if (transport != null) {
                 // The offline suites replace the network here. Without this branch
                 // every call built on sendRequestWithMethod -- the Inbox Placement
@@ -2646,40 +2658,41 @@ public class ZeroBounceSDK {
                 status = con.getResponseCode();
                 rsp = readResponse(con, status);
             }
-            logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
-
-            // The same failure handling as sendRequest: a short message for an
-            // HTML page, an empty or non-JSON body and a Cloudflare block, the
-            // Error: prefix stripped, and the HTTP status kept. LIVE: {"success":
-            // false} on an HTTP 200 is a failure, not a result. The API answers
-            // an unknown bulk file id that way.
-            if (status > 299 || apiSuccessIsFalse(rsp)) {
-                reportFailure(status, rsp, errorCallback);
-                return;
-            }
-            if (successCallback == null) {
-                return;
-            }
-            if (typeToken != null && rsp.trim().isEmpty() && status != 204) {
-                // A typed endpoint that answers 200 with no body did not succeed.
-                // Only a 204 legitimately carries nothing (the Inbox Placement
-                // Tester's DELETE), and that still reaches the success callback.
-                errorCallback.onError(ErrorResponse.parseError(
-                        HttpMessages.jsonCallFailure(status, rsp, null), status));
-                return;
-            }
-            if (typeToken == null || rsp.trim().isEmpty()) {
-                successCallback.onSuccess(null);
-                return;
-            }
-            // The same body checks as sendRequest: an HTTP 200 that carries
-            // {"error": ...}, an HTML page or a non-JSON body is a failure, not
-            // a result to decode.
-            deliverJson(status, rsp, typeToken, successCallback, errorCallback);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
         }
+        logPayload("ZeroBounceSDK::sendRequestWithMethod rsp=" + rsp);
+
+        // The same failure handling as sendRequest: a short message for an
+        // HTML page, an empty or non-JSON body and a Cloudflare block, the
+        // Error: prefix stripped, and the HTTP status kept. LIVE: {"success":
+        // false} on an HTTP 200 is a failure, not a result. The API answers
+        // an unknown bulk file id that way.
+        if (status > 299 || apiSuccessIsFalse(rsp)) {
+            reportFailure(status, rsp, errorCallback);
+            return;
+        }
+        if (successCallback == null) {
+            return;
+        }
+        if (typeToken != null && rsp.trim().isEmpty() && status != 204) {
+            // A typed endpoint that answers 200 with no body did not succeed.
+            // Only a 204 legitimately carries nothing (the Inbox Placement
+            // Tester's DELETE), and that still reaches the success callback.
+            errorCallback.onError(ErrorResponse.parseError(
+                    HttpMessages.jsonCallFailure(status, rsp, null), status));
+            return;
+        }
+        if (typeToken == null || rsp.trim().isEmpty()) {
+            successCallback.onSuccess(null);
+            return;
+        }
+        // The same body checks as sendRequest: an HTTP 200 that carries
+        // {"error": ...}, an HTML page or a non-JSON body is a failure, not
+        // a result to decode.
+        deliverJson(status, rsp, typeToken, successCallback, errorCallback);
     }
 
     /**
@@ -2760,7 +2773,42 @@ public class ZeroBounceSDK {
         if (reportJsonFailure(status, rsp, errorCallback)) {
             return;
         }
-        T response = gson.fromJson(rsp, typeToken.getType());
+        T response;
+        try {
+            response = gson.fromJson(rsp, typeToken.getType());
+        } catch (RuntimeException e) {
+            // A body the SDK cannot decode, such as a boolean field that holds
+            // "yes". The caller's success callback is called outside this try,
+            // so an exception it throws is not reported here.
+            logError("ZeroBounceSDK::deliverJson failed", e);
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
+        }
+        successCallback.onSuccess(response);
+    }
+
+    /**
+     * {@link #deliverJson} for a bulk upload: a failed status, an HTML or empty
+     * body and {@code {"success": false}} reach the error callback, and the
+     * decoded body the success callback, outside any try.
+     */
+    void deliverSendFileResponse(
+            int status,
+            String rsp,
+            OnSuccessCallback<ZBSendFileResponse> successCallback,
+            OnErrorCallback errorCallback
+    ) {
+        if (reportHttpFailure(status, rsp, errorCallback)) {
+            return;
+        }
+        ZBSendFileResponse response;
+        try {
+            response = gson.fromJson(rsp, ZBSendFileResponse.class);
+        } catch (RuntimeException e) {
+            logError("ZeroBounceSDK::sendFile failed", e);
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
+        }
         successCallback.onSuccess(response);
     }
 
@@ -2816,47 +2864,74 @@ public class ZeroBounceSDK {
             byte[] bodyBytes,
             OnSuccessCallback<ZBGetFileResponse> successCallback,
             OnErrorCallback errorCallback
-    ) throws IOException {
-        String downloadError = HttpMessages.downloadFailure(statusCode, bodyBytes, contentTypeRaw);
-        if (downloadError != null) {
-            String text = new String(bodyBytes, StandardCharsets.UTF_8);
-            if (HttpMessages.preferShortMessage(text)) {
-                errorCallback.onError(ErrorResponse.parseError(downloadError, statusCode));
-            } else {
-                errorCallback.onError(ErrorResponse.parseError(text, statusCode));
-            }
+    ) {
+        ErrorResponse error = downloadError(statusCode, bodyBytes, contentTypeRaw);
+        if (error != null) {
+            errorCallback.onError(error);
             return;
         }
-        String mime = contentTypeRaw == null ? "" : contentTypeRaw.split(";")[0].trim().toLowerCase(Locale.ROOT);
-        if (ContentType.APPLICATION_JSON.getMimeType().equalsIgnoreCase(mime)) {
-            String json = new String(bodyBytes, StandardCharsets.UTF_8);
-            try {
-                JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                if (getFileJsonIndicatesFailure(obj)) {
-                    errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                    return;
-                }
-                if (obj.has("success")) {
-                    errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                    return;
-                }
-            } catch (Exception parseEx) {
-                errorCallback.onError(ErrorResponse.parseError(json, statusCode));
-                return;
-            }
-        }
-
-        if (statusCode > 299) {
-            errorCallback.onError(ErrorResponse.parseError(new String(bodyBytes, StandardCharsets.UTF_8), statusCode));
+        if (!saveDownload(file, bodyBytes, errorCallback)) {
             return;
-        }
-
-        try (FileOutputStream outStream = new FileOutputStream(file)) {
-            outStream.write(bodyBytes);
         }
         ZBGetFileResponse rsp = new ZBGetFileResponse();
         rsp.setLocalFilePath(downloadPath);
         successCallback.onSuccess(rsp);
+    }
+
+    /**
+     * Why a bulk download is not a results file, or null when it should be
+     * saved: an error status, an empty body or an HTML page, a JSON content
+     * type, or a JSON error body whatever its content type (the API has sent
+     * {@code {"success": false, ...}} as text/plain). The file is not written
+     * in any of those cases.
+     */
+    static @Nullable ErrorResponse downloadError(int status, byte[] body, @Nullable String contentType) {
+        String text = new String(body, StandardCharsets.UTF_8);
+        String failure = HttpMessages.downloadFailure(status, body, contentType);
+        if (failure != null) {
+            ErrorResponse error = HttpMessages.preferShortMessage(text)
+                    ? ErrorResponse.parseError(failure, status)
+                    : ErrorResponse.parseError(text, status);
+            if (error.getErrors().isEmpty()) {
+                // {"success": false} with no message.
+                error.getErrors().add(failure);
+            }
+            return error;
+        }
+        String mime = contentType == null ? "" : contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        if (!ContentType.APPLICATION_JSON.getMimeType().equals(mime) && !HttpMessages.downloadJsonError(text)) {
+            return null;
+        }
+        if (HttpMessages.preferShortMessage(text)) {
+            return ErrorResponse.parseError(
+                    "ZeroBounce returned a JSON response instead of the file (HTTP " + status + ").", status);
+        }
+        ErrorResponse error = ErrorResponse.parseError(text, status);
+        if (error.getErrors().isEmpty()) {
+            // {"success": false} with no message.
+            error.getErrors().add("ZeroBounce returned an error instead of the file (HTTP " + status + ").");
+        }
+        return error;
+    }
+
+    /**
+     * Writes a download to disk. A failure to write is the SDK's own error and
+     * goes to the error callback; a partly written file is removed.
+     *
+     * @return true when the file was written
+     */
+    static boolean saveDownload(File file, byte[] body, OnErrorCallback errorCallback) {
+        try (FileOutputStream outStream = new FileOutputStream(file)) {
+            outStream.write(body);
+        } catch (IOException e) {
+            logError("ZeroBounceSDK::getFile could not write the file", e);
+            file.delete();
+            String message = e.getMessage();
+            errorCallback.onError(ErrorResponse.parseError(
+                    message == null || message.isBlank() ? "Could not write the file." : message));
+            return false;
+        }
+        return true;
     }
 
     private Map<String, String> sendFileMultipartFields(
@@ -2904,15 +2979,15 @@ public class ZeroBounceSDK {
             OnSuccessCallback<ZBSendFileResponse> successCallback,
             OnErrorCallback errorCallback
     ) {
+        SdkHttp.Result result;
         try {
-            SdkHttp.Result result = transport.exchange(new SdkHttp("POST", urlPath, "multipart/form-data", null, fields));
-            String rsp = new String(result.body, StandardCharsets.UTF_8);
-            if (!reportHttpFailure(result.status, rsp, errorCallback)) {
-                successCallback.onSuccess(gson.fromJson(rsp, ZBSendFileResponse.class));
-            }
+            result = transport.exchange(new SdkHttp("POST", urlPath, "multipart/form-data", null, fields));
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            return;
         }
+        deliverSendFileResponse(result.status, new String(result.body, StandardCharsets.UTF_8),
+                successCallback, errorCallback);
     }
 
     private static void logDebug(String message) {

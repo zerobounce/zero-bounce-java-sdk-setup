@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- An exception thrown by your own success or error callback now propagates out of the `ZeroBounceSDK` or `ZeroBounceWarmup` call that invoked it. In 2.2.0 an exception from the success callback was caught on every `ZeroBounceSDK` request and on the `ZeroBounceWarmup` JSON calls, and handed to the error callback as if the request had failed. An exception from the error callback was caught the same way on every `ZeroBounceSDK` request, and on `ZeroBounceWarmup` calls answered with an error status or a redirect, so the SDK called the error callback a second time with that exception's message before it propagated. The error callback now receives only failed requests: transport failures, error responses, and bodies the SDK cannot read.
+
+#### Upgrading from 2.2
+
+- If a success or error callback can throw, catch the exception in the callback or around the SDK call.
+
+### Added
+
+- `ErrorResponse.toString()` and `ZBValidateBatchResponse.toString()` name the type and every field (`ErrorResponse{success=false, errors=[...], statusCode=403}`). In 2.2.0 they printed the default `ErrorResponse@<hash>`.
+
+### Changed
+
+- `initialize` refuses an API key with surrounding whitespace or control characters, such as a key read from a file with its trailing newline, as `ZeroBounceWarmup.initialize` already did. The key is not stored or sent, and every call reports "api_key has surrounding whitespace or control characters" through its error callback, with status 0, until `initialize` is called with a clean key. In 2.2.0 such a key was sent as given. A key with spaces inside it is unchanged.
+- Booleans in responses (`free_email`, `mx_found`, `catchall_domain`, `found`, `success`) are read strictly: `true`/`false`, the strings `"true"`/`"false"` in any case, and `1`/`0` as a number or a string. In 2.2.0 the strings `"yes"` and `"1"` were read as `false`, and a bare `1` or `0` reached the error callback with a Gson parser exception. Any other value now reaches the error callback with a short message naming the field, such as `ZeroBounce returned "yes" for free_email, which is not a boolean.`
+- Dependencies that ship to consumers: the POM no longer declares `httpclient5`, which the SDK never used; it uses Apache HttpClient 4 through `httpmime`. It now declares `httpclient` 4.5.14 and `httpcore` 4.4.16, the versions `httpmime` 4.5.14 already brought in, so the SDK runs on the same classes as before, and `httpclient5`, `httpcore5`, `httpcore5-h2` and `slf4j-api` 1.7.36 (which only `httpclient5` brought in) leave your classpath. If your own code uses HttpClient 5, declare it yourself. `org.jetbrains:annotations` is now `provided` scope and no longer reaches your runtime classpath; its annotations are not needed at run time.
+- The published POM states the version as a literal (`<version>2.x.y</version>`) instead of the `${sdk.version}` expression, and leaves out the build section and profiles.
+
+### Fixed
+
+- `getFile`, `scoringGetFile`, `emailFinderGetFile` and `domainSearchGetFile` saved a JSON error body as the results file when it did not come as `application/json`. `getFile` and `scoringGetFile` checked the body only for that content type, so `{"error": ...}` sent as `text/plain`, `application/octet-stream` or with no content type was written to disk and reached the success callback; `emailFinderGetFile` and `domainSearchGetFile` missed `{"Error": ...}`, `{"Message": ...}` and `{"detail": ...}`. All four now treat a JSON object with a `success` field, or with an `error`, `message`, `error_message`, `Error`, `Message` or `detail` field, as an error with the HTTP status, whatever its content type, and write no file, as the C++ and Rust SDKs do. Any body sent as `application/json` is an error too. A CSV is saved as before. An error body with no message, `{"success": false}`, now carries one instead of an empty error list (from all four calls on an HTTP 400, and from `emailFinderGetFile` and `domainSearchGetFile` on an HTTP 200 too).
+
 ## [2.2.0] - 2026-11-11
+
+### Breaking
+
+The details are under Changed and Fixed below.
+
+#### Upgrading from 2.1.5
+
+- A custom base URL must start with `https://`: `initialize(apiKey, "http://...")` throws `IllegalArgumentException`. `initialize(apiKey)` and the `ZBConstants` URLs are unaffected.
+- Move error handling out of your success callbacks. An invalid or drained key, `{"success": false}`, a JSON `error` on an HTTP 200, an HTML page, an empty or non-JSON body, and a `validateBatch` account-level failure (error for address `all`) reach the error callback. `getCredits` still returns `-1` for an invalid key.
+- Requests time out after 120 seconds by default and do not follow redirects.
+- A blank API key, email, file id, or filter rule, target or value reaches the error callback before a request is sent.
+- The `ai_agent_mailbox` sub-status, which 2.1.5 decoded as `null`, is `ZBValidateSubStatus.AI_AGENT_MAILBOX`.
+- `ErrorResponse.equals` and `hashCode` include the new status code.
 
 ### Added
 
@@ -44,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API requests time out after 120 seconds by default and do not follow redirects. In 2.1.5, `initialize(apiKey)` set no timeout.
 - `{"success": false}` on an HTTP 200 reaches the error callback, with the body's message and `getSuccess()` false. The API answers an unknown bulk file id that way. In 2.1.5 it reached the success callback from `fileStatus`, `scoringFileStatus`, `deleteFile`, `scoringDeleteFile`, `sendFile`, and `scoringSendFile`; it does the same on the calls new in this release.
 - An HTTP 200 that carries a JSON `error`, an HTML page, or a body that is not JSON reaches the error callback on every call, whatever its HTTP method. In 2.1.5 every HTTP 200 went to the success callback, unless Gson could not read the body at all.
-- `httpclient5` 5.6.3 to 5.6.4.
+- `httpclient5` 5.6.3 to 5.6.4. The SDK never used HttpClient 5 (it uses HttpClient 4 through `httpmime`), so this changed nothing the SDK does; the unused declaration only put `httpclient5` on consumers' classpath. It is removed in [Unreleased].
 
 ### Fixed
 
@@ -70,7 +106,7 @@ No changes to the SDK source. Dependency and build updates only.
 
 ### Changed
 
-- `httpclient5` 5.6.1 to 5.6.3 and `commons-codec` 1.22.0 to 1.22.1.
+- `httpclient5` 5.6.1 to 5.6.3 and `commons-codec` 1.22.0 to 1.22.1. The SDK never used HttpClient 5, so the `httpclient5` bump changed nothing the SDK does.
 - Build and test tooling: JUnit 6.0.3 to 6.1.2, `maven-surefire-plugin` 3.5.5 to 3.5.6, `jacoco-maven-plugin` 0.8.14 to 0.8.15, and `central-publishing-maven-plugin` 0.10.0 to 0.11.0.
 
 ## [2.1.4] - 2026-06-09
