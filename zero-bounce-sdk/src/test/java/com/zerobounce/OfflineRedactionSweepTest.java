@@ -38,9 +38,11 @@ class OfflineRedactionSweepTest {
 
     /**
      * A key with characters that URL encoding and JSON escaping change ({@code +},
-     * {@code /}, {@code "} and {@code %}), so neither form equals the key as sent.
+     * {@code /}, {@code "}, {@code \}, {@code %} and a space) and that Gson's
+     * HTML-safe escaping changes ({@code = < > & '}), so each of its spellings
+     * (see {@link #forms}) differs from every other.
      */
-    private static final String KEY = "echo+key/12\"34%567890";
+    private static final String KEY = "echo+key/12\"34%56 7=<>&'\\890";
     /** The SMTP password the Warmup sweep sends to testSmtpConfiguration. */
     private static final String PASSWORD = RequestSweep.SMTP_PASSWORD;
 
@@ -68,14 +70,55 @@ class OfflineRedactionSweepTest {
         return List.of(gson.substring(1, gson.length() - 1), php.substring(1, php.length() - 1));
     }
 
+    /**
+     * Every spelling a server can quote a secret back in, each of which the SDK
+     * must redact: as is; JSON-escaped with Gson's HTML-safe escapes
+     * ({@code \u003c}), without them, and either way with {@code /} as a
+     * backslash and a slash (PHP); and each of those URL-encoded with a space
+     * as {@code +} and as {@code %20}.
+     */
+    static List<String> forms(String secret) {
+        String html = json(secret);
+        String plain = new com.google.gson.GsonBuilder().disableHtmlEscaping().create().toJson(secret);
+        List<String> bases = new ArrayList<>(List.of(secret));
+        for (String quoted : List.of(html, plain)) {
+            String inner = quoted.substring(1, quoted.length() - 1);
+            bases.add(inner);
+            bases.add(inner.replace("/", "\\/"));
+        }
+        List<String> forms = new ArrayList<>();
+        for (String base : bases) {
+            String encoded = URLEncoder.encode(base, StandardCharsets.UTF_8);
+            forms.add(base);
+            forms.add(encoded);
+            forms.add(encoded.replace("+", "%20"));
+        }
+        return forms;
+    }
+
+    @Test
+    void everySpellingOfTheTestSecretsIsDistinct() {
+        for (String secret : List.of(KEY, PASSWORD)) {
+            List<String> forms = forms(secret);
+            assertEquals(15, new java.util.HashSet<>(forms).size(), forms.toString());
+        }
+    }
+
+    /** Each spelling alone is replaced, with nothing of it left around the ***. */
+    @Test
+    void eachSpellingOfASecretIsRedactedWhole() {
+        for (String secret : List.of(KEY, PASSWORD)) {
+            for (String form : forms(secret)) {
+                assertEquals("[***]", ZeroBounceSDK.redact("[" + form + "]", secret), form);
+            }
+        }
+    }
+
     private static boolean leaks(String text, String secret) {
         if (text == null) {
             return false;
         }
-        if (text.contains(secret) || text.contains(URLEncoder.encode(secret, StandardCharsets.UTF_8))) {
-            return true;
-        }
-        for (String form : jsonForms(secret)) {
+        for (String form : forms(secret)) {
             if (text.contains(form)) {
                 return true;
             }
@@ -120,6 +163,10 @@ class OfflineRedactionSweepTest {
                         if (leaks(text, KEY) || leaks(text, PASSWORD)) {
                             failures.add(label + " leaked a secret: " + outcome);
                         }
+                        // The quote reached the message, redacted, rather than a generic text.
+                        if (label.startsWith("400-forms") && !text.contains("*** | ***")) {
+                            failures.add(label + " did not quote the body: " + outcome);
+                        }
                     }
                     swept++;
                 }
@@ -139,6 +186,21 @@ class OfflineRedactionSweepTest {
     void aPlainTextErrorQuotingTheRequestNeverCarriesTheKey() throws Exception {
         sweep("400-text", request -> LoopbackServer.answer(400, "text/plain",
                 ("Bad request: " + echo(request)).getBytes(StandardCharsets.UTF_8)), true);
+    }
+
+    /**
+     * A 400 whose plain-text body quotes the key in every spelling of
+     * {@link #forms}, and on testSmtpConfiguration the SMTP password in every
+     * spelling too: each is redacted on every path, so dropping any one
+     * spelling from the SDK fails this test.
+     */
+    @Test
+    void everySpellingOfASecretInAnErrorBodyIsRedacted() throws Exception {
+        sweep("400-forms-key", request -> LoopbackServer.answer(400, "text/plain",
+                ("Bad request: " + String.join(" | ", forms(KEY))).getBytes(StandardCharsets.UTF_8)), true);
+        sweep("400-forms-password", request -> LoopbackServer.answer(400, "text/plain",
+                ("Bad request: " + String.join(" | ", forms(request.target.contains("test-smtp") ? PASSWORD : KEY)))
+                        .getBytes(StandardCharsets.UTF_8)), true);
     }
 
     /** A 400 JSON error with several fields, each of which quotes the key or the request. */

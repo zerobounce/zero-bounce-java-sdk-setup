@@ -344,12 +344,14 @@ class OfflineTransportTest {
     }
 
     /**
-     * A download whose write fails part-way leaves no file behind, and the
-     * failure reaches the error callback.
+     * A download whose write fails part-way leaves no partial file behind and
+     * the file already at the target exactly as it was, and the failure reaches
+     * the error callback.
      */
     @Test
-    void aDownloadThatFailsPartWayThroughWritingLeavesNoFile() {
+    void aDownloadThatFailsPartWayThroughWritingLeavesNoFile() throws Exception {
         File file = tempDir.resolve("partial.csv").toFile();
+        Files.writeString(file.toPath(), "OLD RESULTS");
         byte[] body = "email,status\na@example.com,valid\nb@example.com,invalid\n".getBytes(StandardCharsets.UTF_8);
         AtomicLong written = new AtomicLong(-1);
         List<String> errors = new ArrayList<>();
@@ -368,7 +370,65 @@ class OfflineTransportTest {
         assertFalse(saved);
         assertTrue(written.get() > 0, "the opener wrote part of the file before failing");
         assertEquals(List.of("No space left on device"), errors);
-        assertFalse(file.exists(), "the partial file was deleted");
+        assertEquals("OLD RESULTS", Files.readString(file.toPath()), "the existing file was left as it was");
+        try (java.util.stream.Stream<Path> files = Files.list(tempDir)) {
+            assertEquals(List.of(file.toPath()), files.collect(java.util.stream.Collectors.toList()),
+                    "no partial file was left");
+        }
+    }
+
+    /**
+     * Every download whose disk write fails part-way (a full disk, a file size
+     * limit) reports one error and leaves the file already at its target as it
+     * was, with no partial file next to it (D4). A download that succeeds
+     * replaces the existing file.
+     */
+    @Test
+    void everyDownloadKeepsTheExistingFileWhenTheWriteFails() throws Exception {
+        for (boolean failing : new boolean[]{true, false}) {
+            Path dir = tempDir.resolve("write-" + failing);
+            Files.createDirectories(dir);
+            RequestSweep sweep = new RequestSweep(dir);
+            sweep.existingOut = "OLD RESULTS";
+            LoopbackServer.Responder dl = LoopbackServer.answer(200, "text/csv", CSV);
+            LoopbackServer.Responder js = LoopbackServer.answer(200, "application/json", JSON);
+            ZeroBounceSDK.FileOpener original = ZeroBounceSDK.fileOpener;
+            if (failing) {
+                ZeroBounceSDK.fileOpener = target -> new FilterOutputStream(new FileOutputStream(target)) {
+                    @Override
+                    public void write(byte[] bytes, int offset, int length) throws IOException {
+                        out.write(bytes, offset, length / 2);
+                        out.flush();
+                        throw new IOException("File too large");
+                    }
+                };
+            }
+            int[] downloads = {0};
+            try (LoopbackServer server = new LoopbackServer((request, out) -> {
+                String target = request.target.toLowerCase(Locale.ROOT);
+                (target.contains("getfile") ? dl : js).respond(request, out);
+            })) {
+                sweep(sweep, server, (method, outcome, failures) -> {
+                    if (outcome.out == null || !isDownload(method)) {
+                        return;
+                    }
+                    downloads[0]++;
+                    Path out = Path.of(outcome.out);
+                    String expected = failing ? "OLD RESULTS" : new String(CSV, StandardCharsets.UTF_8);
+                    if (failing != (outcome.successes.isEmpty() && outcome.errors.size() == 1)
+                            || !expected.equals(Files.readString(out))) {
+                        failures.add(outcome + " left " + Files.readString(out));
+                    }
+                    try (java.util.stream.Stream<Path> files = Files.list(out.getParent())) {
+                        files.filter(f -> f.getFileName().toString().endsWith(".part"))
+                                .forEach(f -> failures.add(outcome.signature + " left " + f));
+                    }
+                });
+            } finally {
+                ZeroBounceSDK.fileOpener = original;
+            }
+            assertEquals(6, downloads[0], "every download that writes a file");
+        }
     }
 
     /**
@@ -404,6 +464,58 @@ class OfflineTransportTest {
                 }
             });
         }
+    }
+
+    /**
+     * An HTML content type alone makes a 2xx an HTML error page, whatever the
+     * body: a JSON-looking {@code {"a":1}} on every JSON call (Warmup included)
+     * and a CSV-looking body on every download, Warmup's CSV downloads included.
+     * Each call reports one error with status 200 and no download leaves a file.
+     * The bodies pass every body check, so only the content-type half of the
+     * guard refuses them.
+     */
+    @Test
+    void anHtmlContentTypeAloneIsAnErrorOnEveryPath() throws Exception {
+        contentTypeSweep("html-type", "text/html; charset=UTF-8", true);
+    }
+
+    /**
+     * A JSON content type alone makes a download an error, whatever the body:
+     * a CSV-looking body under application/json is refused on every download,
+     * Warmup's CSV downloads included, and no file is written.
+     */
+    @Test
+    void aJsonContentTypeAloneIsAnErrorOnEveryDownload() throws Exception {
+        contentTypeSweep("json-type", "application/json", false);
+    }
+
+    private void contentTypeSweep(String label, String contentType, boolean jsonCalls) throws Exception {
+        RequestSweep sweep = new RequestSweep(tempDir.resolve(label));
+        LoopbackServer.Responder dl = LoopbackServer.answer(200, contentType, CSV);
+        LoopbackServer.Responder js = LoopbackServer.answer(200, jsonCalls ? contentType : "application/json",
+                "{\"a\":1}".getBytes(StandardCharsets.UTF_8));
+        int[] downloads = {0};
+        try (LoopbackServer server = new LoopbackServer((request, out) -> {
+            String target = request.target.toLowerCase(Locale.ROOT);
+            (target.contains("getfile") || target.contains("download") ? dl : js).respond(request, out);
+        })) {
+            sweep(sweep, server, (method, outcome, failures) -> {
+                if (!jsonCalls && !isDownload(method)) {
+                    return;
+                }
+                if (isDownload(method)) {
+                    downloads[0]++;
+                }
+                if (!outcome.successes.isEmpty() || outcome.errors.size() != 1
+                        || outcome.errors.get(0).getStatusCode() != 200) {
+                    failures.add(label + " " + outcome);
+                }
+                if (isDownload(method) && outcome.out != null && new File(outcome.out).exists()) {
+                    failures.add(label + " " + outcome.signature + " wrote " + outcome.out);
+                }
+            });
+        }
+        assertEquals(8, downloads[0], "every download, Warmup's two CSV downloads included");
     }
 
     /**

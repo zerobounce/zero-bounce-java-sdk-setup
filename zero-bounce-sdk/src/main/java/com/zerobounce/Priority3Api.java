@@ -306,7 +306,8 @@ final class Priority3Api {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
             return;
         }
-        sdk.deliverSendFileResponse(response.status, response.body, successCallback, errorCallback);
+        sdk.deliverSendFileResponse(response.status, response.contentType, response.body,
+                successCallback, errorCallback);
     }
 
     private void sendBulkRootMultipartStream(
@@ -337,7 +338,8 @@ final class Priority3Api {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
             return;
         }
-        sdk.deliverSendFileResponse(response.status, response.body, successCallback, errorCallback);
+        sdk.deliverSendFileResponse(response.status, response.contentType, response.body,
+                successCallback, errorCallback);
     }
 
     private void finishBulkDownload(
@@ -389,7 +391,7 @@ final class Priority3Api {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
             return true;
         }
-        sdk.deliverSendFileResponse(result.status, new String(result.body, StandardCharsets.UTF_8),
+        sdk.deliverSendFileResponse(result.status, result.contentType, new String(result.body, StandardCharsets.UTF_8),
                 successCallback, errorCallback);
         return true;
     }
@@ -397,10 +399,12 @@ final class Priority3Api {
     /** What an upload answered. */
     private static final class MultipartResponse {
         final int status;
+        final String contentType;
         final String body;
 
-        MultipartResponse(int status, String body) {
+        MultipartResponse(int status, String contentType, String body) {
             this.status = status;
+            this.contentType = contentType;
             this.body = body;
         }
     }
@@ -408,6 +412,8 @@ final class Priority3Api {
     private static MultipartResponse readMultipartResponse(CloseableHttpResponse response) throws IOException {
         HttpEntity responseEntity = response.getEntity();
         int status = response.getStatusLine().getStatusCode();
-        return new MultipartResponse(status, SdkHttp.readText(responseEntity.getContent()));
+        org.apache.http.Header type = response.getFirstHeader("Content-Type");
+        return new MultipartResponse(status, type != null ? type.getValue() : "",
+                SdkHttp.readText(responseEntity.getContent()));
     }
 }

@@ -34,15 +34,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class RequestSweep {
 
     /**
-     * The SMTP password the sweep sends to testSmtpConfiguration, with a quote and
-     * a slash, which JSON escaping changes.
+     * The SMTP password the sweep sends to testSmtpConfiguration. JSON escaping
+     * changes its quote, slash and backslash, Gson's HTML-safe escaping its
+     * {@code = < > & '}, and URL encoding all of those, its {@code +} and
+     * {@code %}, and its space (as {@code +} or {@code %20}), so every spelling
+     * of it differs.
      */
-    static final String SMTP_PASSWORD = "smtp\"pa/ss";
+    static final String SMTP_PASSWORD = "smtp\"pa/ss w=<>&'\\+%";
 
     private final Path tempDir;
     private final AtomicInteger files = new AtomicInteger();
     /** The download path handed to the most recent call, or null. */
     String lastOut;
+    /** When set, each download path already holds a file with this text before the call. */
+    String existingOut;
 
     /** Signature, as {@link #signature(Method)} prints it, to the arguments before the callbacks. */
     final Map<String, Supplier<Object[]>> sdkArgs = new LinkedHashMap<>();
@@ -70,6 +75,13 @@ final class RequestSweep {
 
     private String out() {
         lastOut = tempDir.resolve("out-" + files.incrementAndGet() + ".csv").toString();
+        if (existingOut != null) {
+            try {
+                Files.writeString(Path.of(lastOut), existingOut);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
         return lastOut;
     }
 

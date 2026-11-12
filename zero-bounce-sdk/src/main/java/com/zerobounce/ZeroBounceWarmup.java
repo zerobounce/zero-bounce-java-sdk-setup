@@ -233,6 +233,11 @@ public class ZeroBounceWarmup {
             successCallback.onSuccess(null);
             return;
         }
+        // A text/html content type is a proxy's page, whatever the body looks like.
+        if (ZeroBounceSDK.reportHtmlContentType(result.status, result.contentType,
+                redact(result.body, secrets), errorCallback)) {
+            return;
+        }
         if (!looksLikeJson(result.body)) {
             // Gson parses leniently, so junk would come back as a string
             // instead of raising: reject it before it reaches the parser.
