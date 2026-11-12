@@ -13,10 +13,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 /**
  * The API key, and the SMTP password Warmup sends, never reach an error callback,
@@ -135,5 +139,46 @@ class OfflineRedactionSweepTest {
         sweep("200-error", request -> LoopbackServer.answer(200, "text/plain",
                 ("{\"success\": false, \"error\": " + json("Invalid API key " + KEY + " for " + request.target)
                         + "}").getBytes(StandardCharsets.UTF_8)), false);
+    }
+
+    /**
+     * A transport error whose message quotes the request URL and the key (as sent,
+     * URL-encoded and JSON-escaped), and for {@code testSmtpConfiguration} the SMTP
+     * password, never carries them: every public Warmup request method reports one
+     * error with status 0 and neither secret in any form. The methods come from
+     * {@link RequestSweep}, so a new one cannot escape.
+     */
+    @Test
+    void aWarmupTransportErrorNeverCarriesTheKey() throws Exception {
+        RequestSweep sweep = new RequestSweep(tempDir);
+        ZeroBounceWarmup warmup = spy(new ZeroBounceWarmup());
+        AtomicReference<String> extra = new AtomicReference<>("");
+        List<String> urls = new ArrayList<>();
+        doAnswer(invocation -> {
+            String url = invocation.getArgument(0);
+            urls.add(url);
+            throw new java.net.ConnectException("Connection refused: " + url + " API-Key=" + KEY + " "
+                    + URLEncoder.encode(KEY, StandardCharsets.UTF_8) + " " + json(KEY) + extra.get());
+        }).when(warmup).createUrlFrom(anyString());
+        warmup.initialize(KEY);
+        List<String> failures = new ArrayList<>();
+        List<Method> methods = RequestSweep.requestMethods(ZeroBounceWarmup.class);
+        for (Method method : methods) {
+            urls.clear();
+            extra.set(method.getName().equals("testSmtpConfiguration") ? " password=" + PASSWORD : "");
+            RequestSweep.Outcome outcome = sweep.invoke(warmup, method);
+            if (urls.isEmpty() || outcome.thrown != null || !outcome.successes.isEmpty()
+                    || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != 0) {
+                failures.add("expected one transport error: " + outcome);
+            }
+            for (ErrorResponse error : outcome.errors) {
+                String text = String.valueOf(error.getErrors()) + " " + error;
+                if (leaks(text, KEY) || leaks(text, PASSWORD)) {
+                    failures.add("leaked a secret: " + outcome);
+                }
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+        assertEquals(sweep.warmupArgs.size(), methods.size(), "every Warmup sweep entry was invoked");
     }
 }
