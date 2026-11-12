@@ -262,7 +262,7 @@ final class HttpMessages {
         return element.toString();
     }
 
-    private static String htmlMessage(String body) {
+    static String htmlMessage(String body) {
         String title = htmlTitle(body);
         if (title.isEmpty()) {
             return "ZeroBounce returned an HTML error page instead of an API response.";

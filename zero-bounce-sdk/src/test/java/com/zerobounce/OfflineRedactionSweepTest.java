@@ -142,6 +142,66 @@ class OfflineRedactionSweepTest {
     }
 
     /**
+     * Sweeps every public Warmup request method against a server that answers
+     * HTTP 200 with a body Warmup must refuse, and checks that each call reports
+     * one error with status 200 that carries neither the key nor the SMTP
+     * password in any form.
+     */
+    private void warmupSweep(String label, Function<LoopbackServer.Request, LoopbackServer.Responder> responder)
+            throws Exception {
+        Path dir = tempDir.resolve(label);
+        Files.createDirectories(dir);
+        RequestSweep sweep = new RequestSweep(dir);
+        try (LoopbackServer server = new LoopbackServer((request, out) -> responder.apply(request).respond(request, out))) {
+            ZeroBounceWarmup warmup = server.warmup();
+            warmup.initialize(KEY);
+            List<String> failures = new ArrayList<>();
+            List<Method> methods = RequestSweep.requestMethods(ZeroBounceWarmup.class);
+            for (Method method : methods) {
+                server.clear();
+                RequestSweep.Outcome outcome = sweep.invoke(warmup, method);
+                if (outcome.thrown != null || server.requests().isEmpty() || !outcome.successes.isEmpty()
+                        || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != 200) {
+                    failures.add(label + " expected one error with status 200: " + outcome);
+                }
+                for (ErrorResponse error : outcome.errors) {
+                    String text = String.valueOf(error.getErrors()) + " " + error;
+                    if (leaks(text, KEY) || leaks(text, PASSWORD)) {
+                        failures.add(label + " leaked a secret: " + outcome);
+                    }
+                }
+            }
+            assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+            assertEquals(sweep.warmupArgs.size(), methods.size(), "every Warmup sweep entry was invoked");
+        }
+    }
+
+    /**
+     * Warmup builds an error from a 200 body in two places: a JSON call answered
+     * with text that is not JSON, and a CSV download answered with JSON. Both
+     * bodies here quote the key and the request (URL, API-Key header, body with
+     * the SMTP password).
+     */
+    @Test
+    void aWarmupErrorBuiltFromA200BodyNeverCarriesTheKey() throws Exception {
+        warmupSweep("warmup-200", request -> request.target.contains("/download")
+                ? LoopbackServer.answer(200, "application/json",
+                        ("{\"error\": " + json("Invalid API key " + KEY + " for " + echo(request)) + "}")
+                                .getBytes(StandardCharsets.UTF_8))
+                : LoopbackServer.answer(200, "text/plain",
+                        ("Invalid API key " + KEY + " for " + echo(request)).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** An HTML page on a 200 whose title quotes the key, from every Warmup call. */
+    @Test
+    void aWarmupHtmlPageOnA200NeverCarriesTheKey() throws Exception {
+        warmupSweep("warmup-html", request -> LoopbackServer.answer(200, "text/html",
+                ("<!DOCTYPE html><html><head><title>Denied " + KEY + " "
+                        + URLEncoder.encode(KEY, StandardCharsets.UTF_8) + "</title></head><body>"
+                        + echo(request) + "</body></html>").getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /**
      * A transport error whose message quotes the request URL and the key (as sent,
      * URL-encoded and JSON-escaped), and for {@code testSmtpConfiguration} the SMTP
      * password, never carries them: every public Warmup request method reports one

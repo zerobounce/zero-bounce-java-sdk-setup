@@ -454,6 +454,119 @@ public class OfflineWarmupTest {
                 body.getAsJsonObject("managed_sending").get("warmup_start_date").getAsString());
     }
 
+    /**
+     * The zb_managed body has exactly the documented fields
+     * (https://www.zerobounce.net/docs/warmup-api/adding-a-sending-account).
+     */
+    @Test
+    public void addSendingAccountSendsTheDocumentedZbManagedBody() throws IOException {
+        mockAll(200, "{}");
+        warmup.addSendingAccount("a@b.com", "zb_managed",
+                new ZeroBounceWarmup.AddSendingAccountOptions()
+                        .setEmailContent(new ZeroBounceWarmup.EmailContent()
+                                .setCompanyName("Acme")
+                                .setCompanyWebsite("https://acme.example")
+                                .setCompanyDescription("B2B email tools")
+                                .setTypesOfEmails(List.of("marketing", "newsletter"))
+                                .setExampleEmail("Hi, short intro to Acme."))
+                        .setManagedSending(new ZeroBounceWarmup.ManagedSending()
+                                .setWeekdaysOnly(true)
+                                .setTimezone("Asia/Kolkata")
+                                .setTimezoneOffset(5.5)
+                                .setWarmupStartDate("2026-03-04")),
+                succeed, this::failOnError);
+        assertEquals("{\"from_address\":\"a@b.com\",\"onboarding_model\":\"zb_managed\","
+                + "\"email_content\":{\"company_name\":\"Acme\",\"company_website\":\"https://acme.example\","
+                + "\"company_description\":\"B2B email tools\",\"types_of_emails\":[\"marketing\",\"newsletter\"],"
+                + "\"example_email\":\"Hi, short intro to Acme.\"},"
+                + "\"managed_sending\":{\"weekdays_only\":true,\"timezone\":\"Asia/Kolkata\","
+                + "\"timezone_offset\":5.5,\"warmup_start_date\":\"2026-03-04\"}}", only().body);
+
+        warmup.addSendingAccount("a@b.com", "zb_managed",
+                new ZeroBounceWarmup.AddSendingAccountOptions()
+                        .setManagedSending(new ZeroBounceWarmup.ManagedSending().setWeekdaysOnly(false)),
+                succeed, this::failOnError);
+        assertEquals("{\"from_address\":\"a@b.com\",\"onboarding_model\":\"zb_managed\","
+                + "\"managed_sending\":{\"weekdays_only\":false}}", only().body);
+    }
+
+    /** Whole and fractional hours from -11 to 14 go out as numbers; anything else is refused. */
+    @Test
+    public void addSendingAccountTakesFractionalTimezoneOffsets() throws IOException {
+        mockAll(200, "{}");
+        for (double offset : new double[]{5.5, 3.0, -11, 14, -3.5, 5.75}) {
+            warmup.addSendingAccount("a@b.com", "zb_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions()
+                            .setManagedSending(new ZeroBounceWarmup.ManagedSending().setTimezoneOffset(offset)),
+                    succeed, this::failOnError);
+            com.google.gson.JsonElement sent = only().json().getAsJsonObject("managed_sending").get("timezone_offset");
+            assertEquals(offset, sent.getAsDouble(), 0.0);
+        }
+        // An int literal still compiles, and goes out as that number of hours.
+        warmup.addSendingAccount("a@b.com", "zb_managed",
+                new ZeroBounceWarmup.AddSendingAccountOptions()
+                        .setManagedSending(new ZeroBounceWarmup.ManagedSending().setTimezoneOffset(3)),
+                succeed, this::failOnError);
+        assertTrue(only().body.contains("\"timezone_offset\":3.0"));
+
+        for (double offset : new double[]{-11.5, 14.5, -12, 15, Double.NaN, Double.POSITIVE_INFINITY}) {
+            errors.clear();
+            warmup.addSendingAccount("a@b.com", "zb_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions()
+                            .setManagedSending(new ZeroBounceWarmup.ManagedSending().setTimezoneOffset(offset)),
+                    failOnSuccess, collect);
+            assertEquals(List.of("timezone_offset must be -11 to 14"), errors, "offset " + offset);
+        }
+        assertTrue(recorded.isEmpty(), "a refused offset sends nothing");
+    }
+
+    /**
+     * Callers of 3.0.1's fields still compile: website goes out as
+     * company_website (company_website wins when both are set), and industry and
+     * daily_limit, which the API does not read, are left out with a warning.
+     */
+    @Test
+    @SuppressWarnings("deprecation")
+    public void addSendingAccountMapsTheOldFieldsToTheDocumentedOnes() throws IOException {
+        List<String> warnings = new ArrayList<>();
+        ZeroBounceSDK.setLogger(new ZBLogger() {
+            @Override
+            public void warn(String msg) {
+                warnings.add(msg);
+            }
+        });
+        try {
+            mockAll(200, "{}");
+            warmup.addSendingAccount("a@b.com", "zb_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions()
+                            .setEmailContent(new ZeroBounceWarmup.EmailContent()
+                                    .setIndustry("Software")
+                                    .setCompanyName("Acme")
+                                    .setWebsite("https://old.example"))
+                            .setManagedSending(new ZeroBounceWarmup.ManagedSending()
+                                    .setTimezoneOffset(Integer.valueOf(-5))
+                                    .setDailyLimit(50)),
+                    succeed, this::failOnError);
+            assertEquals("{\"from_address\":\"a@b.com\",\"onboarding_model\":\"zb_managed\","
+                    + "\"email_content\":{\"company_name\":\"Acme\",\"company_website\":\"https://old.example\"},"
+                    + "\"managed_sending\":{\"timezone_offset\":-5.0}}", only().body);
+            assertEquals(2, warnings.size(), warnings.toString());
+            assertTrue(warnings.get(0).contains("industry"), warnings.toString());
+            assertTrue(warnings.get(1).contains("daily_limit"), warnings.toString());
+
+            warmup.addSendingAccount("a@b.com", "zb_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions()
+                            .setEmailContent(new ZeroBounceWarmup.EmailContent()
+                                    .setWebsite("https://old.example")
+                                    .setCompanyWebsite("https://new.example")),
+                    succeed, this::failOnError);
+            assertEquals("https://new.example",
+                    only().json().getAsJsonObject("email_content").get("company_website").getAsString());
+        } finally {
+            ZeroBounceSDK.setLogger(null);
+        }
+    }
+
     @Test
     public void listFromAddressesChecksItsSearchAndSendsPagingAsStrings() throws IOException {
         mockAll(200, "{}");
@@ -553,6 +666,39 @@ public class OfflineWarmupTest {
         mockAll(200, "{\"message\":\"No statistics for this address.\"}");
         warmup.downloadSeeds(r -> fail("success"), collect);
         assertTrue(errors.toString().contains("No statistics for this address."), errors.toString());
+    }
+
+    /**
+     * An HTML page served on a 200 (a proxy's or Cloudflare's block page) is an
+     * error with status 200 from both CSV downloads, by its content type or by
+     * its look, never a CSV; the page's title is redacted like any body text.
+     */
+    @Test
+    public void anHtmlPageInPlaceOfACsvIsAnError() throws IOException {
+        String page = "<!DOCTYPE html><html><head><title>Denied for " + API_KEY + "</title></head>"
+                + "<body>blocked</body></html>";
+        String[][] answers = {
+                {page, "text/html; charset=utf-8"},
+                {page, "text/csv"},
+                {"<html><body>blocked</body></html>", "application/octet-stream"},
+                {"seed,provider", "text/html"},
+        };
+        for (String[] answer : answers) {
+            for (int download = 0; download < 2; download++) {
+                errors.clear();
+                lastStatus = -1;
+                mockAll(200, answer[0], answer[1]);
+                ZeroBounceSDK.OnSuccessCallback<String> unexpected = r -> fail("success: " + r);
+                if (download == 0) {
+                    warmup.downloadSeeds(unexpected, collect);
+                } else {
+                    warmup.downloadStatistics("a@b.com", unexpected, collect);
+                }
+                assertEquals(200, lastStatus, answer[1] + " " + errors);
+                assertTrue(errors.toString().contains("HTML"), errors.toString());
+                assertFalse(errors.toString().contains(API_KEY), errors.toString());
+            }
+        }
     }
 
     @Test

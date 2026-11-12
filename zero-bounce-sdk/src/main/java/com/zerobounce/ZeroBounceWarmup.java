@@ -277,6 +277,13 @@ public class ZeroBounceWarmup {
                     redact(messageFromBody(result.body, result.status)), result.status));
             return;
         }
+        // An HTML page on a 200 (a proxy's or Cloudflare's block page) is not
+        // a CSV, whether its content type or its body gives it away.
+        if (HttpMessages.looksLikeHtml(result.body, result.contentType)) {
+            errorCallback.onError(ErrorResponse.parseError(
+                    redact(HttpMessages.htmlMessage(result.body)), result.status));
+            return;
+        }
         successCallback.onSuccess(result.body);
     }
 
@@ -440,6 +447,13 @@ public class ZeroBounceWarmup {
      * {@code zb_managed} has ZeroBounce provision it and takes
      * {@code emailContent} and {@code managedSending}; a 200 means accepted,
      * and the mailbox is provisioned afterwards.
+     * <p>
+     * The zb_managed body is {@code email_content} ({@code company_name},
+     * {@code company_website}, {@code company_description},
+     * {@code types_of_emails}, {@code example_email}) and
+     * {@code managed_sending} ({@code weekdays_only}, {@code timezone},
+     * {@code timezone_offset}, {@code warmup_start_date}), as documented at
+     * https://www.zerobounce.net/docs/warmup-api/adding-a-sending-account.
      */
     public void addSendingAccount(
             @NotNull String fromAddress,
@@ -478,39 +492,57 @@ public class ZeroBounceWarmup {
             body.put("ignore_conflict", set.ignoreConflict);
         }
         if (set.emailContent != null) {
+            EmailContent given = set.emailContent;
             Map<String, Object> content = new LinkedHashMap<>();
-            if (set.emailContent.typesOfEmails != null && !set.emailContent.typesOfEmails.isEmpty()) {
-                for (String kind : set.emailContent.typesOfEmails) {
+            if (given.typesOfEmails != null && !given.typesOfEmails.isEmpty()) {
+                for (String kind : given.typesOfEmails) {
                     if (!EMAIL_TYPES.contains(kind)) {
                         errorCallback.onError(ErrorResponse.parseError(
                                 "types_of_emails must be transactional, newsletter and/or marketing"));
                         return;
                     }
                 }
-                content.put("types_of_emails", set.emailContent.typesOfEmails);
             }
-            if (set.emailContent.industry != null) content.put("industry", set.emailContent.industry);
-            if (set.emailContent.companyName != null) content.put("company_name", set.emailContent.companyName);
-            if (set.emailContent.website != null) content.put("website", set.emailContent.website);
+            if (given.companyName != null) content.put("company_name", given.companyName);
+            // Up to 3.0.1 the website was sent as "website", which the API
+            // does not read; it now goes out as company_website.
+            String website = given.companyWebsite != null ? given.companyWebsite : given.website;
+            if (website != null) content.put("company_website", website);
+            if (given.companyDescription != null) content.put("company_description", given.companyDescription);
+            if (given.typesOfEmails != null && !given.typesOfEmails.isEmpty()) {
+                content.put("types_of_emails", given.typesOfEmails);
+            }
+            if (given.exampleEmail != null) content.put("example_email", given.exampleEmail);
+            if (given.industry != null) {
+                ZeroBounceSDK.logWarning("ZeroBounceWarmup.addSendingAccount: industry is not an API field"
+                        + " and is not sent; describe the company with companyDescription");
+            }
             body.put("email_content", content);
         }
         if (set.managedSending != null) {
+            ManagedSending given = set.managedSending;
             Map<String, Object> sending = new LinkedHashMap<>();
-            if (set.managedSending.timezoneOffset != null) {
-                if (outOfRange(set.managedSending.timezoneOffset, -11, 14, "timezone_offset", errorCallback)) {
+            if (given.weekdaysOnly != null) sending.put("weekdays_only", given.weekdaysOnly);
+            if (given.timezone != null) sending.put("timezone", given.timezone);
+            if (given.timezoneOffset != null) {
+                double offset = given.timezoneOffset;
+                // -11 to 14 hours, whole or fractional (5.5, 3.0); NaN fails both tests.
+                if (!(offset >= -11 && offset <= 14)) {
+                    errorCallback.onError(ErrorResponse.parseError("timezone_offset must be -11 to 14"));
                     return;
                 }
-                sending.put("timezone_offset", set.managedSending.timezoneOffset);
+                sending.put("timezone_offset", offset);
             }
-            if (set.managedSending.warmupStartDate != null) {
-                if (!isIsoDate(set.managedSending.warmupStartDate)) {
+            if (given.warmupStartDate != null) {
+                if (!isIsoDate(given.warmupStartDate)) {
                     errorCallback.onError(ErrorResponse.parseError("warmup_start_date must be YYYY-MM-DD"));
                     return;
                 }
-                sending.put("warmup_start_date", set.managedSending.warmupStartDate);
+                sending.put("warmup_start_date", given.warmupStartDate);
             }
-            if (set.managedSending.dailyLimit != null) {
-                sending.put("daily_limit", set.managedSending.dailyLimit);
+            if (given.dailyLimit != null) {
+                ZeroBounceSDK.logWarning("ZeroBounceWarmup.addSendingAccount: daily_limit is not applied"
+                        + " by the API and is not sent");
             }
             body.put("managed_sending", sending);
         }
@@ -916,12 +948,18 @@ public class ZeroBounceWarmup {
 
     // -- option holders ------------------------------------------------------
 
-    /** What ZeroBounce should send on your behalf, for zb_managed onboarding. */
+    /**
+     * The company context ZeroBounce uses to write warmup content, for
+     * zb_managed onboarding. Only the fields that are set are sent.
+     */
     public static class EmailContent {
         @Nullable List<String> typesOfEmails;
         @Nullable String industry;
         @Nullable String companyName;
         @Nullable String website;
+        @Nullable String companyWebsite;
+        @Nullable String companyDescription;
+        @Nullable String exampleEmail;
 
         /** Any of transactional, newsletter, marketing. */
         public EmailContent setTypesOfEmails(@Nullable List<String> typesOfEmails) {
@@ -929,6 +967,13 @@ public class ZeroBounceWarmup {
             return this;
         }
 
+        /**
+         * Not an API field: it is not sent, and a warning is logged when it is set.
+         *
+         * @deprecated the API does not read an industry; describe the company with
+         * {@link #setCompanyDescription(String)}.
+         */
+        @Deprecated
         public EmailContent setIndustry(@Nullable String industry) {
             this.industry = industry;
             return this;
@@ -939,21 +984,75 @@ public class ZeroBounceWarmup {
             return this;
         }
 
+        /**
+         * Sent as {@code company_website}, unless {@link #setCompanyWebsite(String)} is set too.
+         *
+         * @deprecated use {@link #setCompanyWebsite(String)}.
+         */
+        @Deprecated
         public EmailContent setWebsite(@Nullable String website) {
             this.website = website;
             return this;
         }
+
+        /** The company's website, e.g. https://example.com. */
+        public EmailContent setCompanyWebsite(@Nullable String companyWebsite) {
+            this.companyWebsite = companyWebsite;
+            return this;
+        }
+
+        /** What the company does, in a sentence or two. */
+        public EmailContent setCompanyDescription(@Nullable String companyDescription) {
+            this.companyDescription = companyDescription;
+            return this;
+        }
+
+        /** A sample of the mail you send, as a model for the warmup content. */
+        public EmailContent setExampleEmail(@Nullable String exampleEmail) {
+            this.exampleEmail = exampleEmail;
+            return this;
+        }
     }
 
-    /** When ZeroBounce should send, for zb_managed onboarding. */
+    /**
+     * When ZeroBounce should send, for zb_managed onboarding. Write-only: the
+     * API has no endpoint to read it back. Only the fields that are set are sent.
+     */
     public static class ManagedSending {
-        @Nullable Integer timezoneOffset;
+        @Nullable Boolean weekdaysOnly;
+        @Nullable String timezone;
+        @Nullable Double timezoneOffset;
         @Nullable String warmupStartDate;
         @Nullable Integer dailyLimit;
 
-        /** -11 to 14. */
-        public ManagedSending setTimezoneOffset(@Nullable Integer timezoneOffset) {
+        /** Send on Monday to Friday only. */
+        public ManagedSending setWeekdaysOnly(@Nullable Boolean weekdaysOnly) {
+            this.weekdaysOnly = weekdaysOnly;
+            return this;
+        }
+
+        /** An IANA time zone name, e.g. Europe/Bucharest. */
+        public ManagedSending setTimezone(@Nullable String timezone) {
+            this.timezone = timezone;
+            return this;
+        }
+
+        /** Hours from UTC, -11 to 14, whole or fractional (5.5 for India). */
+        public ManagedSending setTimezoneOffset(double timezoneOffset) {
             this.timezoneOffset = timezoneOffset;
+            return this;
+        }
+
+        /**
+         * Whole hours from UTC, -11 to 14; null clears the offset. A whole
+         * number literal such as {@code setTimezoneOffset(3)} calls
+         * {@link #setTimezoneOffset(double)}.
+         *
+         * @deprecated the API takes fractional offsets; use {@link #setTimezoneOffset(double)}.
+         */
+        @Deprecated
+        public ManagedSending setTimezoneOffset(@Nullable Integer timezoneOffset) {
+            this.timezoneOffset = timezoneOffset == null ? null : timezoneOffset.doubleValue();
             return this;
         }
 
@@ -963,6 +1062,12 @@ public class ZeroBounceWarmup {
             return this;
         }
 
+        /**
+         * Not sent, and a warning is logged when it is set.
+         *
+         * @deprecated the API does not apply a daily limit to zb_managed accounts.
+         */
+        @Deprecated
         public ManagedSending setDailyLimit(@Nullable Integer dailyLimit) {
             this.dailyLimit = dailyLimit;
             return this;

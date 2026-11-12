@@ -850,60 +850,8 @@ public class ZeroBounceSDK {
             HttpPost uploadFile = new HttpPost(urlPath);
             uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
-
-            builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
-            builder.addPart(
-                    "email_address_column",
-                    new StringBody(String.valueOf(emailAddressColumnIndex), ContentType.TEXT_PLAIN)
-            );
-
-            if (options != null) {
-                if (options.returnUrl != null) {
-                    builder.addPart("return_url",
-                            new StringBody(options.returnUrl, ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.firstNameColumn > 0) {
-                    builder.addPart("first_name_column",
-                            new StringBody(String.valueOf(options.firstNameColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.lastNameColumn > 0) {
-                    builder.addPart("last_name_column",
-                            new StringBody(String.valueOf(options.lastNameColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.genderColumn > 0) {
-                    builder.addPart("gender_column",
-                            new StringBody(String.valueOf(options.genderColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.ipAddressColumn > 0) {
-                    builder.addPart(
-                            "ip_address_column",
-                            new StringBody(String.valueOf(options.ipAddressColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.hasHeaderRow != null) {
-                    builder.addPart(
-                            "has_header_row",
-                            new StringBody(String.valueOf(options.hasHeaderRow), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.removeDuplicate != null) {
-                    builder.addPart(
-                            "remove_duplicate",
-                            new StringBody(String.valueOf(options.removeDuplicate), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (!scoring && options.allowPhase2 != null) {
-                    builder.addPart(
-                            "allow_phase_2",
-                            new StringBody(Boolean.toString(options.allowPhase2), ContentType.TEXT_PLAIN)
-                    );
-                }
-            }
-
+            // The same fields the offline transport sees, from one builder.
+            addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName()));
             builder.addPart("file", new FileBody(file));
 
             HttpEntity multipart = builder.build();
@@ -958,60 +906,8 @@ public class ZeroBounceSDK {
             HttpPost uploadFile = new HttpPost(urlPath);
             uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
-
-            builder.addPart("api_key", new StringBody(apiKey, ContentType.TEXT_PLAIN));
-            builder.addPart(
-                    "email_address_column",
-                    new StringBody(String.valueOf(emailAddressColumnIndex), ContentType.TEXT_PLAIN)
-            );
-
-            if (options != null) {
-                if (options.returnUrl != null) {
-                    builder.addPart("return_url",
-                            new StringBody(options.returnUrl, ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.firstNameColumn > 0) {
-                    builder.addPart("first_name_column",
-                            new StringBody(String.valueOf(options.firstNameColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.lastNameColumn > 0) {
-                    builder.addPart("last_name_column",
-                            new StringBody(String.valueOf(options.lastNameColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.genderColumn > 0) {
-                    builder.addPart("gender_column",
-                            new StringBody(String.valueOf(options.genderColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.ipAddressColumn > 0) {
-                    builder.addPart(
-                            "ip_address_column",
-                            new StringBody(String.valueOf(options.ipAddressColumn), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.hasHeaderRow != null) {
-                    builder.addPart(
-                            "has_header_row",
-                            new StringBody(String.valueOf(options.hasHeaderRow), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (options.removeDuplicate != null) {
-                    builder.addPart(
-                            "remove_duplicate",
-                            new StringBody(String.valueOf(options.removeDuplicate), ContentType.TEXT_PLAIN)
-                    );
-                }
-                if (!scoring && options.allowPhase2 != null) {
-                    builder.addPart(
-                            "allow_phase_2",
-                            new StringBody(Boolean.toString(options.allowPhase2), ContentType.TEXT_PLAIN)
-                    );
-                }
-            }
-
+            // The same fields the offline transport sees, from one builder.
+            addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName));
             builder.addPart("file", new InputStreamBody(inputStream, ContentType.create("text/csv"), fileName));
 
             HttpEntity multipart = builder.build();
@@ -2054,6 +1950,9 @@ public class ZeroBounceSDK {
                 new TypeToken<JsonObject>() {
                 },
                 Map.of("Authorization", "Bearer " + apiKey),
+                // LIVE: DELETE /test/{id} answers 204 with no body. An empty
+                // 2xx from any other Inbox Placement call is an error.
+                "DELETE".equals(method),
                 successCallback,
                 errorCallback
         );
@@ -2623,9 +2522,14 @@ public class ZeroBounceSDK {
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         sendRequestWithMethod(method, urlPath, queryParameters, formFields, jsonBody, typeToken,
-                null, successCallback, errorCallback);
+                null, null, successCallback, errorCallback);
     }
 
+    /**
+     * @param emptyIsSuccess whether a 2xx with no body is a success (with a
+     *                       null result): null keeps the general rule (only a
+     *                       204), true or false decides it for the call
+     */
     private <T> void sendRequestWithMethod(
             @NotNull String method,
             @NotNull String urlPath,
@@ -2634,6 +2538,7 @@ public class ZeroBounceSDK {
             @Nullable Object jsonBody,
             @Nullable TypeToken<T> typeToken,
             @Nullable Map<String, String> extraHeaders,
+            @Nullable Boolean emptyIsSuccess,
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         errorCallback = redacting(errorCallback);
@@ -2727,10 +2632,11 @@ public class ZeroBounceSDK {
         if (successCallback == null) {
             return;
         }
-        if (typeToken != null && rsp.trim().isEmpty() && status != 204) {
-            // A typed endpoint that answers 200 with no body did not succeed.
-            // Only a 204 legitimately carries nothing (the Inbox Placement
-            // Tester's DELETE), and that still reaches the success callback.
+        boolean emptyAllowed = emptyIsSuccess != null ? emptyIsSuccess : status == 204;
+        if (typeToken != null && rsp.trim().isEmpty() && !emptyAllowed) {
+            // A typed endpoint that answers 2xx with no body did not succeed.
+            // The Inbox Placement Tester's DELETE legitimately carries nothing
+            // (a 204, or an empty 200), and that reaches the success callback.
             errorCallback.onError(ErrorResponse.parseError(
                     HttpMessages.jsonCallFailure(status, rsp, null), status));
             return;
@@ -2987,6 +2893,20 @@ public class ZeroBounceSDK {
         return true;
     }
 
+    /** Every field but the file itself, as text/plain parts in the map's order. */
+    private static void addTextParts(MultipartEntityBuilder builder, Map<String, String> fields) {
+        for (Map.Entry<String, String> field : fields.entrySet()) {
+            if (!"file".equals(field.getKey())) {
+                builder.addPart(field.getKey(), new StringBody(field.getValue(), ContentType.TEXT_PLAIN));
+            }
+        }
+    }
+
+    /**
+     * The multipart fields of sendFile and scoringSendFile, used by the real
+     * request and the offline transport alike. "file" holds the file name; the
+     * real request sends the file's content in that part.
+     */
     private Map<String, String> sendFileMultipartFields(
             boolean scoring,
             int emailAddressColumnIndex,
@@ -3045,6 +2965,11 @@ public class ZeroBounceSDK {
 
     private static void logDebug(String message) {
         logger.debug(message);
+    }
+
+    /** A warning through the logger set with {@link #setLogger(ZBLogger)}. */
+    static void logWarning(String message) {
+        logger.warn(message);
     }
 
     private static void logPayload(String message) {
