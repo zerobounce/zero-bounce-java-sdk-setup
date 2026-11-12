@@ -70,37 +70,65 @@ class OfflineRedactionSweepTest {
         return List.of(gson.substring(1, gson.length() - 1), php.substring(1, php.length() - 1));
     }
 
+    /** The secret JSON-escaped by {@code gson}, without the quotes. */
+    private static String escaped(com.google.gson.Gson gson, String text) {
+        String quoted = gson.toJson(text);
+        return quoted.substring(1, quoted.length() - 1);
+    }
+
+    /**
+     * The JSON escapes a server can apply: Gson's HTML-safe escaping
+     * ({@code \u003c}), its plain escaping, and each with {@code /} as a
+     * backslash and a slash (PHP's json_encode).
+     */
+    private static final List<Function<String, String>> JSON_ESCAPES = List.of(
+            text -> escaped(new com.google.gson.Gson(), text),
+            text -> escaped(new com.google.gson.Gson(), text).replace("/", "\\/"),
+            text -> escaped(new com.google.gson.GsonBuilder().disableHtmlEscaping().create(), text),
+            text -> escaped(new com.google.gson.GsonBuilder().disableHtmlEscaping().create(), text)
+                    .replace("/", "\\/"));
+
+    /** The URL encodings: none, a space as {@code +} (a form) and as {@code %20}. */
+    private static final List<Function<String, String>> URL_ENCODINGS = List.of(
+            text -> text,
+            text -> URLEncoder.encode(text, StandardCharsets.UTF_8),
+            text -> URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20"));
+
     /**
      * Every spelling a server can quote a secret back in, each of which the SDK
-     * must redact: as is; JSON-escaped with Gson's HTML-safe escapes
-     * ({@code \u003c}), without them, and either way with {@code /} as a
-     * backslash and a slash (PHP); and each of those URL-encoded with a space
-     * as {@code +} and as {@code %20}.
+     * must redact, composed from the encoders up to two deep: {raw, each JSON
+     * escape} x {each URL encoding}, and each JSON escape applied to each
+     * JSON-escaped form (a JSON error quoted inside another JSON string).
+     * Duplicates are dropped; {@link #everySpellingOfTheTestSecretsIsDistinct}
+     * pins how many remain.
      */
     static List<String> forms(String secret) {
-        String html = json(secret);
-        String plain = new com.google.gson.GsonBuilder().disableHtmlEscaping().create().toJson(secret);
-        List<String> bases = new ArrayList<>(List.of(secret));
-        for (String quoted : List.of(html, plain)) {
-            String inner = quoted.substring(1, quoted.length() - 1);
-            bases.add(inner);
-            bases.add(inner.replace("/", "\\/"));
+        List<String> once = new ArrayList<>(List.of(secret));
+        for (Function<String, String> escape : JSON_ESCAPES) {
+            once.add(escape.apply(secret));
         }
-        List<String> forms = new ArrayList<>();
-        for (String base : bases) {
-            String encoded = URLEncoder.encode(base, StandardCharsets.UTF_8);
-            forms.add(base);
-            forms.add(encoded);
-            forms.add(encoded.replace("+", "%20"));
+        java.util.Set<String> forms = new java.util.LinkedHashSet<>();
+        for (String base : once) {
+            for (Function<String, String> encoding : URL_ENCODINGS) {
+                forms.add(encoding.apply(base));
+            }
         }
-        return forms;
+        for (String base : once.subList(1, once.size())) {
+            for (Function<String, String> escape : JSON_ESCAPES) {
+                forms.add(escape.apply(base));
+            }
+        }
+        return new ArrayList<>(forms);
     }
 
     @Test
     void everySpellingOfTheTestSecretsIsDistinct() {
         for (String secret : List.of(KEY, PASSWORD)) {
             List<String> forms = forms(secret);
-            assertEquals(15, new java.util.HashSet<>(forms).size(), forms.toString());
+            // 5 bases x 3 URL encodings, and 4 x 4 double escapes less the 4
+            // where the plain escape of an HTML-safe one repeats its HTML-safe
+            // escape (nothing HTML-sensitive is left to tell them apart).
+            assertEquals(15 + 12, forms.size(), forms.toString());
         }
     }
 
@@ -196,11 +224,23 @@ class OfflineRedactionSweepTest {
      */
     @Test
     void everySpellingOfASecretInAnErrorBodyIsRedacted() throws Exception {
-        sweep("400-forms-key", request -> LoopbackServer.answer(400, "text/plain",
-                ("Bad request: " + String.join(" | ", forms(KEY))).getBytes(StandardCharsets.UTF_8)), true);
-        sweep("400-forms-password", request -> LoopbackServer.answer(400, "text/plain",
-                ("Bad request: " + String.join(" | ", forms(request.target.contains("test-smtp") ? PASSWORD : KEY)))
-                        .getBytes(StandardCharsets.UTF_8)), true);
+        // The spellings go out a few at a time, so each body stays under the
+        // SDK's 1000-character cut and is quoted, not replaced by a generic message.
+        int chunk = 6;
+        int count = forms(KEY).size();
+        for (int from = 0; from < count; from += chunk) {
+            int start = from;
+            int end = Math.min(count, from + chunk);
+            for (String secret : List.of(KEY, PASSWORD)) {
+                String body = "Bad request: " + String.join(" | ", forms(secret).subList(start, end));
+                assertTrue(body.length() < 1000, body);
+            }
+            sweep("400-forms-" + start, request -> {
+                String secret = request.target.contains("test-smtp") ? PASSWORD : KEY;
+                return LoopbackServer.answer(400, "text/plain", ("Bad request: "
+                        + String.join(" | ", forms(secret).subList(start, end))).getBytes(StandardCharsets.UTF_8));
+            }, true);
+        }
     }
 
     /** A 400 JSON error with several fields, each of which quotes the key or the request. */

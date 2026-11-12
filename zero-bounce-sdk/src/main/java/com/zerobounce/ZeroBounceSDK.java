@@ -279,29 +279,42 @@ public class ZeroBounceSDK {
     }
 
     /**
-     * The spellings a server can quote a secret back in: as is and JSON-escaped
-     * (with or without Gson's HTML-safe escapes such as {@code \u003c}, and with
-     * {@code /} written as a backslash and a slash, as PHP's json_encode does),
-     * and each of those URL-encoded with a space as {@code +} or {@code %20}
-     * (a query string, a form, or a server that echoes a URL-encoded JSON
-     * body). The longest come first, so a shorter form never leaves part of a
-     * longer one behind.
+     * The spellings a server can quote a secret back in, composed from the
+     * encodings it can meet up to two deep: as is and JSON-escaped (with or
+     * without Gson's HTML-safe escapes such as {@code \u003c}, and with or
+     * without {@code /} written as a backslash and a slash, as PHP's
+     * json_encode does), each of those URL-encoded with a space as {@code +}
+     * or {@code %20} (a query string, a form, or a server that echoes a
+     * URL-encoded JSON body), and JSON-escaped twice (a JSON error quoted in
+     * another JSON string). The longest come first, so a shorter form never
+     * leaves part of a longer one behind.
      */
     private static List<String> secretForms(String secret) {
-        List<String> plain = new java.util.ArrayList<>();
-        plain.add(secret);
+        List<java.util.function.UnaryOperator<String>> jsonEscapes = new java.util.ArrayList<>();
         for (Gson json : new Gson[]{new Gson(), new com.google.gson.GsonBuilder().disableHtmlEscaping().create()}) {
-            String quoted = json.toJson(secret);
-            String inner = quoted.substring(1, quoted.length() - 1);
-            plain.add(inner);
-            plain.add(inner.replace("/", "\\/"));
+            java.util.function.UnaryOperator<String> escape = text -> {
+                String quoted = json.toJson(text);
+                return quoted.substring(1, quoted.length() - 1);
+            };
+            jsonEscapes.add(escape);
+            jsonEscapes.add(text -> escape.apply(text).replace("/", "\\/"));
+        }
+        List<String> once = new java.util.ArrayList<>();
+        once.add(secret);
+        for (java.util.function.UnaryOperator<String> escape : jsonEscapes) {
+            once.add(escape.apply(secret));
         }
         java.util.Set<String> forms = new java.util.LinkedHashSet<>();
-        for (String form : plain) {
+        for (String form : once) {
             String encoded = java.net.URLEncoder.encode(form, StandardCharsets.UTF_8);
             forms.add(form);
             forms.add(encoded);
             forms.add(encoded.replace("+", "%20"));
+        }
+        for (String escaped : once.subList(1, once.size())) {
+            for (java.util.function.UnaryOperator<String> escape : jsonEscapes) {
+                forms.add(escape.apply(escaped));
+            }
         }
         List<String> sorted = new java.util.ArrayList<>(forms);
         sorted.sort((a, b) -> b.length() - a.length());

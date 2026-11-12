@@ -3,6 +3,12 @@ package com.zerobounce;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+
+import java.io.IOException;
+import java.io.StringReader;
 
 /**
  * Turns HTTP failures, HTML pages, and empty or non-JSON bodies into a short message.
@@ -43,11 +49,26 @@ final class HttpMessages {
         if (trimmed.charAt(0) != '{' && trimmed.charAt(0) != '[') {
             return "ZeroBounce returned a response that is not valid JSON.";
         }
+        return isStrictJson(trimmed) ? null : "ZeroBounce returned a response that is not valid JSON.";
+    }
+
+    /**
+     * Whether a body is one JSON value as RFC 8259 defines it. Gson's own
+     * parsers are lenient: they read {@code {a:1}}, {@code {'a':'b'}},
+     * {@code [1,]}, {@code NaN} and an unquoted word as JSON, so a 2xx body
+     * like that would reach the caller as a result.
+     */
+    static boolean isStrictJson(String body) {
+        if (body == null) {
+            return false;
+        }
         try {
-            JsonParser.parseString(trimmed);
-            return null;
-        } catch (RuntimeException ignored) {
-            return "ZeroBounce returned a response that is not valid JSON.";
+            JsonReader reader = new JsonReader(new StringReader(body));
+            reader.setStrictness(Strictness.STRICT);
+            JsonParser.parseReader(reader);
+            return reader.peek() == JsonToken.END_DOCUMENT;
+        } catch (IOException | RuntimeException e) {
+            return false;
         }
     }
 
@@ -343,7 +364,7 @@ final class HttpMessages {
         if (trimmed.isEmpty() || looksLikeHtml(trimmed, null) || trimmed.length() > 1000) {
             return true;
         }
-        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[") || !isStrictJson(trimmed)) {
             return true;
         }
         try {

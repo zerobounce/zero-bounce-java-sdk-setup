@@ -238,9 +238,9 @@ public class ZeroBounceWarmup {
                 redact(result.body, secrets), errorCallback)) {
             return;
         }
-        if (!looksLikeJson(result.body)) {
-            // Gson parses leniently, so junk would come back as a string
-            // instead of raising: reject it before it reaches the parser.
+        if (!HttpMessages.isStrictJson(result.body)) {
+            // Gson parses leniently, so junk ({a:1}, NaN, a bare word) would
+            // come back as a result: only strict JSON reaches the parser.
             errorCallback.onError(ErrorResponse.parseError(
                     redact(messageFromBody(result.body, result.status), secrets), result.status));
             return;
@@ -290,22 +290,6 @@ public class ZeroBounceWarmup {
             return;
         }
         successCallback.onSuccess(result.body);
-    }
-
-    /**
-     * Whether a body could be JSON at all. Gson's parser is lenient and would
-     * read bare junk as a string, so the shape is checked first.
-     */
-    private static boolean looksLikeJson(@Nullable String body) {
-        String trimmed = body == null ? "" : body.trim();
-        if (trimmed.isEmpty()) {
-            return false;
-        }
-        char first = trimmed.charAt(0);
-        if (first == '{' || first == '[' || first == '"' || first == '-' || Character.isDigit(first)) {
-            return true;
-        }
-        return trimmed.equals("true") || trimmed.equals("false") || trimmed.equals("null");
     }
 
     /** Turn an error body into a short message. Never raw HTML or a parser dump. */

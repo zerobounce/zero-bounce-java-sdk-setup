@@ -718,6 +718,29 @@ public class OfflineWarmupTest {
         }
     }
 
+    /**
+     * An empty or blank 200 under text/csv is an error with status 200 from
+     * both CSV downloads, never an empty CSV: no other check refuses it.
+     */
+    @Test
+    public void anEmptyBodyInPlaceOfACsvIsAnError() throws IOException {
+        for (String body : new String[]{"", " \r\n "}) {
+            for (int download = 0; download < 2; download++) {
+                errors.clear();
+                lastStatus = -1;
+                mockAll(200, body, "text/csv");
+                ZeroBounceSDK.OnSuccessCallback<String> unexpected = r -> fail("success: [" + r + "]");
+                if (download == 0) {
+                    warmup.downloadSeeds(unexpected, collect);
+                } else {
+                    warmup.downloadStatistics("a@b.com", unexpected, collect);
+                }
+                assertEquals(200, lastStatus, errors.toString());
+                assertTrue(errors.toString().contains("Empty response"), errors.toString());
+            }
+        }
+    }
+
     @Test
     public void theHttpStatusIsOnTheError() throws IOException {
         mockAll(429, "{\"message\":\"Custom rule was updated less than 7 days ago.\"}");

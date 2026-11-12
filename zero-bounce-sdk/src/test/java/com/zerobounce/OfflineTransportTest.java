@@ -531,6 +531,23 @@ class OfflineTransportTest {
     }
 
     /**
+     * A 2xx body that only a lenient parser reads as JSON is not JSON: unquoted
+     * or single-quoted names, a trailing comma, {@code ;} or {@code =} as a
+     * separator, NaN and Infinity, a word that starts with a digit, a JSON value
+     * with more after it, and a CSV
+     * under application/json. Gson reads every one of these leniently, so each
+     * is an API error with status 200 on every JSON call, Warmup included.
+     */
+    @Test
+    void aBodyOnlyALenientParserAcceptsIsAnErrorWithStatus200OnEveryPath() throws Exception {
+        String[] bodies = {"{a:1}", "{'a':'b'}", "[1,]", "[1;2]", "{\"a\"=1}", "{\"a\":NaN}", "-Infinity",
+                "123abc", "{\"a\":1} {\"b\":2}", "[1] x", "email,status\na@b.com,valid\n"};
+        for (int i = 0; i < bodies.length; i++) {
+            bodySweep("lenient-" + i, "application/json", bodies[i], CSV, "not valid JSON");
+        }
+    }
+
+    /**
      * An HTML page on a 2xx is reported as an HTML page, with status 200, on
      * every path, downloads included, whatever the content type says: a page
      * found by its doctype alone (no {@code <html>}, {@code <head>} or
