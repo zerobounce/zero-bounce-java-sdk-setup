@@ -254,10 +254,60 @@ public class ZeroBounceSDK {
     }
 
     private String redactSecrets(@Nullable String message) {
-        if (message == null || apiKey == null || apiKey.isEmpty()) {
-            return message;
+        return redact(message, apiKey);
+    }
+
+    /**
+     * Replaces each secret in {@code text} with ***, in every form a request
+     * carries it and a server can quote it back: as is (a JSON or multipart
+     * body), URL-encoded (a query string or a form) and JSON-escaped.
+     */
+    static @Nullable String redact(@Nullable String text, String... secrets) {
+        if (text == null) {
+            return null;
         }
-        return message.replace(apiKey, "***");
+        String value = text;
+        for (String secret : secrets) {
+            if (secret == null || secret.isEmpty()) {
+                continue;
+            }
+            String json = new Gson().toJson(secret);
+            for (String form : new String[]{
+                    secret,
+                    java.net.URLEncoder.encode(secret, StandardCharsets.UTF_8),
+                    json.substring(1, json.length() - 1)}) {
+                value = value.replace(form, "***");
+            }
+        }
+        return value;
+    }
+
+    /**
+     * The error callback with the key redacted from every message it is given.
+     * An error body can quote the request back, and with it the key: a 400
+     * "Bad request: https://...?api_key=..." or {"error": "Invalid API key ..."}.
+     * Each request helper wraps its callback in this, so every error a request
+     * reports goes through it, whichever path built the message.
+     */
+    @NotNull OnErrorCallback redacting(@NotNull OnErrorCallback errorCallback) {
+        return error -> {
+            if (error != null) {
+                // The list is declared as strings, but a JSON array in an error
+                // body can put numbers or objects in it. Those are kept as they
+                // are unless their text holds the key.
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                List<Object> messages = (List) error.getErrors();
+                messages.replaceAll(message -> {
+                    if (message == null) {
+                        return null;
+                    }
+                    String text = message.toString();
+                    String redacted = redactSecrets(text);
+                    return redacted.equals(text) ? message : redacted;
+                });
+            }
+            errorCallback.onError(error);
+        };
     }
 
     org.apache.http.client.config.RequestConfig apacheRequestConfig() {
@@ -779,6 +829,7 @@ public class ZeroBounceSDK {
             @Nullable SendFileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback) throws ZBException {
+        errorCallback = redacting(errorCallback);
 
         String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
         logDebug("ZeroBounceSDK::sendFile urlPath=" + urlPath);
@@ -886,6 +937,7 @@ public class ZeroBounceSDK {
             @Nullable SendFileOptions options,
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback) throws ZBException {
+        errorCallback = redacting(errorCallback);
 
         String urlPath = (scoring ? bulkApiScoringBaseUrl : bulkApiBaseUrl) + "/sendfile";
         logDebug("ZeroBounceSDK::sendFile urlPath=" + urlPath);
@@ -1141,6 +1193,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        errorCallback = redacting(errorCallback);
         if (invalidApiKey(errorCallback)) return;
         if (fileId == null || fileId.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
@@ -2416,6 +2469,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback,
             boolean messageOnlyIsFailure) {
+        errorCallback = redacting(errorCallback);
         // Only the exchange itself is inside the try: an exception thrown by
         // the caller's own callback must reach the caller, not come back
         // through the error callback as if the API had failed.
@@ -2495,6 +2549,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        errorCallback = redacting(errorCallback);
         int status;
         String rsp;
         try {
@@ -2581,6 +2636,7 @@ public class ZeroBounceSDK {
             @Nullable Map<String, String> extraHeaders,
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
+        errorCallback = redacting(errorCallback);
         int status;
         String rsp;
         try {
