@@ -18,6 +18,7 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
@@ -35,10 +36,13 @@ class OfflineRedactionSweepTest {
     @TempDir
     Path tempDir;
 
-    /** A key with characters that URL encoding changes, so the encoded form differs. */
-    private static final String KEY = "echo+key/1234567890";
+    /**
+     * A key with characters that URL encoding and JSON escaping change ({@code +},
+     * {@code /}, {@code "} and {@code %}), so neither form equals the key as sent.
+     */
+    private static final String KEY = "echo+key/12\"34%567890";
     /** The SMTP password the Warmup sweep sends to testSmtpConfiguration. */
-    private static final String PASSWORD = "smtp-pass";
+    private static final String PASSWORD = RequestSweep.SMTP_PASSWORD;
 
     /** What the server quotes back: the request line, the API-Key header and the body. */
     private static String echo(LoopbackServer.Request request) {
@@ -52,12 +56,29 @@ class OfflineRedactionSweepTest {
         return new com.google.gson.Gson().toJson(text);
     }
 
+    /** {@link #json} as PHP's json_encode writes it: every {@code /} as a backslash and a slash. */
+    private static String phpJson(String text) {
+        return json(text).replace("/", "\\/");
+    }
+
+    /** The secret JSON-escaped, as Gson and as PHP write it, without the quotes. */
+    private static List<String> jsonForms(String secret) {
+        String gson = json(secret);
+        String php = phpJson(secret);
+        return List.of(gson.substring(1, gson.length() - 1), php.substring(1, php.length() - 1));
+    }
+
     private static boolean leaks(String text, String secret) {
         if (text == null) {
             return false;
         }
         if (text.contains(secret) || text.contains(URLEncoder.encode(secret, StandardCharsets.UTF_8))) {
             return true;
+        }
+        for (String form : jsonForms(secret)) {
+            if (text.contains(form)) {
+                return true;
+            }
         }
         try {
             return URLDecoder.decode(text, StandardCharsets.UTF_8).contains(secret);
@@ -129,6 +150,17 @@ class OfflineRedactionSweepTest {
     }
 
     /**
+     * A 400 JSON error written by a server that escapes {@code /} as a backslash
+     * and a slash (PHP's json_encode), quoting the key and the request.
+     */
+    @Test
+    void aJsonErrorWithEscapedSlashesNeverCarriesTheKey() throws Exception {
+        sweep("400-php-json", request -> LoopbackServer.answer(400, "application/json",
+                ("{\"error\": " + phpJson("Invalid API key " + KEY + " for " + echo(request))
+                        + "}").getBytes(StandardCharsets.UTF_8)), true);
+    }
+
+    /**
      * An HTTP 200 that carries an API error naming the key: a dead-key answer on
      * the JSON calls, and a JSON error body instead of a file on the downloads
      * (sent as text/plain, which the API has done). Warmup reads a 200 as its
@@ -186,7 +218,8 @@ class OfflineRedactionSweepTest {
     void aWarmupErrorBuiltFromA200BodyNeverCarriesTheKey() throws Exception {
         warmupSweep("warmup-200", request -> request.target.contains("/download")
                 ? LoopbackServer.answer(200, "application/json",
-                        ("{\"error\": " + json("Invalid API key " + KEY + " for " + echo(request)) + "}")
+                        ("{\"error\": " + json("Invalid API key " + KEY + " for " + echo(request))
+                                + ", \"detail\": " + phpJson(KEY + " " + PASSWORD) + "}")
                                 .getBytes(StandardCharsets.UTF_8))
                 : LoopbackServer.answer(200, "text/plain",
                         ("Invalid API key " + KEY + " for " + echo(request)).getBytes(StandardCharsets.UTF_8)));
@@ -218,14 +251,16 @@ class OfflineRedactionSweepTest {
             String url = invocation.getArgument(0);
             urls.add(url);
             throw new java.net.ConnectException("Connection refused: " + url + " API-Key=" + KEY + " "
-                    + URLEncoder.encode(KEY, StandardCharsets.UTF_8) + " " + json(KEY) + extra.get());
+                    + URLEncoder.encode(KEY, StandardCharsets.UTF_8) + " " + json(KEY) + " " + phpJson(KEY)
+                    + extra.get());
         }).when(warmup).createUrlFrom(anyString());
         warmup.initialize(KEY);
         List<String> failures = new ArrayList<>();
         List<Method> methods = RequestSweep.requestMethods(ZeroBounceWarmup.class);
         for (Method method : methods) {
             urls.clear();
-            extra.set(method.getName().equals("testSmtpConfiguration") ? " password=" + PASSWORD : "");
+            extra.set(method.getName().equals("testSmtpConfiguration")
+                    ? " password=" + PASSWORD + " " + json(PASSWORD) + " " + phpJson(PASSWORD) : "");
             RequestSweep.Outcome outcome = sweep.invoke(warmup, method);
             if (urls.isEmpty() || outcome.thrown != null || !outcome.successes.isEmpty()
                     || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != 0) {
@@ -240,5 +275,88 @@ class OfflineRedactionSweepTest {
         }
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
         assertEquals(sweep.warmupArgs.size(), methods.size(), "every Warmup sweep entry was invoked");
+    }
+
+    /**
+     * What the SDK writes to its logger never carries the key, in any form, with
+     * payload logging off or on: response bodies quoting the key and the request
+     * (a 400 JSON error, a 200 text error) on every public request method, and
+     * each logged exception with its cause chain. With payload logging off no
+     * response body is logged at all, the bulk uploads included (S8).
+     */
+    @Test
+    void theLoggerNeverSeesTheKey() throws Exception {
+        List<String> logged = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ZeroBounceSDK.setLogger(new ZBLogger() {
+            @Override
+            public void debug(String msg) {
+                logged.add("debug " + msg);
+            }
+
+            @Override
+            public void info(String msg) {
+                logged.add("info " + msg);
+            }
+
+            @Override
+            public void warn(String msg) {
+                logged.add("warn " + msg);
+            }
+
+            @Override
+            public void error(String msg, Throwable t) {
+                java.io.StringWriter trace = new java.io.StringWriter();
+                if (t != null) {
+                    t.printStackTrace(new java.io.PrintWriter(trace));
+                }
+                logged.add("error " + msg + " " + trace);
+            }
+        });
+        try {
+            for (boolean payloads : new boolean[]{false, true}) {
+                ZeroBounceSDK.setLogPayloads(payloads);
+                logged.clear();
+                sweep("log-400-" + payloads, request -> LoopbackServer.answer(400, "application/json",
+                        ("{\"error\": " + json("BODY-MARKER Invalid API key " + KEY + " " + echo(request))
+                                + ", \"detail\": " + phpJson(KEY) + "}").getBytes(StandardCharsets.UTF_8)), true);
+                sweep("log-200-" + payloads, request -> LoopbackServer.answer(200, "text/plain",
+                        ("BODY-MARKER Invalid API key " + KEY + " " + echo(request)).getBytes(StandardCharsets.UTF_8)),
+                        false);
+                assertTrue(!logged.isEmpty(), "the SDK logged nothing");
+                for (String line : logged) {
+                    assertTrue(!leaks(line, KEY), "payloads=" + payloads + " logged the key: " + line);
+                    assertTrue(payloads || !line.contains("BODY-MARKER"),
+                            "a response body was logged with payload logging off: " + line);
+                }
+                if (payloads) {
+                    assertTrue(logged.stream().anyMatch(line -> line.contains("BODY-MARKER")),
+                            "payload logging on logs the bodies");
+                }
+            }
+            // A transport exception, and its cause, quoting the key in every
+            // spelling: the logged exception carries neither.
+            logged.clear();
+            ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
+            String quoted = KEY + " " + URLEncoder.encode(KEY, StandardCharsets.UTF_8) + " " + json(KEY) + " " + phpJson(KEY);
+            doAnswer(invocation -> {
+                throw new java.net.ConnectException("Connection refused: " + invocation.getArgument(0) + " " + quoted) {
+                    {
+                        initCause(new java.io.IOException("cause " + quoted));
+                    }
+                };
+            }).when(sdk).createUrlFrom(anyString());
+            sdk.initialize(KEY);
+            List<ErrorResponse> errors = new ArrayList<>();
+            sdk.getCredits(r -> fail("success"), errors::add);
+            assertEquals(1, errors.size());
+            assertTrue(logged.stream().anyMatch(line -> line.startsWith("error ") && line.contains("Caused by")),
+                    logged.toString());
+            for (String line : logged) {
+                assertTrue(!leaks(line, KEY), "logged the key: " + line);
+            }
+        } finally {
+            ZeroBounceSDK.setLogger(null);
+            ZeroBounceSDK.setLogPayloads(false);
+        }
     }
 }

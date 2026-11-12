@@ -271,15 +271,35 @@ public class ZeroBounceSDK {
             if (secret == null || secret.isEmpty()) {
                 continue;
             }
-            String json = new Gson().toJson(secret);
-            for (String form : new String[]{
-                    secret,
-                    java.net.URLEncoder.encode(secret, StandardCharsets.UTF_8),
-                    json.substring(1, json.length() - 1)}) {
+            for (String form : secretForms(secret)) {
                 value = value.replace(form, "***");
             }
         }
         return value;
+    }
+
+    /**
+     * The spellings a server can quote a secret back in: as is, URL-encoded
+     * ({@code +} or {@code %20} for a space) and JSON-escaped, with or without
+     * Gson's HTML-safe escapes and with {@code /} written as a backslash and a
+     * slash (PHP's json_encode). The longest come first, so a shorter form
+     * never leaves part of a longer one behind.
+     */
+    private static List<String> secretForms(String secret) {
+        java.util.Set<String> forms = new java.util.LinkedHashSet<>();
+        String encoded = java.net.URLEncoder.encode(secret, StandardCharsets.UTF_8);
+        forms.add(secret);
+        forms.add(encoded);
+        forms.add(encoded.replace("+", "%20"));
+        for (Gson json : new Gson[]{new Gson(), new com.google.gson.GsonBuilder().disableHtmlEscaping().create()}) {
+            String quoted = json.toJson(secret);
+            String inner = quoted.substring(1, quoted.length() - 1);
+            forms.add(inner);
+            forms.add(inner.replace("/", "\\/"));
+        }
+        List<String> sorted = new java.util.ArrayList<>(forms);
+        sorted.sort((a, b) -> b.length() - a.length());
+        return sorted;
     }
 
     /**
@@ -865,7 +885,7 @@ public class ZeroBounceSDK {
 
             rsp = SdkHttp.readText(responseEntity.getContent());
 
-            logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
+            logPayload("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
@@ -921,7 +941,7 @@ public class ZeroBounceSDK {
 
             rsp = SdkHttp.readText(responseEntity.getContent());
 
-            logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
+            logPayload("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFile failed", e);
             ErrorResponse errorResponse = ErrorResponse.parseError(redactedFailure(e));
@@ -2751,6 +2771,13 @@ public class ZeroBounceSDK {
         if (reportHttpFailure(status, rsp, errorCallback)) {
             return;
         }
+        // A 2xx that is not JSON ("hello", a proxy's text) is an API error with
+        // its status, as on every other JSON call, not a decoder failure.
+        String notJson = HttpMessages.jsonCallFailure(status, rsp, null);
+        if (notJson != null) {
+            errorCallback.onError(ErrorResponse.parseError(notJson, status));
+            return;
+        }
         ZBSendFileResponse response;
         try {
             response = gson.fromJson(rsp, ZBSendFileResponse.class);
@@ -2883,7 +2910,8 @@ public class ZeroBounceSDK {
         try (OutputStream outStream = opener.open(file)) {
             outStream.write(body);
         } catch (IOException e) {
-            logError("ZeroBounceSDK::getFile could not write the file", e);
+            // A local write error names the file, not the request, so it holds no key.
+            logger.error("ZeroBounceSDK::getFile could not write the file", e);
             file.delete();
             String message = e.getMessage();
             errorCallback.onError(ErrorResponse.parseError(
@@ -2963,8 +2991,10 @@ public class ZeroBounceSDK {
                 successCallback, errorCallback);
     }
 
-    private static void logDebug(String message) {
-        logger.debug(message);
+    // Everything logged goes through redactSecrets: a URL, a response body or
+    // an exception message can carry the key (S8).
+    private void logDebug(String message) {
+        logger.debug(redactSecrets(message));
     }
 
     /** A warning through the logger set with {@link #setLogger(ZBLogger)}. */
@@ -2972,14 +3002,34 @@ public class ZeroBounceSDK {
         logger.warn(message);
     }
 
-    private static void logPayload(String message) {
+    private void logPayload(String message) {
         if (logPayloads) {
-            logger.debug(message);
+            logger.debug(redactSecrets(message));
         }
     }
 
-    private static void logError(String message, Exception exception) {
-        logger.error(message, exception);
+    private void logError(String message, Exception exception) {
+        logger.error(redactSecrets(message), redactedForLog(exception, 0));
+    }
+
+    /**
+     * A copy of {@code exception} for the logger: the same type name, message
+     * and stack trace, with the key redacted from the message of it and of
+     * each cause.
+     */
+    private Throwable redactedForLog(Throwable exception, int depth) {
+        String message = exception.getMessage();
+        String text = exception.getClass().getName() + (message == null ? "" : ": " + redactSecrets(message));
+        Throwable cause = exception.getCause();
+        Throwable copy = new RuntimeException(text,
+                cause == null || cause == exception || depth >= 8 ? null : redactedForLog(cause, depth + 1)) {
+            @Override
+            public String toString() {
+                return getMessage();
+            }
+        };
+        copy.setStackTrace(exception.getStackTrace());
+        return copy;
     }
 
     /**

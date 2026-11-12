@@ -33,6 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 final class RequestSweep {
 
+    /**
+     * The SMTP password the sweep sends to testSmtpConfiguration, with a quote and
+     * a slash, which JSON escaping changes.
+     */
+    static final String SMTP_PASSWORD = "smtp\"pa/ss";
+
     private final Path tempDir;
     private final AtomicInteger files = new AtomicInteger();
     /** The download path handed to the most recent call, or null. */
@@ -186,7 +192,7 @@ final class RequestSweep {
         warmup("getFromAddressStatistics(String)", () -> new Object[]{from});
         warmup("checkDomainDmarc(String,String)", () -> new Object[]{from, null});
         warmup("testSmtpConfiguration(String,String,String,String,int)", () -> new Object[]{
-                from, "smtp-user", "smtp-pass", "smtp.example.com", 587});
+                from, "smtp-user", SMTP_PASSWORD, "smtp.example.com", 587});
     }
 
     private static boolean isCallback(Class<?> type) {

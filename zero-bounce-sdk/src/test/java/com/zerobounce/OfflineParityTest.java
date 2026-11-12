@@ -615,6 +615,31 @@ public class OfflineParityTest {
         assertTrue(recorded.isEmpty());
     }
 
+    /**
+     * The exact wire fields of an Inbox Placement test and of the filter calls,
+     * so a renamed or dropped field fails (X3).
+     */
+    @Test
+    public void inboxPlacementAndFilterRequestsUseTheDocumentedFieldNames() throws IOException {
+        mockAll(200, "{\"ok\":true}");
+        zeroBounceSDK.createInboxPlacementTest("Launch", null, r -> {
+        }, this::failOnError);
+        assertEquals(com.google.gson.JsonParser.parseString("{\"name\":\"Launch\"}"),
+                com.google.gson.JsonParser.parseString(only().body));
+
+        Map<String, String> filter = new LinkedHashMap<>();
+        filter.put("api_key", API_KEY);
+        filter.put("rule", "exclude");
+        filter.put("target", "domain");
+        filter.put("value", "example.com");
+        zeroBounceSDK.addFilter("exclude", "domain", "example.com", r -> {
+        }, this::failOnError);
+        assertEquals(filter, only().form());
+        zeroBounceSDK.deleteFilter("exclude", "domain", "example.com", r -> {
+        }, this::failOnError);
+        assertEquals(filter, only().form());
+    }
+
     @Test
     public void inboxPlacementUsesItsOwnHostAndCamelCaseJson() throws IOException {
         mockAll(200, "{\"ok\":true}");

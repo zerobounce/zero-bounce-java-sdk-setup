@@ -81,7 +81,9 @@ final class StrictBooleanAdapter extends TypeAdapter<Boolean> {
 
     private static JsonParseException invalid(String path, String value) {
         String field = path.startsWith("$.") ? path.substring(2) : path;
-        String shown = value.length() > 40 ? value.substring(0, 40) + "..." : value;
+        // Cut at a code point, so a surrogate pair is never split (P3).
+        String shown = value.codePointCount(0, value.length()) > 40
+                ? value.substring(0, value.offsetByCodePoints(0, 40)) + "..." : value;
         return new JsonParseException("ZeroBounce returned " + shown + " for " + field + ", which is not a boolean.");
     }
 }

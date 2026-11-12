@@ -39,6 +39,8 @@ class OfflineTransportTest {
     Path tempDir;
 
     private static final String KEY = "transport-key";
+    /** The documented default timeout of both clients, in milliseconds. */
+    private static final int DEFAULT_TIMEOUT = 120_000;
     private static final byte[] CSV = "email,status\na@example.com,valid\n".getBytes(StandardCharsets.UTF_8);
     private static final byte[] JSON = "{\"success\": true}                ".getBytes(StandardCharsets.UTF_8);
 
@@ -157,9 +159,10 @@ class OfflineTransportTest {
     }
 
     /**
-     * Every request the SDK sends has a non-zero connect and read timeout, on
-     * the default settings: each HttpURLConnection, and each Apache request's
-     * config (connect, socket and connection-request timeouts).
+     * Every request the SDK sends has the documented default connect and read
+     * timeout, 120 s, on the default settings: each HttpURLConnection, and each
+     * Apache request's config (connect, socket and connection-request
+     * timeouts). The exact value, so a changed or dropped default fails (T2).
      */
     @Test
     void everyRequestPathSetsConnectAndReadTimeouts() throws Exception {
@@ -177,14 +180,15 @@ class OfflineTransportTest {
                     failures.add(outcome.signature + " sent a request the sweep could not inspect");
                 }
                 for (HttpURLConnection connection : connections) {
-                    if (connection.getConnectTimeout() <= 0 || connection.getReadTimeout() <= 0) {
+                    if (connection.getConnectTimeout() != DEFAULT_TIMEOUT || connection.getReadTimeout() != DEFAULT_TIMEOUT) {
                         failures.add(outcome.signature + " connect " + connection.getConnectTimeout()
                                 + " ms, read " + connection.getReadTimeout() + " ms");
                     }
                 }
                 for (RequestConfig config : configs) {
-                    if (config == null || config.getConnectTimeout() <= 0 || config.getSocketTimeout() <= 0
-                            || config.getConnectionRequestTimeout() <= 0) {
+                    if (config == null || config.getConnectTimeout() != DEFAULT_TIMEOUT
+                            || config.getSocketTimeout() != DEFAULT_TIMEOUT
+                            || config.getConnectionRequestTimeout() != DEFAULT_TIMEOUT) {
                         failures.add(outcome.signature + " Apache config " + config);
                     }
                 }
@@ -365,5 +369,64 @@ class OfflineTransportTest {
         assertTrue(written.get() > 0, "the opener wrote part of the file before failing");
         assertEquals(List.of("No space left on device"), errors);
         assertFalse(file.exists(), "the partial file was deleted");
+    }
+
+    /**
+     * Answers every JSON call with {@code body} under {@code contentType}, and
+     * every download with {@code download} as text/csv, and checks that each call
+     * the body is meant for reports one error with status 200 whose message
+     * contains {@code expected} (Warmup's JSON calls quote a short text body
+     * instead), and that no download leaves a file (E7, D2).
+     */
+    private void bodySweep(String label, String contentType, String body, byte[] download, String expected)
+            throws Exception {
+        RequestSweep sweep = new RequestSweep(tempDir.resolve(label));
+        LoopbackServer.Responder dl = LoopbackServer.answer(200, "text/csv", download);
+        LoopbackServer.Responder js = LoopbackServer.answer(200, contentType, body.getBytes(StandardCharsets.UTF_8));
+        try (LoopbackServer server = new LoopbackServer((request, out) -> {
+            String target = request.target.toLowerCase(Locale.ROOT);
+            (target.contains("getfile") || target.contains("download") ? dl : js).respond(request, out);
+        })) {
+            sweep(sweep, server, (method, outcome, failures) -> {
+                if (download == CSV && isDownload(method)) {
+                    return;
+                }
+                // Warmup quotes a short text body as its message, as it always has.
+                boolean checkMessage = method.getDeclaringClass() == ZeroBounceSDK.class
+                        || expected.startsWith("HTML");
+                if (!outcome.successes.isEmpty() || outcome.errors.size() != 1
+                        || outcome.errors.get(0).getStatusCode() != 200
+                        || checkMessage && !outcome.errors.get(0).getErrors().toString().contains(expected)) {
+                    failures.add(label + " " + outcome);
+                }
+                if (isDownload(method) && outcome.out != null && new File(outcome.out).exists()) {
+                    failures.add(label + " " + outcome.signature + " wrote " + outcome.out);
+                }
+            });
+        }
+    }
+
+    /**
+     * A 2xx whose body is not JSON is an API error with status 200 on every JSON
+     * call, the ten bulk uploads included (they reported status 0). A single word
+     * is checked too: Gson's lenient parser reads it as a JSON string, so only
+     * the SDK's own first-character check refuses it.
+     */
+    @Test
+    void aNonJsonBodyOnA2xxIsAnErrorWithStatus200OnEveryPath() throws Exception {
+        bodySweep("words", "text/plain", "hello there", CSV, "not valid JSON");
+        bodySweep("word", "application/json", "hello", CSV, "not valid JSON");
+    }
+
+    /**
+     * An HTML page on a 2xx is reported as an HTML page, with status 200, on
+     * every path, downloads included, whatever the content type says: a page
+     * found by its doctype alone (no {@code <html>}, {@code <head>} or
+     * {@code <body>} tag) under application/json and under text/csv.
+     */
+    @Test
+    void anHtmlBodyOnA2xxIsReportedAsHtmlOnEveryPath() throws Exception {
+        String page = "<!DOCTYPE html><title>Blocked</title><p>Try later</p>";
+        bodySweep("html", "application/json", page, page.getBytes(StandardCharsets.UTF_8), "HTML error page");
     }
 }

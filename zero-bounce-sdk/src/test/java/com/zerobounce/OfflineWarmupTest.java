@@ -391,6 +391,23 @@ public class OfflineWarmupTest {
         assertFalse(body.get("auto_enable").getAsBoolean());
     }
 
+    /**
+     * The exact JSON bodies of testSmtpConfiguration and changeFromAddress, so a
+     * renamed or dropped wire field fails (X3).
+     */
+    @Test
+    public void smtpAndFromAddressBodiesUseTheDocumentedFieldNames() throws IOException {
+        mockAll(200, "{}");
+        warmup.testSmtpConfiguration("a@b.com", "bob", "pw", "smtp.example.com", 587,
+                succeed, this::failOnError);
+        assertEquals(com.google.gson.JsonParser.parseString("{\"from_address\":\"a@b.com\",\"username\":\"bob\","
+                + "\"password\":\"pw\",\"server\":\"smtp.example.com\",\"port\":587}"), only().json());
+
+        warmup.changeFromAddress("old@b.com", "new@b.com", succeed, this::failOnError);
+        assertEquals(com.google.gson.JsonParser.parseString("{\"team_id\":1,\"old_from_address\":\"old@b.com\","
+                + "\"new_from_address\":\"new@b.com\"}"), only().json());
+    }
+
     @Test
     public void addSendingAccountChecksTheOnboardingModel() throws IOException {
         mockAll(200, "{}");
