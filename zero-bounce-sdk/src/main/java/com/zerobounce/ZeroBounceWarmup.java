@@ -8,10 +8,7 @@ import com.google.gson.JsonParser;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -198,19 +195,12 @@ public class ZeroBounceWarmup {
 
             // A failed response with no body has no error stream at all; read
             // it as an empty body so the status is kept.
-            java.io.InputStream stream = result.status > 299 ? con.getErrorStream() : con.getInputStream();
-            StringBuilder content = new StringBuilder();
-            if (stream != null) {
-                Reader streamReader = new InputStreamReader(stream, StandardCharsets.UTF_8);
-                try (BufferedReader in = new BufferedReader(streamReader)) {
-                    String line;
-                    while ((line = in.readLine()) != null) {
-                        content.append(line);
-                    }
-                }
-            }
+            java.io.InputStream stream = SdkHttp.checkedBody(
+                    con, result.status > 299 ? con.getErrorStream() : con.getInputStream());
+            // The body as it arrived: a CSV download keeps its line breaks.
+            String content = stream == null ? "" : SdkHttp.readText(stream);
             con.disconnect();
-            result.body = content.toString();
+            result.body = content;
         } catch (Exception e) {
             // Rebuilt rather than wrapped: the original holds the URL and headers.
             errorCallback.onError(ErrorResponse.parseError(redact(e.getMessage(), secrets)));

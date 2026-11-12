@@ -203,7 +203,7 @@ final class Priority3Api {
                 con.setReadTimeout(sdk.priority3TimeoutMillis());
                 status = con.getResponseCode();
                 contentType = con.getContentType();
-                InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
+                InputStream stream = SdkHttp.checkedBody(con, status > 299 ? con.getErrorStream() : con.getInputStream());
                 // A failed response with no body has no error stream at all.
                 body = stream == null ? new byte[0] : stream.readAllBytes();
                 con.disconnect();
@@ -405,13 +405,6 @@ final class Priority3Api {
     private static MultipartResponse readMultipartResponse(CloseableHttpResponse response) throws IOException {
         HttpEntity responseEntity = response.getEntity();
         int status = response.getStatusLine().getStatusCode();
-        StringBuilder content = new StringBuilder();
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(responseEntity.getContent()))) {
-            String inputLine;
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-        }
-        return new MultipartResponse(status, content.toString());
+        return new MultipartResponse(status, SdkHttp.readText(responseEntity.getContent()));
     }
 }

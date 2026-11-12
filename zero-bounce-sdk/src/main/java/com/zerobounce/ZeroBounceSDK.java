@@ -160,12 +160,7 @@ public class ZeroBounceSDK {
      *                        trailing slash is removed
      */
     public void initialize(String apiKey, @Nullable String apiBaseUrl) {
-        setApiKey(apiKey);
-        timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
-        if (apiBaseUrl != null) {
-            requireHttpsUrl(apiBaseUrl);
-            this.apiBaseUrl = withoutTrailingSlashes(apiBaseUrl);
-        }
+        initialize(apiKey, apiBaseUrl, null, null);
     }
 
     /**
@@ -187,13 +182,28 @@ public class ZeroBounceSDK {
             @Nullable String listEvaluatorBaseUrl,
             @Nullable String inboxPlacementBaseUrl
     ) {
-        initialize(apiKey, apiBaseUrl);
+        // All or nothing: every URL is checked before anything is stored, so a
+        // call that throws leaves the key, the timeout and every base URL as
+        // they were, and a caller that catches the error cannot go on with a
+        // new key next to an old (or half-applied) set of URLs.
+        if (apiBaseUrl != null) {
+            requireHttpsUrl(apiBaseUrl);
+        }
         if (listEvaluatorBaseUrl != null) {
             requireHttpsUrl(listEvaluatorBaseUrl);
-            this.listEvaluatorBaseUrl = withoutTrailingSlashes(listEvaluatorBaseUrl);
         }
         if (inboxPlacementBaseUrl != null) {
             requireHttpsUrl(inboxPlacementBaseUrl);
+        }
+        setApiKey(apiKey);
+        timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
+        if (apiBaseUrl != null) {
+            this.apiBaseUrl = withoutTrailingSlashes(apiBaseUrl);
+        }
+        if (listEvaluatorBaseUrl != null) {
+            this.listEvaluatorBaseUrl = withoutTrailingSlashes(listEvaluatorBaseUrl);
+        }
+        if (inboxPlacementBaseUrl != null) {
             this.inboxPlacementBaseUrl = withoutTrailingSlashes(inboxPlacementBaseUrl);
         }
     }
@@ -854,15 +864,7 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile status: " + status);
 
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(responseEntity.getContent()))) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
-                }
-            }
-
-            rsp = content.toString();
+            rsp = SdkHttp.readText(responseEntity.getContent());
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
@@ -969,15 +971,7 @@ public class ZeroBounceSDK {
 
             logDebug("ZeroBounceSDK::sendFile status: " + status);
 
-            StringBuilder content = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(responseEntity.getContent()))) {
-                String inputLine;
-                while ((inputLine = in.readLine()) != null) {
-                    content.append(inputLine);
-                }
-            }
-
-            rsp = content.toString();
+            rsp = SdkHttp.readText(responseEntity.getContent());
 
             logDebug("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
@@ -2701,20 +2695,14 @@ public class ZeroBounceSDK {
      * NullPointerException that would lose the status.
      */
     private static String readResponse(@NotNull HttpURLConnection con, int status) throws IOException {
-        InputStream stream = status > 299 ? con.getErrorStream() : con.getInputStream();
+        InputStream stream = SdkHttp.checkedBody(con, status > 299 ? con.getErrorStream() : con.getInputStream());
         if (stream == null) {
             con.disconnect();
             return "";
         }
-        StringBuilder content = new StringBuilder();
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(stream))) {
-            String inputLine;
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-        }
+        String content = SdkHttp.readText(stream);
         con.disconnect();
-        return content.toString();
+        return content;
     }
 
     /**
@@ -2921,7 +2909,16 @@ public class ZeroBounceSDK {
      * @return true when the file was written
      */
     static boolean saveDownload(File file, byte[] body, OnErrorCallback errorCallback) {
-        try (FileOutputStream outStream = new FileOutputStream(file)) {
+        return saveDownload(file, body, errorCallback, FileOutputStream::new);
+    }
+
+    /** Opens the file a download is written to. Tests pass one that fails part-way. */
+    interface FileOpener {
+        OutputStream open(File file) throws IOException;
+    }
+
+    static boolean saveDownload(File file, byte[] body, OnErrorCallback errorCallback, FileOpener opener) {
+        try (OutputStream outStream = opener.open(file)) {
             outStream.write(body);
         } catch (IOException e) {
             logError("ZeroBounceSDK::getFile could not write the file", e);

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * The exact URL every base URL produces. The {@link ZBConstants} values end in
@@ -141,5 +142,50 @@ class OfflineBaseUrlTest {
                 "https://bulk.example.test/v2/listevaluator/fid/",
                 "https://bulk.example.test/api/ipt/test-types"
         ), urls, "suffix '" + suffix + "'");
+    }
+
+    /** Where getCredits, the list evaluator and the Inbox Placement Tester go, and with which key. */
+    private static List<String> sent(ZeroBounceSDK sdk, FakeApi api) {
+        api.clear();
+        sdk.getCredits(response -> {
+        }, IGNORE_ERROR);
+        sdk.getListEvaluatorResult("fid", response -> {
+        }, IGNORE_ERROR);
+        sdk.getInboxPlacementTestTypes(response -> {
+        }, IGNORE_ERROR);
+        List<String> sent = new ArrayList<>();
+        for (FakeApi.RecordedRequest request : api.records()) {
+            // The Inbox Placement Tester sends its key in a header the fake does not record.
+            sent.add(withoutQuery(request.url) + (request.url.contains("/ipt/") ? "" : " key=" + request.apiKey));
+        }
+        return sent;
+    }
+
+    /**
+     * An initialize that throws leaves the client exactly as it was: not the
+     * new key, not a base URL checked before the one that failed.
+     */
+    @Test
+    void initializeThatThrowsChangesNothing() {
+        List<String> before = List.of(
+                "https://api.zerobounce.net/v2/getcredits key=first-key",
+                "https://bulkapi.zerobounce.net/v2/listevaluator/fid/ key=first-key",
+                "https://bulkapi.zerobounce.net/api/ipt/test-types");
+        String eu = "https://api-eu.zerobounce.net/v2";
+        String listEvaluator = "https://bulk.example.test/v2/listevaluator";
+        List<Runnable> failing = new ArrayList<>();
+        ZeroBounceSDK sdk = new ZeroBounceSDK();
+        FakeApi api = new FakeApi();
+        sdk.transport = api;
+        failing.add(() -> sdk.initialize("second-key", "http://api.example.test/v2"));
+        failing.add(() -> sdk.initialize("second-key", eu, "http://bulk.example.test/v2/listevaluator", null));
+        failing.add(() -> sdk.initialize("second-key", eu, listEvaluator, "http://bulk.example.test/api/ipt"));
+        failing.add(() -> sdk.initialize("second-key", null, listEvaluator, "http://bulk.example.test/api/ipt"));
+        for (Runnable initialize : failing) {
+            sdk.initialize("first-key");
+            assertEquals(before, sent(sdk, api));
+            assertThrows(IllegalArgumentException.class, initialize::run);
+            assertEquals(before, sent(sdk, api));
+        }
     }
 }
