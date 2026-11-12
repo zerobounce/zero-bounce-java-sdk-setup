@@ -127,16 +127,8 @@ public class ZeroBounceWarmup {
         if (text == null) {
             return "";
         }
-        String value = text;
-        if (apiKey != null && !apiKey.isEmpty()) {
-            value = value.replace(apiKey, "***");
-        }
-        for (String secret : secrets) {
-            if (secret != null && !secret.isEmpty()) {
-                value = value.replace(secret, "***");
-            }
-        }
-        return value;
+        String value = ZeroBounceSDK.redact(text, apiKey);
+        return ZeroBounceSDK.redact(value, secrets);
     }
 
     /** Separated like ZeroBounceSDK.createUrlFrom so tests never touch the network. */

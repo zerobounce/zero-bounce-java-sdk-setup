@@ -184,6 +184,7 @@ final class Priority3Api {
             @NotNull ZeroBounceSDK.OnSuccessCallback<ZBGetFileResponse> successCallback,
             @NotNull ZeroBounceSDK.OnErrorCallback errorCallback
     ) {
+        errorCallback = sdk.redacting(errorCallback);
         int status;
         String contentType;
         byte[] body;
@@ -285,6 +286,7 @@ final class Priority3Api {
             ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse> successCallback,
             ZeroBounceSDK.OnErrorCallback errorCallback
     ) {
+        errorCallback = sdk.redacting(errorCallback);
         if (deliverMultipartTransport(url, fields, file.getName(), successCallback, errorCallback)) {
             return;
         }
@@ -315,6 +317,7 @@ final class Priority3Api {
             ZeroBounceSDK.OnSuccessCallback<ZBSendFileResponse> successCallback,
             ZeroBounceSDK.OnErrorCallback errorCallback
     ) {
+        errorCallback = sdk.redacting(errorCallback);
         if (deliverMultipartTransport(url, fields, fileName, successCallback, errorCallback)) {
             return;
         }
