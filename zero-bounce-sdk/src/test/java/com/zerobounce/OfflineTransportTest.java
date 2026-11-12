@@ -88,7 +88,10 @@ class OfflineTransportTest {
     /**
      * A 200 that declares 1000 bytes and closes after 33 is a transport failure
      * (status 0) on every path, like Apache's "Premature end of Content-Length
-     * delimited message body", and a download leaves no file.
+     * delimited message body", and a download leaves no file. From JDK 25,
+     * HttpURLConnection detects the short body itself and throws "Premature EOF"
+     * before the SDK's own check sees the end of the stream; either message is a
+     * transport failure.
      */
     @Test
     void everyRequestPathTreatsABodyCutShortAsATransportFailure() throws Exception {
@@ -105,7 +108,7 @@ class OfflineTransportTest {
                     return;
                 }
                 ErrorResponse error = outcome.errors.get(0);
-                if (error.getStatusCode() != 0 || !error.getErrors().toString().contains("Premature end")) {
+                if (error.getStatusCode() != 0 || !error.getErrors().toString().contains("Premature ")) {
                     failures.add(outcome.toString());
                 }
                 if (isDownload(method) && outcome.out != null && new File(outcome.out).exists()) {
