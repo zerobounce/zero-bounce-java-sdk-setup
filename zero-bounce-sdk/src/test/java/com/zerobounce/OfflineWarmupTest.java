@@ -843,4 +843,206 @@ public class OfflineWarmupTest {
             assertEquals(1, calls.get(), "HTTP " + status);
         }
     }
+
+    // -- every request on the wire (X3) ---------------------------------------
+
+    private static Map<String, String> query(String... pairs) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) {
+            map.put(pairs[i], pairs[i + 1]);
+        }
+        return map;
+    }
+
+    /** Asserts one request's method, path, whole query and whole JSON body (null for none). */
+    private void expectRequest(String label, String method, String path, Map<String, String> query, String body) {
+        Recorded record = only();
+        assertEquals(method, record.method, label);
+        assertEquals("https://warmup-api.zerobounce.net/api/v1/warmup" + path, record.path(), label);
+        assertEquals(query, record.query(), label);
+        if (body == null) {
+            assertTrue(record.body == null || record.body.isEmpty(), label + " sent a body: " + record.body);
+        } else {
+            assertEquals(com.google.gson.JsonParser.parseString(body), com.google.gson.JsonParser.parseString(record.body),
+                    label + " sent " + record.body);
+        }
+    }
+
+    /**
+     * Every public Warmup request method, with every wire field it can send pinned:
+     * method, path, the whole query and the whole JSON body. Renaming, dropping or
+     * adding a field fails here (X3). The table is checked against the methods
+     * found by reflection, so a new request method must be added to it.
+     */
+    @Test
+    public void everyWarmupRequestSendsExactlyTheDocumentedFields() throws IOException {
+        mockAll(200, "{}");
+        String a = "a@b.com";
+        Map<String, Runnable> calls = new LinkedHashMap<>();
+        calls.put("listSendingAccounts()", () -> {
+            warmup.listSendingAccounts(succeed, this::failOnError);
+            expectRequest("list", "GET", "/sending-accounts", query(), null);
+        });
+        calls.put("getSendingAccount(String)", () -> {
+            warmup.getSendingAccount(a, succeed, this::failOnError);
+            expectRequest("get", "GET", "/sending-account", query("from_address", a), null);
+        });
+        calls.put("addSendingAccount(String,String,AddSendingAccountOptions)", () -> {
+            warmup.addSendingAccount(a, "self_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions().setEngagementRuleId(2),
+                    succeed, this::failOnError);
+            // ignore_conflict is left out when the caller did not set it.
+            expectRequest("self_managed", "POST", "/sending-accounts", query(),
+                    "{\"from_address\":\"a@b.com\",\"onboarding_model\":\"self_managed\",\"engagement_rule_id\":2}");
+            warmup.addSendingAccount(a, "self_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions().setEngagementRuleId(4).setIgnoreConflict(false),
+                    succeed, this::failOnError);
+            expectRequest("self_managed ignore_conflict", "POST", "/sending-accounts", query(),
+                    "{\"from_address\":\"a@b.com\",\"onboarding_model\":\"self_managed\",\"engagement_rule_id\":4,"
+                            + "\"ignore_conflict\":false}");
+            warmup.addSendingAccount(a, "zb_managed", null, succeed, this::failOnError);
+            expectRequest("zb_managed bare", "POST", "/sending-accounts", query(),
+                    "{\"from_address\":\"a@b.com\",\"onboarding_model\":\"zb_managed\"}");
+            warmup.addSendingAccount(a, "zb_managed",
+                    new ZeroBounceWarmup.AddSendingAccountOptions()
+                            .setIgnoreConflict(true)
+                            .setEmailContent(new ZeroBounceWarmup.EmailContent()
+                                    .setCompanyName("Acme")
+                                    .setCompanyWebsite("https://acme.example")
+                                    .setCompanyDescription("Tools")
+                                    .setTypesOfEmails(List.of("newsletter"))
+                                    .setExampleEmail("Hi"))
+                            .setManagedSending(new ZeroBounceWarmup.ManagedSending()
+                                    .setWeekdaysOnly(false)
+                                    .setTimezone("Europe/Bucharest")
+                                    .setTimezoneOffset(-3.5)
+                                    .setWarmupStartDate("2026-12-01")),
+                    succeed, this::failOnError);
+            expectRequest("zb_managed full", "POST", "/sending-accounts", query(),
+                    "{\"from_address\":\"a@b.com\",\"onboarding_model\":\"zb_managed\",\"ignore_conflict\":true,"
+                            + "\"email_content\":{\"company_name\":\"Acme\",\"company_website\":\"https://acme.example\","
+                            + "\"company_description\":\"Tools\",\"types_of_emails\":[\"newsletter\"],"
+                            + "\"example_email\":\"Hi\"},"
+                            + "\"managed_sending\":{\"weekdays_only\":false,\"timezone\":\"Europe/Bucharest\","
+                            + "\"timezone_offset\":-3.5,\"warmup_start_date\":\"2026-12-01\"}}");
+        });
+        calls.put("updateSendingAccount(String,int,int,boolean)", () -> {
+            warmup.updateSendingAccount(a, 2, 3, true, succeed, this::failOnError);
+            expectRequest("update", "PUT", "/sending-accounts", query(),
+                    "{\"team_id\":1,\"from_address\":\"a@b.com\",\"engagement_rule_id\":2,\"status_id\":3,"
+                            + "\"auto_enable\":true}");
+        });
+        calls.put("deleteSendingAccount(String)", () -> {
+            warmup.deleteSendingAccount(a, succeed, this::failOnError);
+            expectRequest("delete", "DELETE", "/sending-accounts", query("from_address", a), null);
+        });
+        calls.put("changeFromAddress(String,String)", () -> {
+            warmup.changeFromAddress("old@b.com", "new@b.com", succeed, this::failOnError);
+            expectRequest("change", "PUT", "/smtp-credentials", query(),
+                    "{\"team_id\":1,\"old_from_address\":\"old@b.com\",\"new_from_address\":\"new@b.com\"}");
+        });
+        calls.put("listFromAddresses(String,Integer,Integer)", () -> {
+            warmup.listFromAddresses(null, null, null, succeed, this::failOnError);
+            expectRequest("from bare", "GET", "/from-addresses", query(), null);
+            warmup.listFromAddresses("acme", 10, 20, succeed, this::failOnError);
+            expectRequest("from", "GET", "/from-addresses",
+                    query("search_from", "acme", "offset", "10", "limit", "20"), null);
+        });
+        calls.put("getEngagementRules()", () -> {
+            warmup.getEngagementRules(succeed, this::failOnError);
+            expectRequest("rules", "GET", "/engagement-rules", query(), null);
+        });
+        calls.put("setEngagementRule(String,int)", () -> {
+            warmup.setEngagementRule(a, 3, succeed, this::failOnError);
+            expectRequest("rule", "PUT", "/engagement-rule", query("c_from", a), "{\"rule_id\":3}");
+        });
+        calls.put("getCustomEngagement(String)", () -> {
+            warmup.getCustomEngagement(a, succeed, this::failOnError);
+            expectRequest("custom get", "GET", "/custom-engagement/a%40b.com", query(), null);
+        });
+        String custom = "{\"c_from\":\"a@b.com\",\"reply_pct\":20,\"important_pct\":30,\"click_pct\":40}";
+        calls.put("createCustomEngagement(String,int,int,int)", () -> {
+            warmup.createCustomEngagement(a, 20, 30, 40, succeed, this::failOnError);
+            expectRequest("custom create", "POST", "/custom-engagement", query(), custom);
+        });
+        calls.put("updateCustomEngagement(String,int,int,int)", () -> {
+            warmup.updateCustomEngagement(a, 20, 30, 40, succeed, this::failOnError);
+            expectRequest("custom update", "PUT", "/custom-engagement", query(), custom);
+        });
+        calls.put("deleteCustomEngagement(String,int)", () -> {
+            warmup.deleteCustomEngagement(a, 2, succeed, this::failOnError);
+            expectRequest("custom delete", "DELETE", "/custom-engagement", query(),
+                    "{\"c_from\":\"a@b.com\",\"engagement_rule_id\":2}");
+        });
+        calls.put("getSeeds()", () -> {
+            warmup.getSeeds(succeed, this::failOnError);
+            expectRequest("seeds", "GET", "/seeds", query(), null);
+        });
+        calls.put("getSeedCount()", () -> {
+            warmup.getSeedCount(succeed, this::failOnError);
+            expectRequest("seed count", "GET", "/seed-count", query(), null);
+        });
+        calls.put("getProgressToday()", () -> {
+            warmup.getProgressToday(succeed, this::failOnError);
+            expectRequest("progress", "GET", "/progress-today", query(), null);
+        });
+        calls.put("getSentToday()", () -> {
+            warmup.getSentToday(succeed, this::failOnError);
+            expectRequest("sent", "GET", "/sent-today", query(), null);
+        });
+        calls.put("getEmailsPerDay()", () -> {
+            warmup.getEmailsPerDay(succeed, this::failOnError);
+            expectRequest("per day", "GET", "/emails-per-day", query(), null);
+        });
+        calls.put("getStatistics(String)", () -> {
+            warmup.getStatistics(a, succeed, this::failOnError);
+            expectRequest("stats", "GET", "/statistics", query("from_address", a), null);
+        });
+        calls.put("getStatisticsPerDay(String,String,String)", () -> {
+            warmup.getStatisticsPerDay(a, "2026-01-02", "2026-01-09", succeed, this::failOnError);
+            expectRequest("stats per day", "GET", "/statistics-per-day",
+                    query("from_address", a, "start_date", "2026-01-02", "end_date", "2026-01-09"), null);
+        });
+        calls.put("getStatisticsDetailed(String)", () -> {
+            warmup.getStatisticsDetailed(a, succeed, this::failOnError);
+            expectRequest("stats detailed", "GET", "/statistics-detailed", query("c_from", a), null);
+        });
+        calls.put("getFromAddressStatistics(String)", () -> {
+            warmup.getFromAddressStatistics(a, succeed, this::failOnError);
+            expectRequest("from stats", "GET", "/from-address-statistics", query("from_address", a), null);
+        });
+        calls.put("checkDomainDmarc(String,String)", () -> {
+            warmup.checkDomainDmarc(a, null, succeed, this::failOnError);
+            expectRequest("dmarc bare", "GET", "/check-domain-dmarc", query("from_address", a), null);
+            warmup.checkDomainDmarc(a, "s1", succeed, this::failOnError);
+            expectRequest("dmarc", "GET", "/check-domain-dmarc", query("from_address", a, "dkim_selector", "s1"), null);
+        });
+        calls.put("testSmtpConfiguration(String,String,String,String,int)", () -> {
+            warmup.testSmtpConfiguration(a, "bob", "pw", "smtp.example.com", 465, succeed, this::failOnError);
+            expectRequest("smtp", "POST", "/test-smtp-configuration", query(),
+                    "{\"from_address\":\"a@b.com\",\"username\":\"bob\",\"password\":\"pw\","
+                            + "\"server\":\"smtp.example.com\",\"port\":465}");
+        });
+        for (Runnable call : calls.values()) {
+            call.run();
+        }
+
+        mockAll(200, "email\na@b.com\n", "text/csv");
+        calls.put("downloadSeeds()", () -> {
+            warmup.downloadSeeds(succeedText, this::failOnError);
+            expectRequest("seeds csv", "GET", "/seeds/download", query(), null);
+        });
+        calls.put("downloadStatistics(String)", () -> {
+            warmup.downloadStatistics(a, succeedText, this::failOnError);
+            expectRequest("stats csv", "GET", "/statistics/download", query("c_from", a), null);
+        });
+        calls.get("downloadSeeds()").run();
+        calls.get("downloadStatistics(String)").run();
+
+        java.util.TreeSet<String> reflected = new java.util.TreeSet<>();
+        for (java.lang.reflect.Method method : RequestSweep.requestMethods(ZeroBounceWarmup.class)) {
+            reflected.add(RequestSweep.signature(method));
+        }
+        assertEquals(reflected, new java.util.TreeSet<>(calls.keySet()), "every Warmup request method is pinned");
+    }
 }

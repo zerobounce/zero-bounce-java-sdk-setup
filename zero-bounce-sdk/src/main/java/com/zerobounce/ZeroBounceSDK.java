@@ -257,10 +257,18 @@ public class ZeroBounceSDK {
         return redact(message, apiKey);
     }
 
+    /** What a message becomes when a secret is left in it in a spelling {@link #redact} cannot replace. */
+    static final String CREDENTIAL_OMITTED = "The response body was omitted because it contained a credential.";
+
     /**
      * Replaces each secret in {@code text} with ***, in every form a request
      * carries it and a server can quote it back: as is (a JSON or multipart
-     * body), URL-encoded (a query string or a form) and JSON-escaped.
+     * body), URL-encoded (a query string or a form) and JSON-escaped. Then,
+     * because a server can nest those encodings in more ways than any list
+     * of spellings holds, it decodes what is left up to three times, in any
+     * order (URL-decoding with and without {@code +} as a space, and JSON
+     * unescaping); when any of those views still holds a secret, the whole
+     * text is dropped for {@link #CREDENTIAL_OMITTED}.
      */
     static @Nullable String redact(@Nullable String text, String... secrets) {
         if (text == null) {
@@ -275,7 +283,97 @@ public class ZeroBounceSDK {
                 value = value.replace(form, "***");
             }
         }
-        return value;
+        return exposesSecret(value, secrets) ? CREDENTIAL_OMITTED : value;
+    }
+
+    /** Whether {@code text}, or any view of it decoded up to three times, holds one of the secrets. */
+    static boolean exposesSecret(String text, String... secrets) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        List<String> layer = List.of(text);
+        seen.add(text);
+        for (int depth = 0; ; depth++) {
+            for (String view : layer) {
+                for (String secret : secrets) {
+                    if (secret != null && !secret.isEmpty() && view.contains(secret)) {
+                        return true;
+                    }
+                }
+            }
+            if (depth == 3) {
+                return false;
+            }
+            List<String> next = new java.util.ArrayList<>();
+            for (String view : layer) {
+                for (String decoded : new String[]{
+                        percentDecoded(view, false), percentDecoded(view, true), jsonUnescaped(view)}) {
+                    if (seen.add(decoded)) {
+                        next.add(decoded);
+                    }
+                }
+            }
+            layer = next;
+        }
+    }
+
+    /** URL-decodes every valid {@code %XX}, and {@code +} as a space when asked; anything else is kept. */
+    private static String percentDecoded(String text, boolean plusIsSpace) {
+        if (text.indexOf('%') < 0 && (!plusIsSpace || text.indexOf('+') < 0)) {
+            return text;
+        }
+        byte[] raw = text.getBytes(StandardCharsets.UTF_8);
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream(raw.length);
+        for (int i = 0; i < raw.length; i++) {
+            if (raw[i] == '%' && i + 2 < raw.length && hexValue(raw[i + 1]) >= 0 && hexValue(raw[i + 2]) >= 0) {
+                bytes.write(hexValue(raw[i + 1]) * 16 + hexValue(raw[i + 2]));
+                i += 2;
+            } else if (raw[i] == '+' && plusIsSpace) {
+                bytes.write(' ');
+            } else {
+                bytes.write(raw[i]);
+            }
+        }
+        return bytes.toString(StandardCharsets.UTF_8);
+    }
+
+    private static int hexValue(byte b) {
+        if (b >= '0' && b <= '9') return b - '0';
+        if (b >= 'a' && b <= 'f') return b - 'a' + 10;
+        if (b >= 'A' && b <= 'F') return b - 'A' + 10;
+        return -1;
+    }
+
+    /**
+     * Undoes JSON string escapes (a backslash before a quote, a backslash, a
+     * slash, b, f, n, r, t, or u and four hex digits); anything else is kept.
+     */
+    private static String jsonUnescaped(String text) {
+        if (text.indexOf('\\') < 0) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c != '\\' || i + 1 >= text.length()) {
+                out.append(c);
+                continue;
+            }
+            char escape = text.charAt(i + 1);
+            int simple = "\"\\/bfnrt".indexOf(escape);
+            if (simple >= 0) {
+                out.append("\"\\/\b\f\n\r\t".charAt(simple));
+                i++;
+            } else if (escape == 'u' && i + 5 < text.length()
+                    && hexValue((byte) text.charAt(i + 2)) >= 0 && hexValue((byte) text.charAt(i + 3)) >= 0
+                    && hexValue((byte) text.charAt(i + 4)) >= 0 && hexValue((byte) text.charAt(i + 5)) >= 0
+                    && text.charAt(i + 2) < 128 && text.charAt(i + 3) < 128
+                    && text.charAt(i + 4) < 128 && text.charAt(i + 5) < 128) {
+                out.append((char) Integer.parseInt(text.substring(i + 2, i + 6), 16));
+                i += 5;
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     /**
@@ -2706,7 +2804,9 @@ public class ZeroBounceSDK {
         if (successCallback == null) {
             return;
         }
-        boolean emptyAllowed = emptyIsSuccess != null ? emptyIsSuccess : status == 204;
+        // Only a body with nothing in it can be the documented empty success; a
+        // blank one (spaces, a line break) is not JSON.
+        boolean emptyAllowed = (emptyIsSuccess != null ? emptyIsSuccess : status == 204) && rsp.isEmpty();
         if (typeToken != null && rsp.trim().isEmpty() && !emptyAllowed) {
             // A typed endpoint that answers 2xx with no body did not succeed.
             // The Inbox Placement Tester's DELETE legitimately carries nothing
@@ -2806,8 +2906,10 @@ public class ZeroBounceSDK {
             // A body the SDK cannot decode, such as a boolean field that holds
             // "yes". The caller's success callback is called outside this try,
             // so an exception it throws is not reported here.
+            // It arrived with its status: a 2xx the SDK cannot read is an API
+            // error with that status, not a transport failure (status 0).
             logError("ZeroBounceSDK::deliverJson failed", e);
-            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e), status));
             return;
         }
         successCallback.onSuccess(response);
@@ -2841,7 +2943,7 @@ public class ZeroBounceSDK {
             response = gson.fromJson(rsp, ZBSendFileResponse.class);
         } catch (RuntimeException e) {
             logError("ZeroBounceSDK::sendFile failed", e);
-            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
+            errorCallback.onError(ErrorResponse.parseError(redactedFailure(e), status));
             return;
         }
         successCallback.onSuccess(response);

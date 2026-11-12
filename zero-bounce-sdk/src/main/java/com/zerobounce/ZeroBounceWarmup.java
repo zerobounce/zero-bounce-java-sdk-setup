@@ -229,7 +229,9 @@ public class ZeroBounceWarmup {
         if (result == null) {
             return;
         }
-        if (result.status == 204 || result.body.trim().isEmpty()) {
+        // Only a body with nothing in it is the documented empty success; a
+        // blank one (spaces, a line break) is not JSON and is refused below.
+        if (result.status == 204 || result.body.isEmpty()) {
             successCallback.onSuccess(null);
             return;
         }

@@ -3,12 +3,6 @@ package com.zerobounce;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.Strictness;
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-
-import java.io.IOException;
-import java.io.StringReader;
 
 /**
  * Turns HTTP failures, HTML pages, and empty or non-JSON bodies into a short message.
@@ -46,30 +40,178 @@ final class HttpMessages {
         if (status > 299) {
             return messageFromBody(trimmed, status);
         }
-        if (trimmed.charAt(0) != '{' && trimmed.charAt(0) != '[') {
-            return "ZeroBounce returned a response that is not valid JSON.";
-        }
-        return isStrictJson(trimmed) ? null : "ZeroBounce returned a response that is not valid JSON.";
+        // The body as it arrived, not trimmed: String.trim() drops every
+        // character up to U+0020 (NUL and the other controls), which JSON
+        // does not allow around a value.
+        return isStrictJson(body) ? null : "ZeroBounce returned a response that is not valid JSON.";
     }
 
     /**
-     * Whether a body is one JSON value as RFC 8259 defines it. Gson's own
-     * parsers are lenient: they read {@code {a:1}}, {@code {'a':'b'}},
-     * {@code [1,]}, {@code NaN} and an unquoted word as JSON, so a 2xx body
-     * like that would reach the caller as a result.
+     * Whether a body is exactly one JSON value as RFC 8259 defines it, with
+     * only space, tab, CR and LF around it. Gson's own parsers are lenient:
+     * they read {@code {a:1}}, {@code {'a':'b'}}, {@code [1,]}, {@code NaN}
+     * and an unquoted word as JSON, and even its strict reader skips a byte
+     * order mark and reads an empty body as null, so a 2xx body like that
+     * would reach the caller as a result.
      */
     static boolean isStrictJson(String body) {
         if (body == null) {
             return false;
         }
-        try {
-            JsonReader reader = new JsonReader(new StringReader(body));
-            reader.setStrictness(Strictness.STRICT);
-            JsonParser.parseReader(reader);
-            return reader.peek() == JsonToken.END_DOCUMENT;
-        } catch (IOException | RuntimeException e) {
+        int[] pos = {skipWhitespace(body, 0)};
+        if (!strictValue(body, pos, 0)) {
             return false;
         }
+        return skipWhitespace(body, pos[0]) == body.length();
+    }
+
+    private static int skipWhitespace(String text, int at) {
+        while (at < text.length()) {
+            char c = text.charAt(at);
+            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+                break;
+            }
+            at++;
+        }
+        return at;
+    }
+
+    /** Reads one value at {@code pos[0]}, leaving {@code pos[0]} just after it. */
+    private static boolean strictValue(String text, int[] pos, int depth) {
+        if (pos[0] >= text.length() || depth > 512) {
+            return false;
+        }
+        char c = text.charAt(pos[0]);
+        if (c == '{' || c == '[') {
+            char close = c == '{' ? '}' : ']';
+            pos[0] = skipWhitespace(text, pos[0] + 1);
+            if (pos[0] < text.length() && text.charAt(pos[0]) == close) {
+                pos[0]++;
+                return true;
+            }
+            while (true) {
+                if (c == '{') {
+                    if (pos[0] >= text.length() || text.charAt(pos[0]) != '"' || !strictString(text, pos)) {
+                        return false;
+                    }
+                    pos[0] = skipWhitespace(text, pos[0]);
+                    if (pos[0] >= text.length() || text.charAt(pos[0]) != ':') {
+                        return false;
+                    }
+                    pos[0] = skipWhitespace(text, pos[0] + 1);
+                }
+                if (!strictValue(text, pos, depth + 1)) {
+                    return false;
+                }
+                pos[0] = skipWhitespace(text, pos[0]);
+                if (pos[0] >= text.length()) {
+                    return false;
+                }
+                char next = text.charAt(pos[0]);
+                pos[0]++;
+                if (next == close) {
+                    return true;
+                }
+                if (next != ',') {
+                    return false;
+                }
+                pos[0] = skipWhitespace(text, pos[0]);
+            }
+        }
+        if (c == '"') {
+            return strictString(text, pos);
+        }
+        for (String literal : new String[]{"true", "false", "null"}) {
+            if (text.startsWith(literal, pos[0])) {
+                pos[0] += literal.length();
+                return true;
+            }
+        }
+        return strictNumber(text, pos);
+    }
+
+    private static boolean strictString(String text, int[] pos) {
+        int at = pos[0] + 1;
+        while (at < text.length()) {
+            char c = text.charAt(at);
+            if (c == '"') {
+                pos[0] = at + 1;
+                return true;
+            }
+            if (c < 0x20) {
+                return false;
+            }
+            if (c == '\\') {
+                if (at + 1 >= text.length()) {
+                    return false;
+                }
+                char escape = text.charAt(at + 1);
+                if (escape == 'u') {
+                    if (at + 6 > text.length()) {
+                        return false;
+                    }
+                    for (int i = at + 2; i < at + 6; i++) {
+                        char hex = text.charAt(i);
+                        if (!(hex >= '0' && hex <= '9' || hex >= 'a' && hex <= 'f' || hex >= 'A' && hex <= 'F')) {
+                            return false;
+                        }
+                    }
+                    at += 6;
+                    continue;
+                }
+                if ("\"\\/bfnrt".indexOf(escape) < 0) {
+                    return false;
+                }
+                at += 2;
+                continue;
+            }
+            at++;
+        }
+        return false;
+    }
+
+    private static boolean strictNumber(String text, int[] pos) {
+        int at = pos[0];
+        if (at < text.length() && text.charAt(at) == '-') {
+            at++;
+        }
+        if (at >= text.length()) {
+            return false;
+        }
+        if (text.charAt(at) == '0') {
+            at++;
+        } else if (text.charAt(at) >= '1' && text.charAt(at) <= '9') {
+            at = digits(text, at);
+        } else {
+            return false;
+        }
+        if (at < text.length() && text.charAt(at) == '.') {
+            int end = digits(text, at + 1);
+            if (end == at + 1) {
+                return false;
+            }
+            at = end;
+        }
+        if (at < text.length() && (text.charAt(at) == 'e' || text.charAt(at) == 'E')) {
+            at++;
+            if (at < text.length() && (text.charAt(at) == '+' || text.charAt(at) == '-')) {
+                at++;
+            }
+            int end = digits(text, at);
+            if (end == at) {
+                return false;
+            }
+            at = end;
+        }
+        pos[0] = at;
+        return true;
+    }
+
+    private static int digits(String text, int at) {
+        while (at < text.length() && text.charAt(at) >= '0' && text.charAt(at) <= '9') {
+            at++;
+        }
+        return at;
     }
 
     /**
