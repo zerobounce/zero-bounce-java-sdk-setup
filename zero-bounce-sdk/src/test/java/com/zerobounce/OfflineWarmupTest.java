@@ -539,7 +539,8 @@ public class OfflineWarmupTest {
         mockAll(200, "seed,provider\na@b.com,gmail\n", "text/csv");
         List<String> seen = new ArrayList<>();
         warmup.downloadSeeds(seen::add, this::failOnError);
-        assertEquals("seed,provider" + "a@b.com,gmail", seen.get(0));
+        // The body exactly as served, line breaks included.
+        assertEquals("seed,provider\na@b.com,gmail\n", seen.get(0));
 
         recorded.clear();
         mockAll(200, "day,sent", "text/csv");

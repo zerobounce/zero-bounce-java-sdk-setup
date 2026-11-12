@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A response cut short of its `Content-Length` (the connection closed mid-body) is an error with status 0 and the message "Premature end of Content-Length delimited message body (expected: 1000; received: 33)", the same as `getFile` and `scoringGetFile` already gave. In 3.0.1 every call sent through `HttpURLConnection` read the cut-short body as if it were complete: every `ZeroBounceSDK` call except `getFile`, `scoringGetFile` and the multipart uploads, and every `ZeroBounceWarmup` call. `emailFinderGetFile` and `domainSearchGetFile` saved the partial file and reported success, and a JSON call whose body happened to end in valid JSON (`{"Credits":"5"}` followed by nothing) reached the success callback. They now write no file.
+- `initialize(apiKey, apiBaseUrl)` and `initialize(apiKey, apiBaseUrl, listEvaluatorBaseUrl, inboxPlacementBaseUrl)` change nothing when they throw `IllegalArgumentException` for a URL that is not https. In 3.0.1 the two-argument form stored the new key before checking the URL, and the four-argument form also stored the new API base URL (and the list evaluator URL when the Inbox Placement Tester URL was the one refused), so a caller that caught the exception went on with the new key against the old or half-applied URLs. Every URL is now checked before anything is stored.
+- `ZeroBounceWarmup.downloadSeeds` and `downloadStatistics` return the CSV exactly as the API sent it, line breaks included (LF or CRLF, with or without a final newline). In 2.2.0, 3.0.0 and 3.0.1 they read the body line by line and joined the lines without separators, so `seed,provider\nseed1@example.com,gmail\n` came back as `seed,providerseed1@example.com,gmail` and could not be split into rows.
+- Every other call reads its response body as received too, decoded as UTF-8. Since 1.1.2 the JSON calls and the uploads had read it line by line in the same way. JSON was parsed the same either way, but the error message taken from a multi-line non-JSON error body ran its lines together (`first linesecond line`); it now keeps the line breaks.
+- Repository only: tests send every public request method of `ZeroBounceSDK` and `ZeroBounceWarmup`, found by reflection, to a real HTTP server on a loopback socket and fail if a body cut short is not an error with status 0 (and a download leaves a file), if a 301, 302, 303, 307 or 308 with a `Location` is followed or not reported with its status, if any request goes out without a non-zero connect and read timeout, or if `{"success": false}` on an HTTP 200 does not reach the error callback (the uploads included), or if any path joins the lines of a body; the Warmup text downloads are compared byte for byte with what the server sent; a server that never answers ends in a timeout on each kind of transport, and a download whose write fails part-way leaves no file.
+
 ## [3.0.1] - 2026-11-11
 
 ### Fixed
