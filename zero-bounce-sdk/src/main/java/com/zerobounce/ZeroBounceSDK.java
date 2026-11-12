@@ -265,7 +265,8 @@ public class ZeroBounceSDK {
      * carries it and a server can quote it back: as is (a JSON or multipart
      * body), URL-encoded (a query string or a form) and JSON-escaped. Then,
      * because a server can nest those encodings in more ways than any list
-     * of spellings holds, it decodes what is left up to three times, in any
+     * of spellings holds, it decodes what is left up to four times (the
+     * SDK's own request encoding plus three layers a server can add), in any
      * order (URL-decoding with and without {@code +} as a space, and JSON
      * unescaping); when any of those views still holds a secret, the whole
      * text is dropped for {@link #CREDENTIAL_OMITTED}.
@@ -286,7 +287,7 @@ public class ZeroBounceSDK {
         return exposesSecret(value, secrets) ? CREDENTIAL_OMITTED : value;
     }
 
-    /** Whether {@code text}, or any view of it decoded up to three times, holds one of the secrets. */
+    /** Whether {@code text}, or any view of it decoded up to four times, holds one of the secrets. */
     static boolean exposesSecret(String text, String... secrets) {
         java.util.Set<String> seen = new java.util.HashSet<>();
         List<String> layer = List.of(text);
@@ -299,7 +300,7 @@ public class ZeroBounceSDK {
                     }
                 }
             }
-            if (depth == 3) {
+            if (depth == 4) {
                 return false;
             }
             List<String> next = new java.util.ArrayList<>();
@@ -1632,41 +1633,45 @@ public class ZeroBounceSDK {
                 parameters,
                 null,
                 null,
-                new TypeToken<JsonElement>() {
+                new TypeToken<S3FileList>() {
                 },
-                payload -> {
-                    // A payload the SDK cannot read is its own error; the
-                    // caller's callback runs outside the try.
-                    List<ZBS3ListFileEntry> files;
-                    try {
-                        files = parseS3FileList(payload);
-                    } catch (RuntimeException e) {
-                        errorCallback.onError(ErrorResponse.parseError(redactedFailure(e)));
-                        return;
-                    }
-                    successCallback.onSuccess(files);
-                },
+                payload -> successCallback.onSuccess(payload.files),
                 errorCallback
         );
     }
 
     /**
-     * listS3files is documented as {"success": true, "files": [...]} but also
-     * answers with a bare array, so both shapes are accepted.
+     * The listS3files answer. It is documented as {"success": true, "files": [...]}
+     * but also comes as a bare array, so both shapes are read. Anything else (a
+     * number, a string, a boolean) is the wrong shape and fails to decode, so
+     * the call reports an API error with the response's status, not an empty list.
      */
-    private List<ZBS3ListFileEntry> parseS3FileList(@Nullable JsonElement payload) {
-        Type listType = new TypeToken<List<ZBS3ListFileEntry>>() {
-        }.getType();
-        if (payload == null || payload.isJsonNull()) {
-            return new ArrayList<>();
+    @com.google.gson.annotations.JsonAdapter(S3FileList.Reader.class)
+    static final class S3FileList {
+        final List<ZBS3ListFileEntry> files;
+
+        S3FileList(List<ZBS3ListFileEntry> files) {
+            this.files = files;
         }
-        if (payload.isJsonArray()) {
-            return gson.fromJson(payload, listType);
+
+        static final class Reader implements com.google.gson.JsonDeserializer<S3FileList> {
+            @Override
+            public S3FileList deserialize(JsonElement json, Type type,
+                                          com.google.gson.JsonDeserializationContext context) {
+                Type listType = new TypeToken<List<ZBS3ListFileEntry>>() {
+                }.getType();
+                if (json.isJsonArray()) {
+                    return new S3FileList(context.deserialize(json, listType));
+                }
+                if (json.isJsonObject()) {
+                    JsonElement files = json.getAsJsonObject().get("files");
+                    List<ZBS3ListFileEntry> list = files == null || files.isJsonNull()
+                            ? null : context.deserialize(files, listType);
+                    return new S3FileList(list == null ? new ArrayList<>() : list);
+                }
+                throw new com.google.gson.JsonParseException(HttpMessages.WRONG_SHAPE);
+            }
         }
-        if (payload.isJsonObject() && payload.getAsJsonObject().has("files")) {
-            return gson.fromJson(payload.getAsJsonObject().get("files"), listType);
-        }
-        return new ArrayList<>();
     }
 
     /** Validates a file in your Amazon S3 bucket (POST /validateS3file). */
@@ -2912,6 +2917,11 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e), status));
             return;
         }
+        if (response == null && !JsonElement.class.isAssignableFrom(typeToken.getRawType())) {
+            // A JSON null is valid JSON but not the object a typed call returns.
+            errorCallback.onError(ErrorResponse.parseError(HttpMessages.WRONG_SHAPE, status));
+            return;
+        }
         successCallback.onSuccess(response);
     }
 
@@ -2944,6 +2954,10 @@ public class ZeroBounceSDK {
         } catch (RuntimeException e) {
             logError("ZeroBounceSDK::sendFile failed", e);
             errorCallback.onError(ErrorResponse.parseError(redactedFailure(e), status));
+            return;
+        }
+        if (response == null) {
+            errorCallback.onError(ErrorResponse.parseError(HttpMessages.WRONG_SHAPE, status));
             return;
         }
         successCallback.onSuccess(response);

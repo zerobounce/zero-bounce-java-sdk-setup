@@ -8,6 +8,8 @@ import org.mockito.MockedStatic;
 
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -105,6 +108,100 @@ class OfflineStrictJsonCorpusTest {
         for (Entry entry : corpus()) {
             sweep(index++, entry, failures);
         }
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /** A failure line without the whole (possibly huge) body in it. */
+    private static List<String> shortened(List<String> failures) {
+        List<String> out = new ArrayList<>();
+        for (String failure : failures) {
+            out.add(failure.length() <= 600 ? failure
+                    : failure.substring(0, 300) + " ... " + failure.substring(failure.length() - 300));
+        }
+        return out;
+    }
+
+    /**
+     * The strict check's depth limit: a 2xx body nested 200000 deep is "not valid
+     * JSON", an API error with status 200 on every JSON call, and never a
+     * StackOverflowError thrown out of the call (or out of the strict check),
+     * which is what a recursive reader without the limit does.
+     */
+    @Test
+    void aBodyNestedPastTheDepthLimitIsAnErrorWithStatus200OnEveryJsonCall() throws Exception {
+        String deep = "[".repeat(200_000) + "]".repeat(200_000);
+        assertFalse(HttpMessages.isStrictJson(deep), "200000 nested arrays are past the limit");
+        assertFalse(HttpMessages.isStrictJson("{\"a\":" + deep + "}"), "nested under an object");
+        assertTrue(HttpMessages.isStrictJson("[".repeat(500) + "]".repeat(500)), "500 nested arrays are within it");
+        List<String> failures = new ArrayList<>();
+        sweep(10_000, new Entry(false, deep), failures);
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", shortened(failures)));
+    }
+
+    /** The type a request method hands its success callback. */
+    private static Type successType(Method method) {
+        for (Type type : method.getGenericParameterTypes()) {
+            if (type instanceof ParameterizedType
+                    && ((ParameterizedType) type).getRawType() == ZeroBounceSDK.OnSuccessCallback.class) {
+                return ((ParameterizedType) type).getActualTypeArguments()[0];
+            }
+        }
+        throw new AssertionError(method + " has no success callback");
+    }
+
+    /**
+     * Wrong shape (check E7): a 2xx body that is strict JSON but not the shape a
+     * typed call returns is an API error with status 200 on every typed call,
+     * never a default-filled result, an empty list, a null result or an error
+     * without a status. Typed calls are found by reflection: every request
+     * method of {@link ZeroBounceSDK} that is not a download and does not hand
+     * back raw JSON ({@link com.google.gson.JsonElement}). Warmup calls hand back
+     * any JSON value (a bare number or array wrapped under "data"), so no JSON
+     * value is the wrong shape for them.
+     */
+    @Test
+    void aWrongShapeIsAnErrorWithStatus200OnEveryTypedCall() throws Exception {
+        List<String> failures = new ArrayList<>();
+        int typed = 0;
+        int index = 20_000;
+        for (String body : List.of("0", "\"x\"", "true", "null", "[]", "[{}]", "{\"files\":3}")) {
+            Path dir = tempDir.resolve("shape-" + index++);
+            Files.createDirectories(dir);
+            RequestSweep sweep = new RequestSweep(dir);
+            LoopbackServer.Responder js = LoopbackServer.answer(200, "application/json",
+                    body.getBytes(StandardCharsets.UTF_8));
+            try (LoopbackServer server = new LoopbackServer(js)) {
+                ZeroBounceSDK sdk = server.sdk();
+                sdk.initialize(KEY);
+                try (MockedStatic<HttpClients> ignored = server.apacheClients()) {
+                    for (Method method : RequestSweep.allRequestMethods()) {
+                        if (method.getDeclaringClass() != ZeroBounceSDK.class || isDownload(method)) {
+                            continue;
+                        }
+                        Type type = successType(method);
+                        if (type == com.google.gson.JsonElement.class) {
+                            continue;
+                        }
+                        boolean list = type instanceof ParameterizedType
+                                && ((ParameterizedType) type).getRawType() == List.class;
+                        if (list && body.startsWith("[")) {
+                            continue;
+                        }
+                        if (!list && body.startsWith("{")) {
+                            continue;
+                        }
+                        typed++;
+                        server.clear();
+                        RequestSweep.Outcome outcome = sweep.invoke(sdk, method);
+                        if (outcome.thrown != null || server.requests().isEmpty() || !outcome.successes.isEmpty()
+                                || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != 200) {
+                            failures.add(body + " " + outcome);
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(typed > 200, "typed calls swept: " + typed);
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
     }
 

@@ -9,6 +9,9 @@ import com.google.gson.JsonParser;
  */
 final class HttpMessages {
 
+    /** The error for a 2xx body that is valid JSON but not the shape the call returns (a JSON null, a number for a list). */
+    static final String WRONG_SHAPE = "ZeroBounce returned JSON that is not the shape this call returns.";
+
     private HttpMessages() {
     }
 

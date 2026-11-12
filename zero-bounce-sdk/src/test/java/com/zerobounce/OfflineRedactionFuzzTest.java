@@ -23,7 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Redaction is closed under encoding (checks S4 and S7): a secret quoted back in
- * any composition of up to three encodings (URL with a space as {@code %20}, URL
+ * any composition of up to four encodings (the SDK's own request encoding plus
+ * three a server can add) (URL with a space as {@code %20}, URL
  * with a space as {@code +}, JSON, JSON with {@code /} as a backslash and a slash)
  * never appears in any decoded view of what the caller gets. The compositions are
  * random, from a fixed seed so a failure repeats; the decoder here is the test's
@@ -60,9 +61,9 @@ class OfflineRedactionFuzzTest {
         }
     }
 
-    /** One random composition of up to three encodings, and its name. */
+    /** One random composition of up to four encodings, and its name. */
     private static String[] compose(Random random, String secret) {
-        int layers = 1 + random.nextInt(3);
+        int layers = 1 + random.nextInt(4);
         String value = secret;
         StringBuilder name = new StringBuilder();
         for (int i = 0; i < layers; i++) {
@@ -124,11 +125,11 @@ class OfflineRedactionFuzzTest {
         return out.toString();
     }
 
-    /** The text and every view of it decoded up to three times, in any order. */
+    /** The text and every view of it decoded up to four times, in any order. */
     static Set<String> views(String text) {
         Set<String> all = new LinkedHashSet<>(List.of(text));
         List<String> layer = List.of(text);
-        for (int depth = 0; depth < 3; depth++) {
+        for (int depth = 0; depth < 4; depth++) {
             List<String> next = new ArrayList<>();
             for (String view : layer) {
                 for (String decoded : List.of(percentDecode(view, false), percentDecode(view, true), jsonUnescape(view))) {
@@ -178,6 +179,72 @@ class OfflineRedactionFuzzTest {
                 if (exposes(message, secret)) {
                     failures.add(encoded[1] + ": " + message);
                 }
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /** Every %XX in {@code text} with lower-case hex digits. */
+    private static String lowerHex(String text) {
+        StringBuilder out = new StringBuilder(text);
+        for (int i = 0; i + 2 < out.length(); i++) {
+            if (out.charAt(i) == '%') {
+                out.setCharAt(i + 1, Character.toLowerCase(out.charAt(i + 1)));
+                out.setCharAt(i + 2, Character.toLowerCase(out.charAt(i + 2)));
+            }
+        }
+        return out.toString();
+    }
+
+    /** Every UTF-16 unit of {@code text} as a JSON u-escape (backslash, u, four hex digits), lower-case hex. */
+    private static String unicodeEscaped(String text) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            out.append(String.format("\\u%04x", (int) text.charAt(i)));
+        }
+        return out.toString();
+    }
+
+    /** A secret outside the BMP, so its JSON u-escaped spelling is a surrogate pair. */
+    private static final String ASTRAL = "pw\uD83D\uDE00x/\"9";
+    /** A secret whose only special character is a space, so its URL spelling has no %. */
+    private static final String SPACED = "sp ace7";
+
+    /**
+     * Each decode step of the check on its own, so removing one fails here and not
+     * only by chance in the random compositions: percent-decoding with lower-case
+     * hex and after an invalid UTF-8 run, {@code +} as a space, JSON unescaping
+     * incl. u-escapes (backslash, u, four hex digits) and a surrogate pair, a view with no {@code %} that
+     * still needs {@code +} decoded, four layers, and a NUL (raw or {@code %00})
+     * before the secret, which must not end the check.
+     */
+    @Test
+    void everyDecodeStepIsChecked() {
+        UnaryOperator<String> url20 = encoder(0, false);
+        UnaryOperator<String> urlPlus = encoder(1, false);
+        UnaryOperator<String> json = encoder(2, false);
+        String[][] cases = {
+                {"lower-case hex", lowerHex(url20.apply(KEY))},
+                {"invalid UTF-8 run first", "%FF%C3%28 " + url20.apply(urlPlus.apply(KEY))},
+                {"invalid UTF-8 run, lower-case hex", "%ff%c3 " + lowerHex(urlPlus.apply(url20.apply(KEY)))},
+                {"+ under \\u escapes", unicodeEscaped(urlPlus.apply(KEY))},
+                {"\\u escapes", unicodeEscaped(KEY)},
+                {"surrogate pair", unicodeEscaped(ASTRAL)},
+                {"surrogate pair under URL", url20.apply(unicodeEscaped(ASTRAL))},
+                {"+ without %", unicodeEscaped(urlPlus.apply(SPACED))},
+                {"four layers", url20.apply(json.apply(urlPlus.apply(json.apply(url20.apply(KEY)))))},
+                {"four layers, \\u inside", urlPlus.apply(url20.apply(unicodeEscaped(url20.apply(KEY))))},
+                {"NUL first", "a\u0000b " + lowerHex(url20.apply(KEY))},
+                {"%00 first", "%00 " + lowerHex(url20.apply(url20.apply(KEY)))},
+                {"%00 first, JSON", "%00\\u0000 " + unicodeEscaped(KEY)},
+        };
+        List<String> failures = new ArrayList<>();
+        for (String[] c : cases) {
+            String body = "Bad request: " + c[1] + " (quoted)";
+            assertTrue(exposes(body, KEY, ASTRAL, SPACED), c[0] + ": the test's decoder finds the secret in " + body);
+            String message = ZeroBounceSDK.redact(body, KEY, ASTRAL, SPACED);
+            if (exposes(message, KEY, ASTRAL, SPACED)) {
+                failures.add(c[0] + ": " + message);
             }
         }
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
