@@ -335,7 +335,7 @@ class OfflineCallbackTest {
             assertEquals(c[1], response.getMxFound(), body);
             assertEquals(c[1], response.getCatchallDomain(), body);
         }
-        ZBValidateResponse nulls = validated("{\"address\":\"a@example.com\",\"catchall_domain\":null}");
+        ZBValidateResponse nulls = validated("{\"address\":\"a@example.com\",\"status\":\"valid\",\"catchall_domain\":null}");
         assertNull(nulls.getCatchallDomain());
     }
 

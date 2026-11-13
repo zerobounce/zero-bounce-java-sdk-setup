@@ -106,17 +106,17 @@ public class ZBSendFileResponse {
                 if (jobject.get("message").isJsonArray()) {
                     JsonArray array = jobject.get("message").getAsJsonArray();
                     if (array.size() > 0) {
-                        r.message = array.get(0).getAsString();
+                        r.message = StrictTypes.text(array.get(0), "message");
                     }
                 } else {
-                    r.message = jobject.get("message").getAsString();
+                    r.message = StrictTypes.text(jobject.get("message"), "message");
                 }
             }
             if (jobject.has("file_name")) {
-                r.fileName = jobject.get("file_name").getAsString();
+                r.fileName = StrictTypes.text(jobject.get("file_name"), "file_name");
             }
             if (jobject.has("file_id")) {
-                r.fileId = jobject.get("file_id").getAsString();
+                r.fileId = StrictTypes.text(jobject.get("file_id"), "file_id");
             }
 
             return r;

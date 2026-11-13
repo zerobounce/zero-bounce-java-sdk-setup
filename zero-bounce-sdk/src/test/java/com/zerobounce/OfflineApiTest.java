@@ -313,7 +313,7 @@ class OfflineApiTest {
 
         probe.api.clear();
         ZBCreditsResponse credits = probe.success((ok, err) -> probe.sdk.getCredits(ok, err));
-        assertEquals("usage-key", credits.getCredits());
+        assertEquals(FakeApi.creditsFor("usage-key"), credits.getCredits());
         assertEquals("/v2/getcredits", probe.only().path);
 
         probe.api.clear();
@@ -797,8 +797,8 @@ class OfflineApiTest {
         one.join();
         two.join();
         assertNull(failure.get());
-        assertEquals("key-one", firstResponse.get().getCredits());
-        assertEquals("key-two", secondResponse.get().getCredits());
+        assertEquals(FakeApi.creditsFor("key-one"), firstResponse.get().getCredits());
+        assertEquals(FakeApi.creditsFor("key-two"), secondResponse.get().getCredits());
         assertEquals("key-one", first.only().apiKey);
         assertEquals("key-two", second.only().apiKey);
     }

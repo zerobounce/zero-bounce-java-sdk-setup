@@ -124,6 +124,10 @@ public class ZeroBounceSDK {
         StrictBooleanAdapter booleans = new StrictBooleanAdapter();
         gsonBuilder.registerTypeAdapter(Boolean.class, booleans);
         gsonBuilder.registerTypeAdapter(boolean.class, booleans);
+        // Field types are part of the shape (E7): no string field takes a
+        // boolean, number, array or object, and no enum a non-string.
+        gsonBuilder.registerTypeAdapter(String.class, StrictTypes.STRING);
+        gsonBuilder.registerTypeAdapterFactory(StrictTypes.ENUMS);
         gson = gsonBuilder.create();
     }
 
@@ -2905,8 +2909,10 @@ public class ZeroBounceSDK {
             return;
         }
         T response;
+        String missing;
         try {
             response = gson.fromJson(rsp, typeToken.getType());
+            missing = StrictTypes.missingField(typeToken.getRawType(), rsp);
         } catch (RuntimeException e) {
             // A body the SDK cannot decode, such as a boolean field that holds
             // "yes". The caller's success callback is called outside this try,
@@ -2922,13 +2928,18 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError(HttpMessages.WRONG_SHAPE, status));
             return;
         }
+        if (missing != null) {
+            errorCallback.onError(ErrorResponse.parseError(missing, status));
+            return;
+        }
         successCallback.onSuccess(response);
     }
 
     /**
      * {@link #deliverJson} for a bulk upload: a failed status, an HTML or empty
-     * body and {@code {"success": false}} reach the error callback, and the
-     * decoded body the success callback, outside any try.
+     * body, {@code {"success": false}} and a dead-key body ({@code error},
+     * {@code error_message} or {@code Error} without {@code success}) reach the
+     * error callback, and the decoded body the success callback, outside any try.
      */
     void deliverSendFileResponse(
             int status,
@@ -2944,6 +2955,10 @@ public class ZeroBounceSDK {
         // A 2xx that is not JSON ("hello", a proxy's text) is an API error with
         // its status, as on every other JSON call, not a decoder failure.
         String notJson = HttpMessages.jsonCallFailure(status, rsp, null);
+        if (notJson == null) {
+            // A dead or invalid key answers an upload with an HTTP 200 too (E2).
+            notJson = HttpMessages.successPayloadError(rsp);
+        }
         if (notJson != null) {
             errorCallback.onError(ErrorResponse.parseError(notJson, status));
             return;

@@ -114,8 +114,11 @@ public class ErrorResponse {
             for (Map.Entry<String, Object> entry : hashMap.entrySet()) {
                 if (entry.getKey().contains("error") || entry.getKey().contains("message")) {
                     if (entry.getValue() instanceof ArrayList) {
-                        ArrayList<String> values = (ArrayList<String>) entry.getValue();
-                        errors.addAll(values);
+                        // Each item as text: {"error": [5]} holds a number, and
+                        // an unchecked cast would fail later, outside this try.
+                        for (Object value : (ArrayList<?>) entry.getValue()) {
+                            errors.add(String.valueOf(value));
+                        }
                     } else if (entry.getValue() != null) {
                         errors.add(entry.getValue().toString());
                     }
@@ -123,8 +126,9 @@ public class ErrorResponse {
                     if (entry.getKey().equals("success") && entry.getValue() instanceof Boolean) {
                         response.success = (Boolean) entry.getValue();
                     } else if (entry.getValue() instanceof ArrayList) {
-                        ArrayList<String> values = (ArrayList<String>) entry.getValue();
-                        otherMessages.addAll(values);
+                        for (Object value : (ArrayList<?>) entry.getValue()) {
+                            otherMessages.add(String.valueOf(value));
+                        }
                     } else if (entry.getValue() != null) {
                         otherMessages.add(entry.getValue().toString());
                     }

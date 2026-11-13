@@ -649,7 +649,7 @@ public class ZeroBounceSDKTest {
     @Test
     public void getCredits_ReturnsSuccess() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\"Credits\":2375323}";
+        String responseJson = "{\"Credits\":\"2375323\"}";
         ZBCreditsResponse expectedResponse = gson.fromJson(responseJson, ZBCreditsResponse.class);
 
         String urlPath = getEncodedUrl(
@@ -675,7 +675,7 @@ public class ZeroBounceSDKTest {
     @Test
     public void getCredits_ReturnsError() throws Exception {
         // Prepare mock response and add it to the server
-        String responseJson = "{\"Credits\":-1}";
+        String responseJson = "{\"Credits\":\"-1\"}";
         ErrorResponse expectedResponse = ErrorResponse.parseError(responseJson, 400);
 
         String urlPath = getEncodedUrl(
@@ -1490,7 +1490,7 @@ public class ZeroBounceSDKTest {
 
     @Test
     public void defaultLoggerEmitsNoConsoleOutput() throws Exception {
-        String responseJson = "{\"Credits\":2375323}";
+        String responseJson = "{\"Credits\":\"2375323\"}";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
                 new HashMap<>() {
@@ -1531,7 +1531,7 @@ public class ZeroBounceSDKTest {
 
     @Test
     public void payloadLoggingUsesConfiguredLoggerOnly() throws Exception {
-        String responseJson = "{\"Credits\":2375323}";
+        String responseJson = "{\"Credits\":\"2375323\"}";
         String urlPath = getEncodedUrl(
                 "https://api.zerobounce.net/v2/getcredits",
                 new HashMap<>() {

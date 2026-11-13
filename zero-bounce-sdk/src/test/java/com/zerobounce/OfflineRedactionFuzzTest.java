@@ -209,6 +209,9 @@ class OfflineRedactionFuzzTest {
     private static final String ASTRAL = "pw\uD83D\uDE00x/\"9";
     /** A secret whose only special character is a space, so its URL spelling has no %. */
     private static final String SPACED = "sp ace7";
+    /** Secrets with a 2-byte and a 3-byte UTF-8 character (ASTRAL has a 4-byte one). */
+    private static final String TWO_BYTE = "pw\u00e9x7";
+    private static final String THREE_BYTE = "pw\u20acx7";
 
     /**
      * Each decode step of the check on its own, so removing one fails here and not
@@ -237,13 +240,21 @@ class OfflineRedactionFuzzTest {
                 {"NUL first", "a\u0000b " + lowerHex(url20.apply(KEY))},
                 {"%00 first", "%00 " + lowerHex(url20.apply(url20.apply(KEY)))},
                 {"%00 first, JSON", "%00\\u0000 " + unicodeEscaped(KEY)},
+                // Percent-decoding works on bytes, then reads them as UTF-8: one
+                // case per UTF-8 sequence length, so decoding each %XX as its own
+                // character (or dropping multi-byte runs) fails here.
+                {"2-byte UTF-8 under %", lowerHex(url20.apply(TWO_BYTE))},
+                {"3-byte UTF-8 under %", lowerHex(url20.apply(THREE_BYTE))},
+                {"4-byte UTF-8 under %", lowerHex(url20.apply(ASTRAL))},
+                {"4-byte UTF-8 under two % layers", lowerHex(url20.apply(url20.apply(ASTRAL)))},
         };
         List<String> failures = new ArrayList<>();
         for (String[] c : cases) {
             String body = "Bad request: " + c[1] + " (quoted)";
-            assertTrue(exposes(body, KEY, ASTRAL, SPACED), c[0] + ": the test's decoder finds the secret in " + body);
-            String message = ZeroBounceSDK.redact(body, KEY, ASTRAL, SPACED);
-            if (exposes(message, KEY, ASTRAL, SPACED)) {
+            assertTrue(exposes(body, KEY, ASTRAL, SPACED, TWO_BYTE, THREE_BYTE),
+                    c[0] + ": the test's decoder finds the secret in " + body);
+            String message = ZeroBounceSDK.redact(body, KEY, ASTRAL, SPACED, TWO_BYTE, THREE_BYTE);
+            if (exposes(message, KEY, ASTRAL, SPACED, TWO_BYTE, THREE_BYTE)) {
                 failures.add(c[0] + ": " + message);
             }
         }

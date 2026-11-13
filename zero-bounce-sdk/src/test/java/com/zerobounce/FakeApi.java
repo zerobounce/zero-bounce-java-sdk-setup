@@ -150,7 +150,7 @@ final class FakeApi implements SdkHttp.Transport {
             return json("[]");
         }
         if (path.endsWith("/getcredits")) {
-            return json("{\"Credits\":" + quote(recorded.apiKey) + "}");
+            return json("{\"Credits\":" + quote(creditsFor(recorded.apiKey)) + "}");
         }
         if (path.endsWith("/scoring")) {
             return json("{\"email\":\"person@example.com\",\"score\":9}");
@@ -171,6 +171,15 @@ final class FakeApi implements SdkHttp.Transport {
             return json("{\"success\":true,\"file_id\":\"fid\",\"file_status\":\"Complete\",\"complete_percentage\":\"100\"}");
         }
         return json("{\"success\":true}");
+    }
+
+    /**
+     * The balance this fake answers for a key: a string holding a whole number, as
+     * the API sends it, and a different one per key, so a test can tell which key
+     * a request carried.
+     */
+    static String creditsFor(String apiKey) {
+        return apiKey == null ? null : String.valueOf(apiKey.hashCode() & 0x7fffffff);
     }
 
     private static String batchAll() {

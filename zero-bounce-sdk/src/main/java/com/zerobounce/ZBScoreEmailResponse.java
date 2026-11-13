@@ -10,8 +10,12 @@ public class ZBScoreEmailResponse {
     @Nullable
     private String email = null;
 
-    /** The API returns this as a number or a string depending on the account. */
+    /**
+     * The API returns this as a number or a string depending on the account; a
+     * boolean, an array or an object is an error (E7).
+     */
     @Nullable
+    @com.google.gson.annotations.JsonAdapter(StrictTypes.TextOrNumber.class)
     private String score = null;
 
     @Nullable
