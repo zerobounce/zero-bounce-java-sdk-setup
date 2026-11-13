@@ -417,7 +417,8 @@ class OfflineFieldTypeTest {
             boolean list = type instanceof ParameterizedType
                     && ((ParameterizedType) type).getRawType() == List.class;
             Class<?> model = (Class<?>) (list ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
-            String baseText = documented.containsKey(model) ? documented.get(model).get(0) : "{}";
+            String baseText = documented.containsKey(model) ? documented.get(model).get(0)
+                    : model == ZBScoreEmailResponse.class ? "{\"email\":\"a@b.c\",\"score\":10}" : "{}";
             for (Field field : modelFields(model)) {
                 if (REQUIRED.contains(jsonName(field))) {
                     continue;

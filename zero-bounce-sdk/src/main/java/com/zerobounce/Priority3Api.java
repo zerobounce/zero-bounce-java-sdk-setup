@@ -4,6 +4,7 @@ import com.google.gson.reflect.TypeToken;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.client5.http.entity.mime.HttpMultipartMode;
 import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
 import org.apache.hc.client5.http.entity.mime.FileBody;
 import org.apache.hc.client5.http.entity.mime.InputStreamBody;
@@ -182,6 +183,11 @@ final class Priority3Api {
             @NotNull ZeroBounceSDK.OnErrorCallback errorCallback
     ) {
         errorCallback = sdk.redacting(errorCallback);
+        // The same pre-check as getFile: a directory is refused before any request.
+        if (new File(downloadPath).isDirectory()) {
+            errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
+            return;
+        }
         int status;
         String contentType;
         byte[] body;
@@ -284,7 +290,12 @@ final class Priority3Api {
         SdkHttp.Result response;
         try {
             HttpPost uploadFile = new HttpPost(url);
-            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            // UTF-8 form and file names: LEGACY mode writes a file name's bytes as they are,
+            // where the other modes encode them as Latin-1 or percent-escapes.
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create()
+                    .setContentType(ContentType.MULTIPART_FORM_DATA.withCharset(StandardCharsets.UTF_8))
+                    .setMode(HttpMultipartMode.LEGACY)
+                    .setCharset(StandardCharsets.UTF_8);
             for (Map.Entry<String, String> entry : fields.entrySet()) {
                 builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
             }
@@ -315,7 +326,12 @@ final class Priority3Api {
         SdkHttp.Result response;
         try {
             HttpPost uploadFile = new HttpPost(url);
-            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            // UTF-8 form and file names: LEGACY mode writes a file name's bytes as they are,
+            // where the other modes encode them as Latin-1 or percent-escapes.
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create()
+                    .setContentType(ContentType.MULTIPART_FORM_DATA.withCharset(StandardCharsets.UTF_8))
+                    .setMode(HttpMultipartMode.LEGACY)
+                    .setCharset(StandardCharsets.UTF_8);
             for (Map.Entry<String, String> entry : fields.entrySet()) {
                 builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
             }
@@ -347,10 +363,6 @@ final class Priority3Api {
             return;
         }
         File out = new File(downloadPath);
-        File parent = out.getParentFile();
-        if (parent != null) {
-            parent.mkdirs();
-        }
         if (!ZeroBounceSDK.saveDownload(out, body, errorCallback)) {
             return;
         }

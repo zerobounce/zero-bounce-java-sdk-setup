@@ -12,7 +12,7 @@
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
-This SDK is built using the Java 21 version.
+**Minimum Java runtime: 21.** The SDK is compiled for Java 21 (class file version 65) and will not load on an older JVM.
 
 
 ### Installation
@@ -27,51 +27,9 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```
 
 
-## How to use the sample project
+## Using the SDK from Maven Central
 
-1. Build the JAR file for the SDK project.
-2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `~/.m2/repository/com/zerobounce/java/zerobouncesdk/`
-3. Run the following command from the root of the project:
-    ```shell
-    mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
-        -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
-        -DgroupId=com.zerobounce.java \
-        -DartifactId=zerobouncesdk \
-        -Dversion=<latest_version> \
-        -Dpackaging=jar \
-        -DlocalRepositoryPath=local-libs
-    ```
-4. Run `mvn clean dependency:purge-local-repository` in the Sample project.
-5. Run `mvn compile` in the Sample project.
-6. Rebuild the Sample project.
-7. Run & enjoy!
-
-
-## How to use the SDK from this repository in your project
-
-We highly recommend you use the latest version available on Maven. However, if you plan on bundling the repository version of the SDK in your project, then here's what you need to do:
-1. Create a folder named *local-libs* in the root of your project, that will act as a "local" repository.
-2. In your `pom.xml` file paste the following code that will use a "local" repository:
-    ```xml
-    <repositories>
-        <repository>
-            <id>local-repo</id>
-            <name>Local Repo</name>
-            <url>file://${project.basedir}/local-libs</url>
-        </repository>
-    </repositories>
-    ```
-3. Inside the `<dependencies></dependencies>` block, paste the following code:
-    ```xml
-    <dependency>
-        <groupId>com.zerobounce.java</groupId>
-        <artifactId>zerobouncesdk</artifactId>
-        <version><latest_version></version>
-    </dependency>
-    ```
-4. Follow steps 1-5 from the ***How to use the sample project*** above.
-5. Rebuild the project.
-6. Enjoy!
+The SDK is published on [Maven Central](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk); the dependency in the Installation section resolves it there. This repository does not commit a built jar. To try an unreleased change from this repository, run `./mvnw install` in `zero-bounce-sdk/`, which installs the SDK into your local `~/.m2` repository under its `sdk.version`, and depend on that version from your project.
 
 
 ## How to deploy the SDK

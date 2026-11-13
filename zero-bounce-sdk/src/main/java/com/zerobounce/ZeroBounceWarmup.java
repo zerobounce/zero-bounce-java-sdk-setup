@@ -83,13 +83,14 @@ public class ZeroBounceWarmup {
      */
     public void initialize(@NotNull String apiKey, @NotNull String baseUrl) {
         this.apiKey = apiKey;
-        if (apiKey.trim().isEmpty()) {
+        if (apiKey.isBlank()) {
             setupProblem = "api_key is required";
             return;
         }
         // A key with surrounding whitespace or control characters would be
         // quoted, unredacted, in the transport's own error.
-        if (!apiKey.equals(apiKey.trim()) || hasControlCharacters(apiKey)) {
+        if (isUnicodeSpace(apiKey.charAt(0)) || isUnicodeSpace(apiKey.charAt(apiKey.length() - 1))
+                || hasControlCharacters(apiKey)) {
             setupProblem = "api_key has surrounding whitespace or control characters";
             return;
         }
@@ -108,6 +109,11 @@ public class ZeroBounceWarmup {
     /** The request timeout in milliseconds, 0 for none. */
     public void setTimeout(int timeoutInMillis) {
         this.timeoutInMillis = timeoutInMillis;
+    }
+
+    /** Whitespace in the Unicode sense (U+0020, U+00A0, U+2028, U+3000 ...), as the main client checks. */
+    private static boolean isUnicodeSpace(char c) {
+        return Character.isWhitespace(c) || Character.isSpaceChar(c);
     }
 
     private static boolean hasControlCharacters(String value) {
@@ -260,8 +266,11 @@ public class ZeroBounceWarmup {
         if (result == null) {
             return;
         }
+        // A CSV is never a JSON object or array, whatever the content type says:
+        // {"success": false, ...} served as text/csv is the API's error, not a file.
         if (result.body.trim().isEmpty()
-                || result.contentType.toLowerCase(java.util.Locale.ROOT).contains("application/json")) {
+                || HttpMessages.isJsonMediaType(result.contentType)
+                || HttpMessages.downloadJsonError(result.body)) {
             errorCallback.onError(ErrorResponse.parseError(
                     redact(messageFromBody(result.body, result.status)), result.status));
             return;

@@ -613,6 +613,7 @@ class OfflineTransportTest {
      */
     private void bodySweep(String label, String contentType, String body, byte[] download, String expected)
             throws Exception {
+        Files.createDirectories(tempDir.resolve(label));
         RequestSweep sweep = new RequestSweep(tempDir.resolve(label));
         LoopbackServer.Responder dl = LoopbackServer.answer(200, "text/csv", download);
         LoopbackServer.Responder js = LoopbackServer.answer(200, contentType, body.getBytes(StandardCharsets.UTF_8));
@@ -663,6 +664,7 @@ class OfflineTransportTest {
     }
 
     private void contentTypeSweep(String label, String contentType, boolean jsonCalls) throws Exception {
+        Files.createDirectories(tempDir.resolve(label));
         RequestSweep sweep = new RequestSweep(tempDir.resolve(label));
         LoopbackServer.Responder dl = LoopbackServer.answer(200, contentType, CSV);
         LoopbackServer.Responder js = LoopbackServer.answer(200, jsonCalls ? contentType : "application/json",

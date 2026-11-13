@@ -33,7 +33,7 @@ mvn -B test                  # unit tests, including OfflineApiTest
 
 CI runs the same compile and `mvn test`. `mvn test` is the default test command.
 
-If there is no `mvn` on the host (`mvnw` has no wrapper jar committed), Maven runs in Docker:
+If there is no `mvn` on the host, use `./mvnw` in `zero-bounce-sdk/` (its wrapper jar, `.mvn/wrapper/maven-wrapper.jar`, is committed; it still needs network access to fetch Maven on first use), or run Maven in Docker:
 
 ```sh
 cd ../sdk-docs && docker compose run --rm --build java

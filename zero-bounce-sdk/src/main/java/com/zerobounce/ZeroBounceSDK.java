@@ -13,6 +13,7 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.net.URIBuilder;
 import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.client5.http.entity.mime.HttpMultipartMode;
 import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
 import org.apache.hc.client5.http.entity.mime.FileBody;
 import org.apache.hc.client5.http.entity.mime.InputStreamBody;
@@ -208,14 +209,16 @@ public class ZeroBounceSDK {
 
     /**
      * Keeps the key, unless it has surrounding whitespace or control characters
-     * (a key read from a file with its newline, say). Such a key is not stored,
-     * so it is never sent or quoted, unredacted, in a transport error, and every
-     * call reports why through its error callback, as {@link ZeroBounceWarmup}
-     * does. An empty key is still reported as "not initialized".
+     * (a key read from a file with its newline, say). Whitespace means Unicode
+     * whitespace too: a no-break space or an ideographic space pasted around a
+     * key is refused as well, not sent. Such a key is not stored, so it is never
+     * sent or quoted, unredacted, in a transport error, and every call reports
+     * why through its error callback, as {@link ZeroBounceWarmup} does. An empty
+     * key is still reported as "not initialized".
      */
     private void setApiKey(String apiKey) {
         if (apiKey != null && !apiKey.isBlank()
-                && (!apiKey.equals(apiKey.trim()) || hasControlCharacters(apiKey))) {
+                && (hasControlCharacters(apiKey) || hasSurroundingWhitespace(apiKey))) {
             this.apiKey = null;
             apiKeyProblem = "api_key has surrounding whitespace or control characters";
             return;
@@ -231,6 +234,15 @@ public class ZeroBounceSDK {
             }
         }
         return false;
+    }
+
+    /** Whether the first or last character is whitespace in the Unicode sense (U+0020, U+00A0, U+3000, U+2028 ...). */
+    private static boolean hasSurroundingWhitespace(String value) {
+        return isUnicodeSpace(value.charAt(0)) || isUnicodeSpace(value.charAt(value.length() - 1));
+    }
+
+    private static boolean isUnicodeSpace(char c) {
+        return Character.isWhitespace(c) || Character.isSpaceChar(c);
     }
 
     /**
@@ -279,13 +291,44 @@ public class ZeroBounceSDK {
                 continue;
             }
             for (String form : secretForms(secret)) {
-                value = value.replace(form, "***");
+                value = replaceIgnoreCase(value, form, "***");
             }
         }
         return exposesSecret(value, secrets) ? CREDENTIAL_OMITTED : value;
     }
 
-    /** Whether {@code text}, or any view of it decoded up to four times, holds one of the secrets. */
+    /**
+     * Replaces every case-insensitive occurrence of {@code target}: HttpClient
+     * lower-cases some values it echoes (a "Content-Encoding" in an error), so a
+     * secret can come back in a case the SDK did not send.
+     */
+    private static String replaceIgnoreCase(String text, String target, String replacement) {
+        if (target.isEmpty()) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        int from = 0;
+        while (true) {
+            int at = indexOfIgnoreCase(text, target, from);
+            if (at < 0) {
+                break;
+            }
+            out.append(text, from, at).append(replacement);
+            from = at + target.length();
+        }
+        return from == 0 ? text : out.append(text, from, text.length()).toString();
+    }
+
+    private static int indexOfIgnoreCase(String text, String target, int from) {
+        for (int at = from; at + target.length() <= text.length(); at++) {
+            if (text.regionMatches(true, at, target, 0, target.length())) {
+                return at;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether {@code text}, or any view of it decoded up to four times, holds one of the secrets, in any case. */
     static boolean exposesSecret(String text, String... secrets) {
         java.util.Set<String> seen = new java.util.HashSet<>();
         List<String> layer = List.of(text);
@@ -293,7 +336,7 @@ public class ZeroBounceSDK {
         for (int depth = 0; ; depth++) {
             for (String view : layer) {
                 for (String secret : secrets) {
-                    if (secret != null && !secret.isEmpty() && view.contains(secret)) {
+                    if (secret != null && !secret.isEmpty() && indexOfIgnoreCase(view, secret, 0) >= 0) {
                         return true;
                     }
                 }
@@ -667,8 +710,7 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback,
-                true
+                errorCallback
         );
     }
 
@@ -732,8 +774,7 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback,
-                true
+                errorCallback
         );
     }
 
@@ -778,8 +819,7 @@ public class ZeroBounceSDK {
                 new TypeToken<>() {
                 },
                 successCallback,
-                errorCallback,
-                true
+                errorCallback
         );
     }
 
@@ -994,7 +1034,12 @@ public class ZeroBounceSDK {
         String responseType = null;
         try {
             HttpPost uploadFile = new HttpPost(urlPath);
-            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            // UTF-8 form and file names: LEGACY mode writes a file name's bytes as they are,
+            // where the other modes encode them as Latin-1 or percent-escapes.
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create()
+                    .setContentType(ContentType.MULTIPART_FORM_DATA.withCharset(StandardCharsets.UTF_8))
+                    .setMode(HttpMultipartMode.LEGACY)
+                    .setCharset(StandardCharsets.UTF_8);
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName()));
             builder.addPart("file", new FileBody(file));
@@ -1047,7 +1092,12 @@ public class ZeroBounceSDK {
         String responseType = null;
         try {
             HttpPost uploadFile = new HttpPost(urlPath);
-            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            // UTF-8 form and file names: LEGACY mode writes a file name's bytes as they are,
+            // where the other modes encode them as Latin-1 or percent-escapes.
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create()
+                    .setContentType(ContentType.MULTIPART_FORM_DATA.withCharset(StandardCharsets.UTF_8))
+                    .setMode(HttpMultipartMode.LEGACY)
+                    .setCharset(StandardCharsets.UTF_8);
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName));
             builder.addPart("file", new InputStreamBody(inputStream, ContentType.create("text/csv"), fileName));
@@ -1243,10 +1293,8 @@ public class ZeroBounceSDK {
         String contentTypeRaw;
         byte[] bodyBytes;
         try {
-            File parent = file.getParentFile();
-            if (parent != null) {
-                parent.mkdirs();
-            }
+            // The directories of the target are made when a file is saved, not
+            // here: a failed request must not leave empty directories behind.
             URI uri = buildGetFileUri(scoring, fileId, options);
             if (transport != null) {
                 SdkHttp.Result result = transport.exchange(new SdkHttp("GET", uri.toString(), null, null, null));
@@ -1398,7 +1446,10 @@ public class ZeroBounceSDK {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("api_key", apiKey);
         parameters.put("email", email);
-        parameters.put("ip_address", ipAddress != null ? ipAddress : "");
+        // Sent only when there is one: an empty ip_address= is not "no address".
+        if (!isBlank(ipAddress)) {
+            parameters.put("ip_address", ipAddress);
+        }
         try {
             if (options != null) {
                 options.fill(parameters);
@@ -1418,6 +1469,9 @@ public class ZeroBounceSDK {
                 null,
                 new TypeToken<ZBValidateResponse>() {
                 },
+                null,
+                null,
+                true,
                 successCallback,
                 errorCallback
         );
@@ -1598,11 +1652,10 @@ public class ZeroBounceSDK {
         if (bucket != null && !bucket.trim().isEmpty()) parameters.put("bucket", bucket);
         if (search != null && !search.trim().isEmpty()) parameters.put("search", search);
 
-        sendRequestWithMethod(
+        sendFileJobRequest(
                 "GET",
                 bulkApiRootUrl + "/listS3files",
                 parameters,
-                null,
                 null,
                 new TypeToken<S3FileList>() {
                 },
@@ -1797,12 +1850,11 @@ public class ZeroBounceSDK {
         fields.putAll(extraFields);
         fields.put("api_key", apiKey);
 
-        sendRequestWithMethod(
+        sendFileJobRequest(
                 "POST",
                 bulkApiRootUrl + path,
                 null,
                 fields,
-                null,
                 new TypeToken<ZBSendFileResponse>() {
                 },
                 successCallback,
@@ -1835,12 +1887,11 @@ public class ZeroBounceSDK {
         }
         fields.put("api_key", apiKey);
 
-        sendRequestWithMethod(
+        sendFileJobRequest(
                 "POST",
                 bulkApiRootUrl + path,
                 null,
                 fields,
-                null,
                 new TypeToken<ZBSendFileResponse>() {
                 },
                 successCallback,
@@ -1871,11 +1922,10 @@ public class ZeroBounceSDK {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("api_key", apiKey);
 
-        sendRequestWithMethod(
+        sendFileJobRequest(
                 "GET",
                 listEvaluatorBaseUrl + "/" + encodePathSegment(fileId.trim()) + "/",
                 parameters,
-                null,
                 null,
                 new TypeToken<JsonObject>() {
                 },
@@ -1912,12 +1962,11 @@ public class ZeroBounceSDK {
         fields.put("api_key", apiKey);
         fields.put("file_id", fileId.trim());
 
-        sendRequestWithMethod(
+        sendFileJobRequest(
                 "POST",
                 bulkApiBaseUrl + "/send-evaluated-file/",
                 null,
                 fields,
-                null,
                 new TypeToken<ZBSendFileResponse>() {
                 },
                 successCallback,
@@ -2089,6 +2138,7 @@ public class ZeroBounceSDK {
                 // LIVE: DELETE /test/{id} answers 204 with no body. An empty
                 // 2xx from any other Inbox Placement call is an error.
                 "DELETE".equals(method),
+                false,
                 successCallback,
                 errorCallback
         );
@@ -2481,20 +2531,9 @@ public class ZeroBounceSDK {
      * @param successCallback the success callback
      * @param errorCallback   the error callback
      */
-    private <T> void sendRequest(
-            @NotNull String urlPath,
-            @Nullable Map<String, String> queryParameters,
-            @Nullable Map<String, Object> body,
-            @NotNull TypeToken<T> typeToken,
-            @NotNull OnSuccessCallback<T> successCallback,
-            @NotNull OnErrorCallback errorCallback) {
-        sendRequest(urlPath, queryParameters, body, typeToken, successCallback, errorCallback, false);
-    }
-
     /**
-     * @param messageOnlyIsFailure for the email finder and domain search, whose
-     *                             result is never a bare message: see
-     *                             {@link HttpMessages#messageOnlyFailure(String)}
+     * A typed call's JSON exchange. A message-only 2xx body is an error with its
+     * text, on every typed call except those {@link #deliverJson} exempts.
      */
     private <T> void sendRequest(
             @NotNull String urlPath,
@@ -2502,8 +2541,7 @@ public class ZeroBounceSDK {
             @Nullable Map<String, Object> body,
             @NotNull TypeToken<T> typeToken,
             @NotNull OnSuccessCallback<T> successCallback,
-            @NotNull OnErrorCallback errorCallback,
-            boolean messageOnlyIsFailure) {
+            @NotNull OnErrorCallback errorCallback) {
         errorCallback = redacting(errorCallback);
         // Only the exchange itself is inside the try: an exception thrown by
         // the caller's own callback must reach the caller, not come back
@@ -2550,13 +2588,6 @@ public class ZeroBounceSDK {
         }
 
         logPayload("ZeroBounceSDK::sendRequest rsp=" + rsp);
-        if (messageOnlyIsFailure && status <= 299) {
-            String messageOnly = HttpMessages.messageOnlyFailure(rsp);
-            if (messageOnly != null) {
-                errorCallback.onError(ErrorResponse.parseError(messageOnly, status));
-                return;
-            }
-        }
         deliverJson(status, responseType, rsp, typeToken, successCallback, errorCallback);
     }
 
@@ -2631,13 +2662,29 @@ public class ZeroBounceSDK {
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         sendRequestWithMethod(method, urlPath, queryParameters, formFields, jsonBody, typeToken,
-                null, null, successCallback, errorCallback);
+                null, null, false, successCallback, errorCallback);
+    }
+
+    /** A file job, S3 or SFTP call: a message-only 2xx body is an error with its text. */
+    private <T> void sendFileJobRequest(
+            @NotNull String method,
+            @NotNull String urlPath,
+            @Nullable Map<String, String> queryParameters,
+            @Nullable Map<String, String> formFields,
+            @NotNull TypeToken<T> typeToken,
+            @NotNull OnSuccessCallback<T> successCallback,
+            @NotNull OnErrorCallback errorCallback) {
+        sendRequestWithMethod(method, urlPath, queryParameters, formFields, null, typeToken,
+                null, null, false, successCallback, errorCallback);
     }
 
     /**
-     * @param emptyIsSuccess whether a 2xx with no body is a success (with a
-     *                       null result): null keeps the general rule (only a
-     *                       204), true or false decides it for the call
+     * @param emptyIsSuccess        whether a 2xx with no body is a success (with a
+     *                              null result): null and false make it an error
+     *                              with its status; only the Inbox Placement
+     *                              delete says true
+     * @param greylistIsResult     validate only: a 2xx {"Message": ...} is a result (the
+     *                              greylist answer), not a message-only error
      */
     private <T> void sendRequestWithMethod(
             @NotNull String method,
@@ -2648,6 +2695,7 @@ public class ZeroBounceSDK {
             @Nullable TypeToken<T> typeToken,
             @Nullable Map<String, String> extraHeaders,
             @Nullable Boolean emptyIsSuccess,
+            boolean greylistIsResult,
             @Nullable OnSuccessCallback<T> successCallback,
             @NotNull OnErrorCallback errorCallback) {
         errorCallback = redacting(errorCallback);
@@ -2722,10 +2770,11 @@ public class ZeroBounceSDK {
             return;
         }
         // Only a body with nothing in it can be the documented empty success; a
-        // blank one (spaces, a line break) is not JSON.
-        boolean emptyAllowed = (emptyIsSuccess != null ? emptyIsSuccess : status == 204) && rsp.isEmpty();
-        if (typeToken != null && rsp.trim().isEmpty() && !emptyAllowed) {
-            // A typed endpoint that answers 2xx with no body did not succeed.
+        // blank one (spaces, a line break) is not JSON. Every other 2xx with no
+        // body is an error with its status, a 204 included: it is never a null
+        // result (standard.md section 3).
+        boolean emptyAllowed = Boolean.TRUE.equals(emptyIsSuccess) && rsp.isEmpty();
+        if (rsp.trim().isEmpty() && !emptyAllowed) {
             // The Inbox Placement Tester's DELETE legitimately carries nothing
             // (a 204, or an empty 200), and that reaches the success callback.
             errorCallback.onError(ErrorResponse.parseError(
@@ -2739,7 +2788,7 @@ public class ZeroBounceSDK {
         // The same body checks as sendRequest: an HTTP 200 that carries
         // {"error": ...}, an HTML page or a non-JSON body is a failure, not
         // a result to decode.
-        deliverJson(status, responseType, rsp, typeToken, successCallback, errorCallback);
+        deliverJson(status, responseType, rsp, typeToken, successCallback, errorCallback, greylistIsResult);
     }
 
     /** One HttpClient 5 exchange; callbacks and decoding remain with the caller. */
@@ -2803,8 +2852,26 @@ public class ZeroBounceSDK {
             OnSuccessCallback<T> successCallback,
             OnErrorCallback errorCallback
     ) {
+        deliverJson(status, contentType, rsp, typeToken, successCallback, errorCallback, false);
+    }
+
+    /**
+     * @param greylistIsResult whether a {"Message": ...} body is a result (validate's
+     *                         greylist answer). Raw JSON calls, whose documented
+     *                         success can be that message (the filters), are too.
+     */
+    private <T> void deliverJson(
+            int status,
+            @Nullable String contentType,
+            String rsp,
+            TypeToken<T> typeToken,
+            OnSuccessCallback<T> successCallback,
+            OnErrorCallback errorCallback,
+            boolean greylistIsResult
+    ) {
+        boolean messageIsResult = greylistIsResult || JsonElement.class.isAssignableFrom(typeToken.getRawType());
         if (reportHtmlContentType(status, contentType, rsp, errorCallback)
-                || reportJsonFailure(status, rsp, errorCallback)) {
+                || reportJsonFailure(status, rsp, errorCallback, messageIsResult)) {
             return;
         }
         T response;
@@ -2885,21 +2952,26 @@ public class ZeroBounceSDK {
      *
      * @return true when the error callback was called
      */
-    private boolean reportJsonFailure(int status, @Nullable String rsp, @NotNull OnErrorCallback errorCallback) {
+    private boolean reportJsonFailure(int status, @Nullable String rsp, @NotNull OnErrorCallback errorCallback,
+            boolean greylistIsResult) {
         String accountError = HttpMessages.batchAccountError(rsp);
         if (accountError != null) {
             errorCallback.onError(ErrorResponse.parseError(accountError, status));
             return true;
         }
         String failure = HttpMessages.jsonCallFailure(status, rsp, null);
-        if (failure == null) {
-            failure = HttpMessages.successPayloadError(rsp);
+        boolean inA2xxBody = failure == null;
+        if (inA2xxBody) {
+            failure = HttpMessages.successPayloadError(rsp, greylistIsResult);
         }
         if (failure == null) {
             return false;
         }
         String body = rsp == null ? "" : rsp;
-        if (HttpMessages.preferShortMessage(body)) {
+        // A 2xx message-only body with no text is reported as its fixed message, not by
+        // echoing its keys: {"error": null} is one error, not an empty list.
+        if (HttpMessages.preferShortMessage(body)
+                || inA2xxBody && HttpMessages.messageOnlyFailure(body, greylistIsResult) != null) {
             errorCallback.onError(ErrorResponse.parseError(failure, status));
         } else {
             // Every value of the JSON error, as before, but without a repeated
@@ -2916,7 +2988,7 @@ public class ZeroBounceSDK {
      * such as a {@code {"success": false}} on an HTTP 200.
      */
     private void reportFailure(int status, @Nullable String rsp, @NotNull OnErrorCallback errorCallback) {
-        if (!reportJsonFailure(status, rsp, errorCallback)) {
+        if (!reportJsonFailure(status, rsp, errorCallback, false)) {
             errorCallback.onError(ErrorResponse.parseError(rsp, status));
         }
     }
@@ -2963,8 +3035,7 @@ public class ZeroBounceSDK {
             }
             return error;
         }
-        String mime = contentType == null ? "" : contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
-        if (!ContentType.APPLICATION_JSON.getMimeType().equals(mime) && !HttpMessages.downloadJsonError(text)) {
+        if (!HttpMessages.isJsonMediaType(contentType) && !HttpMessages.downloadJsonError(text)) {
             return null;
         }
         if (HttpMessages.preferShortMessage(text)) {
@@ -3000,10 +3071,26 @@ public class ZeroBounceSDK {
     /** How {@link #saveDownload(File, byte[], OnErrorCallback)} opens the temporary file; tests replace it. */
     static volatile FileOpener fileOpener = FileOutputStream::new;
 
+    /** The atomic rename of a finished download over its target. Tests make it fail to reach the fallback. */
+    interface AtomicMove {
+        void move(java.nio.file.Path from, java.nio.file.Path to) throws IOException;
+    }
+
+    /** How {@link #saveDownload(File, byte[], OnErrorCallback, FileOpener)} renames the file; tests replace it. */
+    static volatile AtomicMove atomicMove = (from, to) -> java.nio.file.Files.move(from, to,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+
     static boolean saveDownload(File file, byte[] body, OnErrorCallback errorCallback, FileOpener opener) {
         java.nio.file.Path target = file.getAbsoluteFile().toPath();
         java.nio.file.Path temp = null;
         try {
+            // The directories of the target are made here, once a body has
+            // arrived, so a failed request creates nothing.
+            File parent = target.toFile().getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
+            }
             // Named here rather than by Files.createTempFile, so the file gets
             // the same permissions a direct write would have given it.
             temp = target.resolveSibling("." + target.getFileName() + "." + java.util.UUID.randomUUID() + ".part");
@@ -3011,9 +3098,9 @@ public class ZeroBounceSDK {
                 outStream.write(body);
             }
             try {
-                java.nio.file.Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                atomicMove.move(temp, target);
             } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                // A file system without atomic rename: the plain rename, which may not be atomic.
                 java.nio.file.Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {

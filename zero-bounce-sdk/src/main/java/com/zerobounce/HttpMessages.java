@@ -236,38 +236,31 @@ final class HttpMessages {
     }
 
     /**
-     * Whether a download body is a JSON error rather than a results file,
-     * whatever its content type: a JSON object with a "success" field, or
-     * with an error, message, error_message, Error, Message or detail field.
-     * The C++ and Rust SDKs test "success", "message", "error" and
-     * "error_message" the same way; the capitalised keys and "detail" are
-     * added. A CSV never parses as a JSON object, so a results file is not
-     * mistaken for one.
+     * Whether a download body is JSON rather than a results file, whatever its
+     * content type: any strict JSON object or array. A results file is CSV, and
+     * a CSV is never a complete JSON object or array, so a file is not mistaken
+     * for one. Covers {@code {"success": false}}, {@code {}}, {@code []} and
+     * {@code {"status": "error"}} served as text/csv or text/plain.
      */
     static boolean downloadJsonError(String body) {
         String trimmed = body == null ? "" : body.trim();
-        if (!trimmed.startsWith("{")) {
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
             return false;
         }
-        try {
-            JsonElement parsed = JsonParser.parseString(trimmed);
-            if (!parsed.isJsonObject()) {
-                return false;
-            }
-            JsonObject object = parsed.getAsJsonObject();
-            if (object.has("success")) {
-                return true;
-            }
-            for (String key : MESSAGE_KEYS) {
-                JsonElement value = object.get(key);
-                if (value != null && !value.isJsonNull()) {
-                    return true;
-                }
-            }
-            return false;
-        } catch (RuntimeException ignored) {
+        return isStrictJson(trimmed);
+    }
+
+    /**
+     * Whether a content type is JSON: {@code application/json} or any media type
+     * with a {@code +json} suffix, such as {@code application/problem+json}. A
+     * parameter (charset) is ignored and the match is case-insensitive.
+     */
+    static boolean isJsonMediaType(String contentType) {
+        if (contentType == null) {
             return false;
         }
+        String mime = contentType.split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
+        return mime.equals("application/json") || mime.endsWith("+json");
     }
 
     /**
@@ -306,6 +299,14 @@ final class HttpMessages {
      * @return a short message when a 2xx JSON object is an API error, or null to decode it
      */
     static String successPayloadError(String body) {
+        return successPayloadError(body, false);
+    }
+
+    /**
+     * {@link #successPayloadError(String)}; with {@code greylistIsResult} set
+     * (validate only), a body that is exactly {@code {"Message": ...}} is a result.
+     */
+    static String successPayloadError(String body, boolean greylistIsResult) {
         try {
             JsonElement parsed = JsonParser.parseString(body);
             if (!parsed.isJsonObject()) {
@@ -345,14 +346,18 @@ final class HttpMessages {
         } catch (RuntimeException ignored) {
             return null;
         }
-        return null;
+        return messageOnlyFailure(body, greylistIsResult);
     }
+
+    /** The error for a message-only body with no text in any of its keys. */
+    private static final String NO_MESSAGE_TEXT = "ZeroBounce returned an error with no message text.";
 
     private static final java.util.Set<String> MESSAGE_KEYS = java.util.Set.of(
             "error", "message", "error_message", "Message", "Error", "detail");
 
     private static JsonObject objectWithoutSuccess(String body) {
-        if (body == null || !body.trim().startsWith("{")) {
+        // Strict JSON only: Gson's lenient reader would read {message:x} as a message.
+        if (body == null || !body.trim().startsWith("{") || !isStrictJson(body)) {
             return null;
         }
         try {
@@ -390,17 +395,27 @@ final class HttpMessages {
     }
 
     /**
-     * The message when a body is nothing but a message: an object with no
-     * "success" field whose keys are all message keys, whatever their values
-     * (a string, blank, null or a list); null otherwise. Only for the email
-     * finder and domain search, whose result is never a bare message. A message
-     * with no text is reported as such. LIVE: guessformat answers an invalid or
-     * drained key with an HTTP 200 and
+     * The message when a body is nothing but a message: a strict JSON object
+     * with no "success" field whose keys are all message keys (error, message,
+     * error_message, Message, Error, detail), whatever their values (a string,
+     * blank, null or a list); null otherwise. The text is that of whichever key
+     * holds text (a list joined with newlines); with none, a fixed message. This
+     * applies to every typed call (standard.md section 3). LIVE: guessformat
+     * answers an invalid or drained key with an HTTP 200 and
      * {"Message": "Invalid API key or your account ran out of credits"}.
-     * Not for validate: a repeated greylist_processing request answers
-     * {"Message": "Greylist validation still in progress..."}, a result.
+     * Validate is the exception: pass greylistIsResult, because a repeated
+     * greylist_processing request answers {"Message": "Greylist validation
+     * still in progress..."}, a result.
      */
     static String messageOnlyFailure(String body) {
+        return messageOnlyFailure(body, false);
+    }
+
+    /**
+     * {@link #messageOnlyFailure(String)}; with {@code greylistIsResult} set
+     * (validate), a body whose only key is {@code Message} is a result, not an error.
+     */
+    static String messageOnlyFailure(String body, boolean greylistIsResult) {
         JsonObject object = objectWithoutSuccess(body);
         if (object == null || object.size() == 0) {
             return null;
@@ -410,13 +425,16 @@ final class HttpMessages {
                 return null;
             }
         }
+        if (greylistIsResult && object.size() == 1 && object.has("Message")) {
+            return null;
+        }
         for (String key : object.keySet()) {
             String message = messageText(object.get(key));
             if (message != null) {
                 return message;
             }
         }
-        return "ZeroBounce returned an error with no message text.";
+        return NO_MESSAGE_TEXT;
     }
 
     private static String firstText(JsonObject object, String... keys) {
@@ -527,6 +545,11 @@ final class HttpMessages {
             return true;
         }
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[") || !isStrictJson(trimmed)) {
+            return true;
+        }
+        // A message-only body that carries text is reported by that text, not by echoing its keys.
+        String messageOnly = messageOnlyFailure(trimmed);
+        if (messageOnly != null && !NO_MESSAGE_TEXT.equals(messageOnly)) {
             return true;
         }
         try {

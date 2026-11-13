@@ -17,15 +17,18 @@ import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.SubstituteLoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 /** One outbound call, with a per-client replacement transport for offline tests. */
 final class SdkHttp {
@@ -43,9 +46,27 @@ final class SdkHttp {
             "org.apache.hc.client5.http.headers",
             "org.apache.hc.client5.http.wire");
 
+    /**
+     * Loggers whose DEBUG or TRACE output carries text the server sent (a garbage status
+     * line, an authentication challenge), which may echo the key back. Guarded like
+     * {@link #KEY_LOGGERS}, and kept apart from them because they write only when the
+     * server answers in a particular way: {@code LenientHttpResponseParser} logs a
+     * garbage line it is given, and {@code BasicScheme} logs the realm of a Basic challenge.
+     */
+    static final List<String> SERVER_TEXT_LOGGERS = List.of(
+            "org.apache.hc.client5.http.impl.io.LenientHttpResponseParser",
+            "org.apache.hc.client5.http.impl.auth.BasicScheme");
+
     /** The error a call reports, with no request sent, while one of {@link #KEY_LOGGERS} is at DEBUG or TRACE. */
     static final String KEY_LOGGING_REFUSED = "Apache HttpClient debug logging (org.apache.hc) is enabled "
             + "and would write your API key to the log; set org.apache.hc to INFO or above.";
+
+    /** The error a call reports, with no request sent, when SLF4J is still binding its loggers and cannot be checked. */
+    static final String KEY_LOGGING_UNCHECKED = "SLF4J is still initialising its logging, so the Apache HttpClient "
+            + "logging level could not be checked and no request was sent; retry the call.";
+
+    /** How long a call waits for SLF4J to finish binding before it is refused. */
+    private static final long SLF4J_WAIT_MILLIS = 10_000;
 
     final String method;
     final String url;
@@ -83,9 +104,9 @@ final class SdkHttp {
                 .setConnectTimeout(timeout)
                 .setSocketTimeout(timeout)
                 // Automatic retries are off, so a pooled connection the server has
-                // since closed would fail the call: one idle for over a second is
-                // checked before it is reused.
-                .setValidateAfterInactivity(TimeValue.ofSeconds(1))
+                // since closed would fail the call. A zero interval checks every
+                // connection for staleness before it is leased, so none is reused dead.
+                .setValidateAfterInactivity(TimeValue.ofMilliseconds(0))
                 .build();
     }
 
@@ -198,10 +219,38 @@ final class SdkHttp {
      * Checked on every call, so a level changed at run time applies to the next one.
      */
     static void refuseWhileKeyLogging() throws IOException {
-        for (String name : KEY_LOGGERS) {
+        awaitLoggerFactory();
+        for (String name : guardedLoggers()) {
             Logger logger = LoggerFactory.getLogger(name);
             if (logger.isDebugEnabled() || logger.isTraceEnabled()) {
                 throw new IOException(KEY_LOGGING_REFUSED);
+            }
+        }
+    }
+
+    private static List<String> guardedLoggers() {
+        List<String> names = new ArrayList<>(KEY_LOGGERS);
+        names.addAll(SERVER_TEXT_LOGGERS);
+        return names;
+    }
+
+    /**
+     * SLF4J binds its factory on first use. While that is under way, every other thread
+     * is handed a substitute factory, whose loggers report DEBUG enabled, so a call made
+     * then could not be checked. Such a call waits for the binding to finish, and is
+     * refused only if it does not finish within {@link #SLF4J_WAIT_MILLIS}.
+     */
+    private static void awaitLoggerFactory() throws IOException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SLF4J_WAIT_MILLIS);
+        while (LoggerFactory.getILoggerFactory() instanceof SubstituteLoggerFactory) {
+            if (System.nanoTime() - deadline >= 0) {
+                throw new IOException(KEY_LOGGING_UNCHECKED);
+            }
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(KEY_LOGGING_UNCHECKED, e);
             }
         }
     }

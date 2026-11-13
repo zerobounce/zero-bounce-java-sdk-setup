@@ -10,51 +10,9 @@ You can install ZeroBounceSDK by adding the dependency to your `pom.xml` file:
 ```
 
 
-#### How to use the sample project
+#### Using the SDK from Maven Central
 
-1. Build the JAR file for the SDK project.
-2. Make sure there's no other JAR located in the maven cache file. On my machine, it is located here: `~/.m2/repository/com/zerobounce/java/zerobouncesdk/`
-3. Run the following command from the root of the project:
-    ```shell
-    mvn org.apache.maven.plugins:maven-install-plugin:2.3.1:install-file \
-        -Dfile=zero-bounce-sdk/out/artifacts/zerobouncesdk_jar/zerobouncesdk.jar \
-        -DgroupId=com.zerobounce.java \
-        -DartifactId=zerobouncesdk \
-        -Dversion=<latest_version> \
-        -Dpackaging=jar \
-        -DlocalRepositoryPath=local-libs
-    ```
-4. Run `mvn clean dependency:purge-local-repository` in the Sample project.
-5. Run `mvn compile` in the Sample project.
-6. Rebuild the Sample project.
-7. Run & enjoy!
-
-
-#### How to use the SDK from this repository in your project
-
-We highly recommend you use the latest version available on Maven. However, if you plan on bundling the repository version of the SDK in your project, then here's what you need to do:
-1. Create a folder named *local-libs* in the root of your project, that will act as a "local" repository.
-2. In your `pom.xml` file paste the following code that will use a "local" repository:
-    ```xml
-    <repositories>
-        <repository>
-            <id>local-repo</id>
-            <name>Local Repo</name>
-            <url>file://${project.basedir}/local-libs</url>
-        </repository>
-    </repositories>
-    ```
-3. Inside the `<dependencies></dependencies>` block, paste the following code:
-    ```xml
-    <dependency>
-        <groupId>com.zerobounce.java</groupId>
-        <artifactId>zerobouncesdk</artifactId>
-        <version><latest_version></version>
-    </dependency>
-    ```
-4. Follow steps 1-5 from the ***How to use the sample project*** above.
-5. Rebuild the project.
-6. Enjoy!
+The SDK is published on [Maven Central](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk); the dependency in the Installation section resolves it there. This repository does not commit a built jar. To try an unreleased change from this repository, run `./mvnw install` in `zero-bounce-sdk/`, which installs the SDK into your local `~/.m2` repository under its `sdk.version`, and depend on that version from your project.
 
 
 #### How to deploy the SDK
@@ -78,9 +36,42 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", timeoutInMillis);
 
 #### Controlling SDK logging
 
-The SDK is silent by default so it never emits Personally Identifiable Information (PII) unless you
-explicitly opt in. To integrate the SDK with your application's logging framework, register a
-`ZBLogger` implementation before issuing any API calls. The helper class `ZBLoggers` adapts
+Two loggers can write during a request:
+
+- **The SDK's own logger** stays off until you register a `ZBLogger`. What it writes has the API key
+  redacted.
+- **Apache HttpClient**, which sends the requests, logs through your SLF4J backend. At DEBUG it writes
+  the API key, the Warmup key, the SMTP password and uploaded files.
+
+Before each request the SDK checks three of those loggers: `org.apache.hc.client5.http.impl.classic.MainClientExec`,
+`org.apache.hc.client5.http.headers` and `org.apache.hc.client5.http.wire`. While any of them is at DEBUG or TRACE,
+the call sends nothing and reports status 0 with the message "Apache HttpClient debug logging (org.apache.hc) is
+enabled and would write your API key to the log; set org.apache.hc to INFO or above." A level changed at run time
+applies to the next call.
+
+Keep `org.apache.hc` at INFO or above in production. Logback with no configuration file logs
+everything at DEBUG, so if you use Logback without a `logback.xml`, start from this one:
+
+```xml
+<!-- src/main/resources/logback.xml -->
+<configuration>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- HttpClient writes API keys and passwords at DEBUG. -->
+  <logger name="org.apache.hc" level="INFO"/>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>
+```
+
+To send the SDK's own logging to your application's logging framework, register a `ZBLogger`
+implementation before issuing any API calls. The helper class `ZBLoggers` adapts
 `java.util.logging` (JUL) out of the box:
 
 ```java

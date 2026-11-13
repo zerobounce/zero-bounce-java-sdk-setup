@@ -1,10 +1,5 @@
 package com.zerobounce;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -12,13 +7,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedStatic;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,8 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * method is covered, by {@link RequestSweep}, against a real HTTP server on a loopback
  * socket ({@link LoopbackServer}).
  * <p>
- * The tests need an SLF4J binding whose levels can change at run time: logback-classic,
- * a test-scope dependency only.
+ * The tests need an SLF4J binding whose levels can change at run time: slf4j-jdk14
+ * (java.util.logging), a test-scope dependency only. Levels are set on JUL loggers, and
+ * the records the SDK writes are captured by a JUL handler on the root logger.
  */
 class OfflineKeyLoggingGuardTest {
 
@@ -44,24 +46,36 @@ class OfflineKeyLoggingGuardTest {
     private static final List<String> PASSWORD_FRAGMENTS = List.of("pa/ss", "pa%2Fss");
     private static final byte[] OK = "{\"Credits\": \"5\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-    private static final LoggerContext CONTEXT = (LoggerContext) LoggerFactory.getILoggerFactory();
+    /**
+     * The loggers whose level a test has set, held here so the JVM cannot collect them:
+     * java.util.logging keeps only weak references, and a level set on a collected logger is lost.
+     */
+    private static final Map<String, Logger> LOGGERS = new HashMap<>();
+    private static final Logger ROOT = Logger.getLogger("");
 
     private static void level(String name, Level level) {
-        CONTEXT.getLogger(name).setLevel(level);
+        LOGGERS.computeIfAbsent(name, Logger::getLogger).setLevel(level);
+    }
+
+    /** The loggers the guard checks: the key loggers and the loggers that echo server text. */
+    private static List<String> keyAndServerTextLoggers() {
+        List<String> names = new ArrayList<>(SdkHttp.KEY_LOGGERS);
+        names.addAll(SdkHttp.SERVER_TEXT_LOGGERS);
+        return names;
     }
 
     /** Everything under org.apache.hc at INFO, the key loggers at INFO too. */
     private static void allAtInfo() {
         level("org.apache.hc", Level.INFO);
-        for (String name : SdkHttp.KEY_LOGGERS) {
+        for (String name : keyAndServerTextLoggers()) {
             level(name, Level.INFO);
         }
     }
 
     /** Everything under org.apache.hc at DEBUG, except the key loggers, which stay at INFO. */
     private static void debugExceptKeyLoggers() {
-        level("org.apache.hc", Level.DEBUG);
-        for (String name : SdkHttp.KEY_LOGGERS) {
+        level("org.apache.hc", Level.FINE);
+        for (String name : keyAndServerTextLoggers()) {
             level(name, Level.INFO);
         }
     }
@@ -69,27 +83,47 @@ class OfflineKeyLoggingGuardTest {
     @AfterEach
     void restoreLevels() {
         level("org.apache.hc", null);
-        for (String name : SdkHttp.KEY_LOGGERS) {
+        for (String name : keyAndServerTextLoggers()) {
             level(name, null);
         }
     }
 
-    private static ListAppender<ILoggingEvent> capture() {
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        CONTEXT.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(appender);
-        return appender;
+    /** Collects every record that reaches the root logger, from any logger. */
+    private static final class Capture extends Handler {
+        final List<LogRecord> list = Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public void publish(LogRecord record) {
+            list.add(record);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
-    private static void release(ListAppender<ILoggingEvent> appender) {
-        CONTEXT.getLogger(Logger.ROOT_LOGGER_NAME).detachAppender(appender);
+    private static Capture capture() {
+        Capture capture = new Capture();
+        ROOT.addHandler(capture);
+        return capture;
     }
 
-    /** An event's text, its message with the arguments filled in, and its throwable's message. */
-    private static String text(ILoggingEvent event) {
-        String text = event.getFormattedMessage();
-        if (event.getThrowableProxy() != null && event.getThrowableProxy().getMessage() != null) {
-            text += " " + event.getThrowableProxy().getMessage();
+    private static void release(Capture capture) {
+        ROOT.removeHandler(capture);
+    }
+
+    /**
+     * A record's text: its message with the arguments filled in (slf4j-jdk14 formats it
+     * before it is logged), and its throwable's message.
+     */
+    private static String text(LogRecord record) {
+        String text = record.getMessage();
+        if (record.getThrown() != null && record.getThrown().getMessage() != null) {
+            text += " " + record.getThrown().getMessage();
         }
         return text;
     }
@@ -134,7 +168,7 @@ class OfflineKeyLoggingGuardTest {
         RequestSweep sweep = new RequestSweep(tempDir);
         List<String> failures = new ArrayList<>();
         for (String logger : SdkHttp.KEY_LOGGERS) {
-            for (Level level : List.of(Level.DEBUG, Level.TRACE)) {
+            for (Level level : List.of(Level.FINE, Level.FINEST)) {
                 allAtInfo();
                 level(logger, level);
                 try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(200, "application/json", OK))) {
@@ -223,7 +257,7 @@ class OfflineKeyLoggingGuardTest {
     void noOtherHttpClientLoggerWritesAKeyAtDebug() throws Exception {
         debugExceptKeyLoggers();
         RequestSweep sweep = new RequestSweep(tempDir);
-        ListAppender<ILoggingEvent> log = capture();
+        Capture log = capture();
         List<String> failures = new ArrayList<>();
         try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(200, "application/json", OK))) {
             failures.addAll(sweep(sweep, server, (outcome, requests, problems) -> {
@@ -234,13 +268,13 @@ class OfflineKeyLoggingGuardTest {
         } finally {
             release(log);
         }
-        List<ILoggingEvent> debug = log.list.stream()
-                .filter(e -> e.getLoggerName().startsWith("org.apache.hc") && e.getLevel().isGreaterOrEqual(Level.DEBUG))
+        List<LogRecord> debug = log.list.stream()
+                .filter(e -> e.getLoggerName().startsWith("org.apache.hc") && e.getLevel().intValue() >= Level.FINE.intValue())
                 .collect(Collectors.toList());
         // Not vacuous: HttpClient did write at DEBUG, from loggers other than the key loggers.
         assertTrue(debug.stream().anyMatch(e -> !SdkHttp.KEY_LOGGERS.contains(e.getLoggerName())),
                 "no HttpClient DEBUG output was captured");
-        for (ILoggingEvent event : debug) {
+        for (LogRecord event : debug) {
             if (!SdkHttp.KEY_LOGGERS.contains(event.getLoggerName()) && carriesAKey(text(event))) {
                 failures.add(event.getLoggerName() + " wrote a key or password at " + event.getLevel() + ": " + text(event));
             }
@@ -258,8 +292,8 @@ class OfflineKeyLoggingGuardTest {
     void eachListedLoggerWritesTheKeyAtDebug() throws Exception {
         for (String logger : SdkHttp.KEY_LOGGERS) {
             allAtInfo();
-            level(logger, Level.DEBUG);
-            ListAppender<ILoggingEvent> log = capture();
+            level(logger, Level.FINE);
+            Capture log = capture();
             try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(200, "text/plain", new byte[0]))) {
                 HttpGet get = new HttpGet("http://127.0.0.1:" + server.port() + "/v1/getcredits?api_key=" + KEY);
                 get.setHeader("API-Key", KEY);
@@ -271,7 +305,7 @@ class OfflineKeyLoggingGuardTest {
             }
             List<String> written = log.list.stream()
                     .filter(e -> e.getLoggerName().equals(logger) && text(e).contains(KEY))
-                    .map(ILoggingEvent::getFormattedMessage)
+                    .map(LogRecord::getMessage)
                     .collect(Collectors.toList());
             assertTrue(!written.isEmpty(), logger + " wrote no key at DEBUG");
         }

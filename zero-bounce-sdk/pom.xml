@@ -45,10 +45,8 @@
         <mockito.version>5.23.0</mockito.version>
         <!-- The HttpCore that httpclient5 itself depends on; httpcore5 and httpcore5-h2 move together. -->
         <httpcore5.version>5.4.4</httpcore5.version>
-        <!-- The SLF4J API httpclient5 5.6.5 already brings in; SdkHttp reads logger levels through it. -->
+        <!-- Test scope only: the java.util.logging binding for SLF4J 1.7, whose logger levels the tests set at run time. -->
         <slf4j.version>1.7.36</slf4j.version>
-        <!-- Test scope only: a binding whose logger levels the tests can set at run time. -->
-        <logback.version>1.2.13</logback.version>
     </properties>
 
     <dependencies>
@@ -66,7 +64,11 @@
             <version>2.14.0</version>
         </dependency>
 
-        <!-- All HTTP calls, including multipart uploads, use the supported 5.x APIs. -->
+        <!-- All HTTP calls, including multipart uploads, use the supported 5.x APIs. SdkHttp logs through
+             slf4j-api, which arrives here (compile scope) through httpclient5. Do not declare slf4j-api
+             directly: a direct declaration sits at the depth of an application's logging backend
+             (logback-classic brings slf4j-api too) and wins the tie when this SDK is listed first, which
+             silences the application's logging. -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>
@@ -83,18 +85,12 @@
             <version>${httpcore5.version}</version>
         </dependency>
 
-        <!-- SdkHttp checks whether HttpClient's loggers are at DEBUG before it sends a request. -->
+        <!-- Test only: an SLF4J binding whose logger levels the guard tests set at run time (java.util.logging,
+             no advisories). Never on the runtime classpath of an application using the SDK. -->
         <dependency>
             <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
+            <artifactId>slf4j-jdk14</artifactId>
             <version>${slf4j.version}</version>
-        </dependency>
-
-        <!-- Test only: never on the runtime classpath of an application using the SDK. -->
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -199,8 +195,27 @@
                         <goals>
                             <goal>report</goal>
                         </goals>
+                    </execution>
+                    <execution>
+                        <!-- The coverage gate: the report goal takes no minimum. -->
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                         <configuration>
-                            <minimum>0.50</minimum>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.50</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
                         </configuration>
                     </execution>
                 </executions>

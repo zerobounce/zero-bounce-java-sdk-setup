@@ -58,7 +58,7 @@ class OfflineApiTest {
         assertEquals("/v2/validate", request.path);
         assertEquals("key-a", request.apiKey);
         assertEquals("person@example.com", request.field("email"));
-        assertEquals("", request.field("ip_address"));
+        assertNull(request.field("ip_address"));
         assertNull(request.field("timeout"));
         assertNull(request.field("activity_data"));
         assertNull(request.field("verify_plus"));
@@ -115,7 +115,7 @@ class OfflineApiTest {
         FakeApi.RecordedRequest request = probe.only();
         assertEquals("GET", request.method);
         assertEquals("person@example.com", request.field("email"));
-        assertEquals("", request.field("ip_address"));
+        assertNull(request.field("ip_address"));
     }
 
     @Test
