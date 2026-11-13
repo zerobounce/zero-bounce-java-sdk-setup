@@ -6,6 +6,7 @@
 - Keep API keys on a trusted server. Do not embed them in mobile apps or browser JavaScript that untrusted users can inspect.
 - Custom API base URLs (when supported) must use `https://`. Do not pass end-user-controlled hosts into those settings.
 - Request URLs include `api_key` as a query parameter (ZeroBounce API contract). Do not log full request URLs or enable payload debug logging in production.
+- Requests are sent by Apache HttpClient 5, which logs through SLF4J. At DEBUG it logs the request line (with `api_key`), every request header (including `Authorization` and `API-Key`) and the raw request bytes (form fields such as the SMTP password, and uploaded files). Keep `org.apache.hc` at INFO or above in production. Logback with no configuration file logs everything at DEBUG.
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
@@ -102,7 +103,8 @@ ZeroBounceSDK.getInstance().initialize("<YOUR_API_KEY>", "<YOUR_API_BASE_URL>");
 ### Controlling SDK logging
 
 The SDK is silent by default so it never emits Personally Identifiable Information (PII) unless you
-explicitly opt in. To integrate the SDK with your application's logging framework, register a
+explicitly opt in. This covers the SDK's own logging; HttpClient's goes to your SLF4J backend (see
+[Security](#security)). To integrate the SDK with your application's logging framework, register a
 `ZBLogger` implementation before issuing any API calls. The helper class `ZBLoggers` adapts
 `java.util.logging` (JUL) out of the box:
 

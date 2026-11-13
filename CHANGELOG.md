@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requests send HttpClient's own `User-Agent` (`Apache-HttpClient/5.6.5 (Java/…)`). The calls sent through `HttpURLConnection` sent `Java/…`.
 - **Behaviour change:** `validateBatch` and the other calls that POST a JSON body label it `Content-Type: application/json; charset=UTF-8`. Up to 3.0.1 `HttpURLConnection` labelled it `application/x-www-form-urlencoded`, its default.
 - The text fields of multipart uploads (`sendFile`, `scoringSendFile`, the bulk email finder, domain search and list evaluator uploads) are sent as UTF-8 `text/plain` without a `Content-Transfer-Encoding` header. Up to 3.0.1 they were ISO-8859-1.
-- HttpClient 5 logs through SLF4J (`slf4j-api` 1.7.36). An application with no SLF4J binding sees SLF4J's one-time "no binding" notice on stderr at its first request.
+- HttpClient 5 logs through SLF4J (`slf4j-api` 1.7.36). An application with no SLF4J binding sees SLF4J's one-time "no binding" notice on stderr at its first request. At DEBUG, HttpClient's loggers write the API key, the Warmup key and the SMTP password: the request line carries `api_key`, `org.apache.hc.client5.http.headers` writes `Authorization` and `API-Key`, and `org.apache.hc.client5.http.wire` writes request bodies. Keep `org.apache.hc` at INFO or above in production; logback with no configuration file logs at DEBUG. Up to 3.0.1 the multipart uploads, `getFile` and `scoringGetFile` logged the same through HttpClient 4 and commons-logging, and `HttpURLConnection` logged the request line and headers to `java.util.logging` at FINE.
 
 ### Deprecated
 
