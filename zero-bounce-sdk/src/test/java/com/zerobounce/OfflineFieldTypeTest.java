@@ -36,9 +36,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Field types are part of the shape (check E7, standard.md section 3): on a typed
  * call, a field that arrives with a JSON type other than the documented one is an
  * API error with status 200, never coerced ({@code true} read as {@code "true"}),
- * defaulted or dropped. {@code getCredits} needs {@code Credits} as a string
- * holding an integer, and {@code validate} needs {@code address} and
- * {@code status} as strings. Every documented example response still decodes.
+ * defaulted or dropped. {@code getCredits} needs {@code Credits} as a whole
+ * number (a JSON string or a JSON integer), {@code validate} and every
+ * {@code validateBatch} row need {@code address} and {@code status} as strings,
+ * and a JSON array is not an object. Every example response still decodes.
  */
 class OfflineFieldTypeTest {
 
@@ -299,9 +300,10 @@ class OfflineFieldTypeTest {
         assertEquals(1, credits.size(), "getCredits");
         assertTrue(validate.size() >= 2, "validate overloads: " + validate);
         List<String> failures = new ArrayList<>();
-        for (String body : List.of("{}", "{\"Credits\":null}", "{\"Credits\":true}", "{\"Credits\":5}",
-                "{\"Credits\":-1}", "{\"Credits\":\"abc\"}", "{\"Credits\":\"5.0\"}", "{\"Credits\":\"\"}",
-                "{\"Credits\":1.5}", "{\"Credits\":[\"5\"]}")) {
+        for (String body : List.of("{}", "{\"Credits\":null}", "{\"Credits\":true}", "{\"Credits\":5.5}",
+                "{\"Credits\":5.0}", "{\"Credits\":1e3}", "{\"Credits\":\"abc\"}", "{\"Credits\":\"5.0\"}",
+                "{\"Credits\":\"\"}", "{\"Credits\":1.5}", "{\"Credits\":[\"5\"]}", "{\"Credits\":[5]}",
+                "{\"Credits\":{}}")) {
             run(credits, body, expectError(failures));
         }
         for (String body : List.of("{\"address\":true,\"status\":\"valid\"}",
@@ -310,9 +312,79 @@ class OfflineFieldTypeTest {
                 "{\"address\":\"a@b.c\",\"status\":\"valid\",\"sub_status\":7}", "{}")) {
             run(validate, body, expectError(failures));
         }
-        for (String body : List.of("{\"Credits\":\"-1\"}", "{\"Credits\":\"12345\"}")) {
+        // Credits is an integer sent as a JSON string (the live API) or as a JSON
+        // integer (zerobounce.net's own example, {"Credits":2375323}).
+        for (String body : List.of("{\"Credits\":\"-1\"}", "{\"Credits\":\"12345\"}", "{\"Credits\":2375323}",
+                "{\"Credits\":-1}", "{\"Credits\":0}")) {
             run(credits, body, expectSuccess(failures));
         }
+        // Every validatebatch row needs address and status as strings, and is an object.
+        List<Method> batch = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            if (successType(method) == ZBValidateBatchResponse.class) {
+                batch.add(method);
+            }
+        }
+        assertTrue(!batch.isEmpty(), "validateBatch overloads");
+        for (String row : List.of("{\"status\":\"valid\"}", "{\"address\":\"a@b.c\"}", "{}",
+                "{\"address\":null,\"status\":\"valid\"}", "{\"address\":\"a@b.c\",\"status\":null}",
+                "{\"address\":true,\"status\":\"valid\"}", "{\"address\":\"a@b.c\",\"status\":5}",
+                "{\"Message\":\"Greylist validation still in progress.\"}", "5", "null", "\"x\"", "[]")) {
+            run(batch, "{\"email_batch\":[" + row + "]}", expectError(failures));
+            run(batch, "{\"email_batch\":[{\"address\":\"ok@b.c\",\"status\":\"valid\"}," + row + "]}",
+                    expectError(failures));
+        }
+        run(batch, "{\"email_batch\":[{\"address\":\"a@b.c\",\"status\":\"valid\"}]}", expectSuccess(failures));
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * A JSON array where the call's result is an object (check E7): an empty
+     * array, an array of one string and a positional array (values in field
+     * order) are an error with status 200 on every typed call. A call whose
+     * result is a list accepts the empty array, and still rejects the others.
+     */
+    @Test
+    void anArrayInPlaceOfAnObjectIsAnErrorWithStatus200OnEveryTypedCall() throws Exception {
+        List<Method> objects = new ArrayList<>();
+        List<Method> lists = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            Type type = successType(method);
+            boolean list = type instanceof ParameterizedType && ((ParameterizedType) type).getRawType() == List.class;
+            (list ? lists : objects).add(method);
+        }
+        List<String> failures = new ArrayList<>();
+        for (String body : List.of("[]", "[\"x\"]", "[\"a@example.com\",10]", "[true,\"3\"]",
+                "[\"a@example.com\",\"valid\"]", "[[]]", "[{}]")) {
+            run(objects, body, expectError(failures));
+        }
+        for (String body : List.of("[\"x\"]", "[\"a@example.com\",10]", "[true,\"3\"]", "[[]]", "[5]")) {
+            run(lists, body, expectError(failures));
+        }
+        run(lists, "[]", expectSuccess(failures));
+        assertTrue(objects.size() > 40, "object calls: " + objects.size());
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * An upload's {@code message} may be an array of strings: every item must be
+     * a string, not only the first one the SDK exposes.
+     */
+    @Test
+    void everyItemOfAnUploadMessageArrayIsAString() throws Exception {
+        List<Method> uploads = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            if (successType(method) == ZBSendFileResponse.class) {
+                uploads.add(method);
+            }
+        }
+        assertTrue(uploads.size() >= 4, "uploads: " + uploads);
+        List<String> failures = new ArrayList<>();
+        for (String message : List.of("[5]", "[\"ok\",5]", "[\"ok\",null]", "[\"ok\",true]", "[\"ok\",{}]",
+                "[\"ok\",[]]")) {
+            run(uploads, "{\"success\":true,\"message\":" + message + ",\"file_id\":\"x\"}", expectError(failures));
+        }
+        run(uploads, "{\"success\":true,\"message\":[\"ok\",\"also\"],\"file_id\":\"x\"}", expectSuccess(failures));
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
     }
 

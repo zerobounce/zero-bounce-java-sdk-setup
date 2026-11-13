@@ -10,7 +10,13 @@ import java.util.Objects;
  */
 public class ZBCreditsResponse {
 
+    /**
+     * The balance as text. The API sends it as a JSON string ({@code "12345"},
+     * {@code "-1"}) or as a JSON integer ({@code 2375323}, zerobounce.net's own
+     * example); both are kept as the integer's text.
+     */
     @SerializedName("Credits")
+    @com.google.gson.annotations.JsonAdapter(StrictTypes.TextOrNumber.class)
     @Nullable
     private String credits = null;
 

@@ -163,6 +163,36 @@ class OfflineSendFileMultipartTest {
                 sdk.scoringSendFile(file, 2, null, ok::add, err::add)));
     }
 
+    /**
+     * Options passed with {@code removeDuplicate} unset send no
+     * {@code remove_duplicate} (the API defaults it to true); only the set
+     * options go out (check R2).
+     */
+    @Test
+    void anUnsetRemoveDuplicateIsNotSentWhenOptionsArePassed() throws Exception {
+        String validation = "[api_key=" + KEY + ", email_address_column=1, return_url=https://example.com/done,"
+                + " file[in.csv]=" + CSV + "]";
+        ZeroBounceSDK.SendFileOptions options = new ZeroBounceSDK.SendFileOptions()
+                .setReturnUrl("https://example.com/done");
+        assertEquals("/v2/sendfile " + validation, upload((sdk, file, ok, err) ->
+                sdk.sendFile(file, 1, options, ok::add, err::add)));
+        assertEquals("/v2/sendfile " + validation, upload((sdk, file, ok, err) ->
+                sdk.sendFile(new ByteArrayInputStream(CSV.getBytes(StandardCharsets.UTF_8)), "in.csv", 1,
+                        options, ok::add, err::add)));
+        // Scoring options have always sent has_header_row (default false); set it here
+        // so the check is about remove_duplicate alone.
+        String scoring = "[api_key=" + KEY + ", email_address_column=1, return_url=https://example.com/scored,"
+                + " has_header_row=true, file[in.csv]=" + CSV + "]";
+        ZeroBounceSDK.ScoringSendFileOptions scoringOptions = new ZeroBounceSDK.ScoringSendFileOptions()
+                .setReturnUrl("https://example.com/scored")
+                .setHasHeaderRow(true);
+        assertEquals("/v2/scoring/sendfile " + scoring, upload((sdk, file, ok, err) ->
+                sdk.scoringSendFile(file, 1, scoringOptions, ok::add, err::add)));
+        assertEquals("/v2/scoring/sendfile " + scoring, upload((sdk, file, ok, err) ->
+                sdk.scoringSendFile(new ByteArrayInputStream(CSV.getBytes(StandardCharsets.UTF_8)), "in.csv", 1,
+                        scoringOptions, ok::add, err::add)));
+    }
+
     /** The four overloads above are all there are; a new one must be added here. */
     @Test
     void everySendFileOverloadIsCovered() {

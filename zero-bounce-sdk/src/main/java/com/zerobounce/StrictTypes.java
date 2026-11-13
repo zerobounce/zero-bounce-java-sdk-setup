@@ -130,14 +130,17 @@ final class StrictTypes {
 
     /**
      * The fields a call cannot answer without: getCredits' {@code Credits} is a
-     * string holding an integer, and validate's {@code address} and
+     * whole number, sent as a JSON string ({@code "-1"}, {@code "12345"}) or a
+     * JSON integer ({@code 2375323}); validate's {@code address} and
      * {@code status} are strings (except in the greylist answer, which carries
-     * {@code Message} instead of a result).
+     * {@code Message} instead of a result); and every validatebatch row is an
+     * object with {@code address} and {@code status} as strings.
      *
      * @return why {@code body} is not a {@code type} result, or null
      */
     static @Nullable String missingField(Class<?> type, String body) {
-        if (type != ZBCreditsResponse.class && type != ZBValidateResponse.class) {
+        if (type != ZBCreditsResponse.class && type != ZBValidateResponse.class
+                && type != ZBValidateBatchResponse.class) {
             return null;
         }
         JsonElement parsed = JsonParser.parseString(body);
@@ -147,10 +150,26 @@ final class StrictTypes {
         JsonObject object = parsed.getAsJsonObject();
         if (type == ZBCreditsResponse.class) {
             JsonElement credits = object.get("Credits");
-            if (credits == null || !credits.isJsonPrimitive() || !credits.getAsJsonPrimitive().isString()
+            if (credits == null || !credits.isJsonPrimitive()
                     || !INTEGER.matcher(credits.getAsString()).matches()) {
                 return "ZeroBounce returned " + (credits == null ? "no value" : kind(credits))
-                        + " for Credits, which is not a string holding a whole number.";
+                        + " for Credits, which is not a whole number.";
+            }
+            return null;
+        }
+        if (type == ZBValidateBatchResponse.class) {
+            JsonElement rows = object.get("email_batch");
+            if (rows == null || !rows.isJsonArray()) {
+                return null;
+            }
+            for (JsonElement row : rows.getAsJsonArray()) {
+                if (!row.isJsonObject()) {
+                    return "ZeroBounce returned " + kind(row) + " for a row of email_batch, which is not an object.";
+                }
+                String missing = requireStrings(row.getAsJsonObject(), "email_batch row ");
+                if (missing != null) {
+                    return missing;
+                }
             }
             return null;
         }
@@ -159,10 +178,15 @@ final class StrictTypes {
             // (or the address with it) while the retry is still running.
             return null;
         }
+        return requireStrings(object, "");
+    }
+
+    /** Why {@code object} lacks {@code address} or {@code status} as a string, or null. */
+    private static @Nullable String requireStrings(JsonObject object, String where) {
         for (String field : new String[]{"address", "status"}) {
             JsonElement value = object.get(field);
             if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
-                return "ZeroBounce returned " + (value == null ? "no value" : kind(value)) + " for " + field
+                return "ZeroBounce returned " + (value == null ? "no value" : kind(value)) + " for " + where + field
                         + ", which is not a string.";
             }
         }
