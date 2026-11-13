@@ -6,7 +6,7 @@
 - Keep API keys on a trusted server. Do not embed them in mobile apps or browser JavaScript that untrusted users can inspect.
 - Custom API base URLs (when supported) must use `https://`. Do not pass end-user-controlled hosts into those settings.
 - Request URLs include `api_key` as a query parameter (ZeroBounce API contract). Do not log full request URLs or enable payload debug logging in production.
-- Requests are sent by Apache HttpClient 5, which logs through SLF4J. At DEBUG it logs the request line (with `api_key`), every request header (including `Authorization` and `API-Key`) and the raw request bytes (form fields such as the SMTP password, and uploaded files). Keep `org.apache.hc` at INFO or above in production; see [Controlling SDK logging](#controlling-sdk-logging) for a configuration. Logback with no configuration file logs everything at DEBUG.
+- Requests are sent by Apache HttpClient 5, which logs through SLF4J. At DEBUG it logs the request line (with `api_key`), every request header (including `Authorization` and `API-Key`) and the raw request bytes (form fields such as the SMTP password, and uploaded files). The SDK refuses to send while `org.apache.hc.client5.http.impl.classic.MainClientExec`, `org.apache.hc.client5.http.headers` or `org.apache.hc.client5.http.wire` is at DEBUG or TRACE. Keep `org.apache.hc` at INFO or above in production; see [Controlling SDK logging](#controlling-sdk-logging) for a configuration. Logback with no configuration file logs everything at DEBUG.
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
@@ -108,6 +108,12 @@ Two loggers can write during a request:
   redacted.
 - **Apache HttpClient**, which sends the requests, logs through your SLF4J backend. At DEBUG it writes
   the API key, the Warmup key, the SMTP password and uploaded files.
+
+Before each request the SDK checks three of those loggers: `org.apache.hc.client5.http.impl.classic.MainClientExec`,
+`org.apache.hc.client5.http.headers` and `org.apache.hc.client5.http.wire`. While any of them is at DEBUG or TRACE,
+the call sends nothing and reports status 0 with the message "Apache HttpClient debug logging (org.apache.hc) is
+enabled and would write your API key to the log; set org.apache.hc to INFO or above." A level changed at run time
+applies to the next call.
 
 Keep `org.apache.hc` at INFO or above in production. Logback with no configuration file logs
 everything at DEBUG, so if you use Logback without a `logback.xml`, start from this one:

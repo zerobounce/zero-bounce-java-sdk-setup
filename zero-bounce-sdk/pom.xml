@@ -45,6 +45,10 @@
         <mockito.version>5.23.0</mockito.version>
         <!-- The HttpCore that httpclient5 itself depends on; httpcore5 and httpcore5-h2 move together. -->
         <httpcore5.version>5.4.4</httpcore5.version>
+        <!-- The SLF4J API httpclient5 5.6.5 already brings in; SdkHttp reads logger levels through it. -->
+        <slf4j.version>1.7.36</slf4j.version>
+        <!-- Test scope only: a binding whose logger levels the tests can set at run time. -->
+        <logback.version>1.2.13</logback.version>
     </properties>
 
     <dependencies>
@@ -77,6 +81,21 @@
             <groupId>org.apache.httpcomponents.core5</groupId>
             <artifactId>httpcore5-h2</artifactId>
             <version>${httpcore5.version}</version>
+        </dependency>
+
+        <!-- SdkHttp checks whether HttpClient's loggers are at DEBUG before it sends a request. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+
+        <!-- Test only: never on the runtime classpath of an application using the SDK. -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/junit/junit -->

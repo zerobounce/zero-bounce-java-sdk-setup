@@ -15,17 +15,37 @@ import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /** One outbound call, with a per-client replacement transport for offline tests. */
 final class SdkHttp {
+
+    /**
+     * The HttpClient 5 loggers whose output at DEBUG or TRACE carries a request's URI,
+     * headers or body, and so the API key (httpclient5 5.6.5, classic exchanges; httpcore5
+     * 5.4.4 writes no logs). {@code MainClientExec} writes "executing GET &lt;uri&gt;", with
+     * {@code api_key} in the query; {@code headers} writes the request line and every
+     * request header, {@code API-Key} and {@code Authorization} among them; {@code wire}
+     * writes every byte sent, bodies included.
+     */
+    static final List<String> KEY_LOGGERS = List.of(
+            "org.apache.hc.client5.http.impl.classic.MainClientExec",
+            "org.apache.hc.client5.http.headers",
+            "org.apache.hc.client5.http.wire");
+
+    /** The error a call reports, with no request sent, while one of {@link #KEY_LOGGERS} is at DEBUG or TRACE. */
+    static final String KEY_LOGGING_REFUSED = "Apache HttpClient debug logging (org.apache.hc) is enabled "
+            + "and would write your API key to the log; set org.apache.hc to INFO or above.";
 
     final String method;
     final String url;
@@ -173,7 +193,22 @@ final class SdkHttp {
         return execute(request, timeoutMillis);
     }
 
+    /**
+     * Refuses to send while one of {@link #KEY_LOGGERS} would write at DEBUG or TRACE.
+     * Checked on every call, so a level changed at run time applies to the next one.
+     */
+    static void refuseWhileKeyLogging() throws IOException {
+        for (String name : KEY_LOGGERS) {
+            Logger logger = LoggerFactory.getLogger(name);
+            if (logger.isDebugEnabled() || logger.isTraceEnabled()) {
+                throw new IOException(KEY_LOGGING_REFUSED);
+            }
+        }
+    }
+
+    /** The one place every request sent through HttpClient 5 goes, so every path is checked. */
     static Result execute(HttpUriRequestBase request, int timeoutMillis) throws IOException {
+        refuseWhileKeyLogging();
         request.setConfig(requestConfig(timeoutMillis));
         CloseableHttpClient shared = sharedClient(timeoutMillis);
         if (shared != null) {
