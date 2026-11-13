@@ -558,4 +558,23 @@ class OfflineTransportTest {
         String page = "<!DOCTYPE html><title>Blocked</title><p>Try later</p>";
         bodySweep("html", "application/json", page, page.getBytes(StandardCharsets.UTF_8), "HTML error page");
     }
+
+    /**
+     * Each marker of the HTML sniff counts on its own (check E, standard.md section 3):
+     * a page with {@code <html}, {@code <head} or {@code <body} and no doctype, served
+     * under application/json or text/csv, is an HTML error page with status 200 on every
+     * path, and a download writes no file. Removing any one marker fails this test.
+     */
+    @Test
+    void eachHtmlMarkerAloneMakesAnHtmlPageOnEveryPath() throws Exception {
+        String[] pages = {
+                "<html lang=\"en\"><p>Blocked</p></html>",
+                "<head><title>Blocked</title></head><p>Try later</p>",
+                "<body><p>Blocked. Try later.</p></body>"};
+        for (int i = 0; i < pages.length; i++) {
+            byte[] bytes = pages[i].getBytes(StandardCharsets.UTF_8);
+            bodySweep("marker-json-" + i, "application/json", pages[i], bytes, "HTML error page");
+            bodySweep("marker-csv-" + i, "text/csv", pages[i], bytes, "HTML error page");
+        }
+    }
 }

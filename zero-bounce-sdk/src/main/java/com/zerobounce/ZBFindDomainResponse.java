@@ -14,31 +14,39 @@ import java.util.Objects;
 public class ZBFindDomainResponse {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String email = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String domain = "";
 
     @NotNull
     @SerializedName("company_name")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String companyName = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String format = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String confidence = "";
 
     @NotNull
     @SerializedName("did_you_mean")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String didYouMean = "";
 
     @NotNull
     @SerializedName("failure_reason")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String failureReason = "";
 
     @NotNull
     @SerializedName("other_domain_formats")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsNoRows.class, nullSafe = false)
     private List<DomainFormat> otherDomainFormats = Collections.emptyList();
 
     public @NotNull String getEmail() {

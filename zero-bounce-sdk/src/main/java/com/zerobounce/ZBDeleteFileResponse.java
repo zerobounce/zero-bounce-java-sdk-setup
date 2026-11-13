@@ -12,8 +12,10 @@ import java.util.Objects;
 public class ZBDeleteFileResponse {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsFalse.class, nullSafe = false)
     private Boolean success = false;
 
+    @com.google.gson.annotations.JsonAdapter(StrictTypes.FileJobMessage.class)
     @Nullable
     private String message = null;
 

@@ -126,6 +126,94 @@ final class StrictTypes {
     }
 
     /**
+     * The message of a file job (upload, scoring upload, delete, file status): a JSON
+     * string or null, or a list of strings that is joined with newlines into the one
+     * string the model holds (standard.md section 3). One reader for every file-job answer.
+     */
+    static final class FileJobMessage extends TypeAdapter<String> {
+        @Override
+        public void write(JsonWriter out, String value) throws IOException {
+            out.value(value);
+        }
+
+        @Override
+        public String read(JsonReader in) throws IOException {
+            return fileJobMessage(JsonParser.parseReader(in));
+        }
+    }
+
+    /** The same rule for a message already read into a tree; see {@link FileJobMessage}. */
+    static @Nullable String fileJobMessage(@Nullable JsonElement element) {
+        if (element == null || !element.isJsonArray()) {
+            return text(element, "message");
+        }
+        java.util.List<String> items = new java.util.ArrayList<>();
+        for (JsonElement item : element.getAsJsonArray()) {
+            String text = text(item, "message");
+            if (text == null) {
+                throw new JsonParseException("ZeroBounce returned null in message, which is not a string.");
+            }
+            items.add(text);
+        }
+        return String.join("\n", items);
+    }
+
+    /**
+     * A field the public type never leaves null (standard.md section 3): a JSON null reads
+     * as the field's empty value. Used with {@code @JsonAdapter(..., nullSafe = false)} so
+     * the null reaches this adapter; every other value goes to the field's own adapter.
+     */
+    abstract static class NullAsEmpty<T> implements TypeAdapterFactory {
+        /** The value a JSON null reads as. */
+        abstract T empty();
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <R> TypeAdapter<R> create(Gson gson, TypeToken<R> type) {
+            TypeAdapter<R> delegate = gson.getDelegateAdapter(this, type);
+            return new TypeAdapter<R>() {
+                @Override
+                public void write(JsonWriter out, R value) throws IOException {
+                    delegate.write(out, value);
+                }
+
+                @Override
+                public R read(JsonReader in) throws IOException {
+                    if (in.peek() == JsonToken.NULL) {
+                        in.nextNull();
+                        return (R) empty();
+                    }
+                    return delegate.read(in);
+                }
+            };
+        }
+    }
+
+    /** A text field that is never null: null reads as "". */
+    static final class NullAsEmptyText extends NullAsEmpty<String> {
+        @Override
+        String empty() {
+            return "";
+        }
+    }
+
+    /** A boolean field that is never null: null reads as false. */
+    static final class NullAsFalse extends NullAsEmpty<Boolean> {
+        @Override
+        Boolean empty() {
+            return false;
+        }
+    }
+
+    /** A list field that is never null: null reads as no rows. */
+    static final class NullAsNoRows extends NullAsEmpty<java.util.List<?>> {
+        @Override
+        java.util.List<?> empty() {
+            return new java.util.ArrayList<>();
+        }
+    }
+
+    /**
      * Enums (status, sub-status): a JSON string or null; Gson's own reading of the
      * string is kept. Maps (batch error rows): a JSON object or null, not the
      * array of pairs Gson would otherwise also read as a map.

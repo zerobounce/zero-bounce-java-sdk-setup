@@ -14,6 +14,7 @@ import java.util.Objects;
 public class ZBSendFileResponse {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsFalse.class, nullSafe = false)
     private Boolean success = false;
 
     @Nullable
@@ -103,21 +104,7 @@ public class ZBSendFileResponse {
                 r.success = success;
             }
             if (jobject.has("message")) {
-                if (jobject.get("message").isJsonArray()) {
-                    JsonArray array = jobject.get("message").getAsJsonArray();
-                    // Every item is a string (not null); the items are joined with a newline.
-                    java.util.List<String> items = new java.util.ArrayList<>();
-                    for (JsonElement item : array) {
-                        String text = StrictTypes.text(item, "message");
-                        if (text == null) {
-                            throw new JsonParseException("ZeroBounce returned null in message, which is not a string.");
-                        }
-                        items.add(text);
-                    }
-                    r.message = String.join("\n", items);
-                } else {
-                    r.message = StrictTypes.text(jobject.get("message"), "message");
-                }
+                r.message = StrictTypes.fileJobMessage(jobject.get("message"));
             }
             if (jobject.has("file_name")) {
                 r.fileName = StrictTypes.text(jobject.get("file_name"), "file_name");

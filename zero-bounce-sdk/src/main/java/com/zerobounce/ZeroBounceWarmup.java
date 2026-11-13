@@ -300,9 +300,8 @@ public class ZeroBounceWarmup {
         if (trimmed.isEmpty()) {
             return "Empty response from ZeroBounce (HTTP " + status + ")";
         }
-        String head = trimmed.substring(0, Math.min(2000, trimmed.length()))
-                .toLowerCase(java.util.Locale.ROOT);
-        if (head.contains("<!doctype html") || head.contains("<html")) {
+        // The same HTML sniff as every other call (every marker, not a copy of two).
+        if (HttpMessages.looksLikeHtml(trimmed, null)) {
             return "ZeroBounce returned an HTML error page instead of an API response.";
         }
         if (trimmed.startsWith("{") || trimmed.startsWith("[")) {

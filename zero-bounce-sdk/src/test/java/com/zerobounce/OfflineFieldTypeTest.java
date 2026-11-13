@@ -275,9 +275,10 @@ class OfflineFieldTypeTest {
             run(entry.getValue(), list ? "[" + baseText + "]" : baseText, expectSuccess(failures));
             for (Field field : modelFields(model)) {
                 for (JsonElement value : wrongValues(field.getGenericType(), field)) {
-                    if (model == ZBSendFileResponse.class && field.getName().equals("message")
+                    if ((model == ZBSendFileResponse.class || model == ZBDeleteFileResponse.class
+                            || model == ZBFileStatusResponse.class) && field.getName().equals("message")
                             && value.isJsonArray() && value.getAsJsonArray().isEmpty()) {
-                        // An upload's message may be an array of strings (an empty one is fine);
+                        // A file job's message may be an array of strings (an empty one is fine);
                         // [true] and [5] still are not.
                         continue;
                     }
@@ -570,6 +571,193 @@ class OfflineFieldTypeTest {
         run(methods, "{\"error\":[5]}", expectError(failures));
         assertTrue(methods.stream().filter(m -> m.getName().toLowerCase(Locale.ROOT).contains("sendfile")
                 || m.getName().toLowerCase(Locale.ROOT).contains("file")).count() >= 10, "uploads swept");
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * The names of a model's fields its source marks {@code @NotNull}. The annotation is
+     * CLASS-retained, so the source is read (a header scan of the model's own file).
+     */
+    private static java.util.Set<String> notNullFields(Class<?> model) throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/zerobounce", model.getSimpleName() + ".java"),
+                StandardCharsets.UTF_8);
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "@NotNull\\s+(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*private\\s+[^=;]+?\\s(\\w+)\\s*=").matcher(source);
+        while (matcher.find()) {
+            names.add(matcher.group(1));
+        }
+        return names;
+    }
+
+    /** The value a field holds in a fresh model: its empty value for a field the public type never leaves null. */
+    private static Object defaultOf(Class<?> model, Field field) throws Exception {
+        java.lang.reflect.Constructor<?> constructor = model.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object fresh = constructor.newInstance();
+        field.setAccessible(true);
+        return field.get(fresh);
+    }
+
+    /**
+     * standard.md section 3: where the public type is not nullable, a JSON null reads
+     * as that type's empty value ({@code ""}, {@code false}, an empty list), never as
+     * null and never as an error. Every {@code @NotNull} field of every typed model, and
+     * of the nested {@link DomainFormat} rows, is sent as null once; the decoded value must
+     * be the empty value the field starts with.
+     */
+    @Test
+    void aNullInANotNullFieldReadsAsItsEmptyValue() throws Exception {
+        Map<Class<?>, List<String>> documented = documented();
+        Map<Type, List<Method>> byType = new LinkedHashMap<>();
+        for (Method method : typedMethods()) {
+            byType.computeIfAbsent(successType(method), k -> new ArrayList<>()).add(method);
+        }
+        List<String> failures = new ArrayList<>();
+        int checks = 0;
+        for (Map.Entry<Type, List<Method>> entry : byType.entrySet()) {
+            Type type = entry.getKey();
+            boolean list = type instanceof ParameterizedType
+                    && ((ParameterizedType) type).getRawType() == List.class;
+            Class<?> model = (Class<?>) (list ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
+            String baseText = documented.containsKey(model) ? documented.get(model).get(0) : "{}";
+            for (Field field : modelFields(model)) {
+                Object expected = defaultOf(model, field);
+                // Only a field the public type marks @NotNull is checked; a @Nullable one stays null.
+                if (REQUIRED.contains(jsonName(field)) || !notNullFields(model).contains(field.getName())) {
+                    continue;
+                }
+                JsonObject body = JsonParser.parseString(baseText).getAsJsonObject();
+                body.add(jsonName(field), JsonNull.INSTANCE);
+                String text = list ? "[" + body + "]" : body.toString();
+                run(entry.getValue(), text, (method, sent, outcome) -> {
+                    Object decoded = outcome.successes.size() == 1 ? outcome.successes.get(0) : null;
+                    if (decoded instanceof List) {
+                        decoded = ((List<?>) decoded).isEmpty() ? null : ((List<?>) decoded).get(0);
+                    }
+                    Object actual = null;
+                    try {
+                        actual = decoded == null ? null : readField(decoded, field);
+                    } catch (Exception e) {
+                        failures.add(sent + " " + outcome + " " + e);
+                        return;
+                    }
+                    if (outcome.thrown != null || !outcome.errors.isEmpty() || !java.util.Objects.equals(expected, actual)) {
+                        failures.add(sent + " " + field.getName() + " expected " + expected + " got " + actual
+                                + " " + outcome);
+                    }
+                });
+                checks++;
+            }
+        }
+        // The nested rows of the finder and domain search answers.
+        for (String body : List.of("{\"format\":null,\"confidence\":null}")) {
+            for (Field field : modelFields(DomainFormat.class)) {
+                if (!notNullFields(DomainFormat.class).contains(field.getName())) {
+                    continue;
+                }
+                String text = "{\"other_domain_formats\":[" + body + "]}";
+                List<Method> finders = new ArrayList<>();
+                for (Method method : typedMethods()) {
+                    if (successType(method) == ZBFindDomainResponse.class
+                            || successType(method) == ZBEmailFinderResponse.class) {
+                        finders.add(method);
+                    }
+                }
+                JsonObject row = new JsonObject();
+                row.add(jsonName(field), JsonNull.INSTANCE);
+                row.addProperty("confidence".equals(jsonName(field)) ? "format" : "confidence", "x");
+                String rowText = "{\"other_domain_formats\":[" + row + "]}";
+                String expectedField = "";
+                run(finders, rowText, (method, sent, outcome) -> {
+                    Object decoded = outcome.successes.size() == 1 ? outcome.successes.get(0) : null;
+                    Object actual = null;
+                    try {
+                        Object rows = decoded == null ? null : readField(decoded, otherDomainFormatsField(decoded));
+                        Object first = rows instanceof List && !((List<?>) rows).isEmpty()
+                                ? ((List<?>) rows).get(0) : null;
+                        actual = first == null ? null : readField(first, field);
+                    } catch (Exception e) {
+                        failures.add(sent + " " + outcome + " " + e);
+                        return;
+                    }
+                    if (outcome.thrown != null || !outcome.errors.isEmpty() || !expectedField.equals(actual)) {
+                        failures.add(sent + " DomainFormat." + field.getName() + " expected \"\" got " + actual
+                                + " " + outcome);
+                    }
+                });
+                checks++;
+            }
+        }
+        assertTrue(checks > 25, "null checks: " + checks);
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    private static Object readField(Object target, Field field) throws Exception {
+        Field own = target.getClass().getDeclaredField(field.getName());
+        own.setAccessible(true);
+        return own.get(target);
+    }
+
+    private static Field otherDomainFormatsField(Object target) throws Exception {
+        return target.getClass().getDeclaredField("otherDomainFormats");
+    }
+
+    /**
+     * A null {@code email_batch} is an empty batch, not a null list (standard.md section 3:
+     * the public type is not nullable, so null reads as its empty value).
+     */
+    @Test
+    void aNullEmailBatchIsAnEmptyBatch() throws Exception {
+        List<Method> batch = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            if (successType(method) == ZBValidateBatchResponse.class) {
+                batch.add(method);
+            }
+        }
+        List<String> failures = new ArrayList<>();
+        run(batch, "{\"email_batch\":null}", (method, body, outcome) -> {
+            Object sent = outcome.successes.size() == 1 ? outcome.successes.get(0) : null;
+            if (outcome.thrown != null || !outcome.errors.isEmpty() || !(sent instanceof ZBValidateBatchResponse)
+                    || !((ZBValidateBatchResponse) sent).getEmailBatch().isEmpty()) {
+                failures.add(body + " " + outcome);
+            }
+        });
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * A date field the API sends as text that no known format reads (check E7 and the date
+     * closure in standard.md section 3) is an error with status 200 on every typed call that
+     * returns it, not a null date and not a success.
+     */
+    @Test
+    void anUnparseableDateIsAnErrorWithStatus200OnEveryTypedCall() throws Exception {
+        Map<Class<?>, List<String>> documented = documented();
+        Map<Type, List<Method>> byType = new LinkedHashMap<>();
+        for (Method method : typedMethods()) {
+            byType.computeIfAbsent(successType(method), k -> new ArrayList<>()).add(method);
+        }
+        List<String> failures = new ArrayList<>();
+        int checked = 0;
+        for (Map.Entry<Type, List<Method>> entry : byType.entrySet()) {
+            Type type = entry.getKey();
+            boolean list = type instanceof ParameterizedType
+                    && ((ParameterizedType) type).getRawType() == List.class;
+            Class<?> model = (Class<?>) (list ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
+            String baseText = documented.containsKey(model) ? documented.get(model).get(0) : "{}";
+            for (Field field : modelFields(model)) {
+                if (field.getType() != Date.class) {
+                    continue;
+                }
+                JsonObject body = JsonParser.parseString(baseText).getAsJsonObject();
+                body.addProperty(jsonName(field), "not a date");
+                String text = list ? "[" + body + "]" : body.toString();
+                run(entry.getValue(), text, expectError(failures));
+                checked++;
+            }
+        }
+        assertTrue(checked >= 2, "date fields checked: " + checked);
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
     }
 }

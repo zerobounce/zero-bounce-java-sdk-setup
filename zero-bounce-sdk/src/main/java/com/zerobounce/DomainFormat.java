@@ -10,9 +10,11 @@ import java.util.Objects;
 public class DomainFormat {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String format = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String confidence = "";
 
     public String getFormat() {

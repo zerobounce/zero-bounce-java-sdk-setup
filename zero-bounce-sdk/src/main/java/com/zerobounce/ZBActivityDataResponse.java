@@ -12,6 +12,7 @@ import java.util.Objects;
 public class ZBActivityDataResponse {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsFalse.class, nullSafe = false)
     private Boolean found = false;
 
     @SerializedName("active_in_days")

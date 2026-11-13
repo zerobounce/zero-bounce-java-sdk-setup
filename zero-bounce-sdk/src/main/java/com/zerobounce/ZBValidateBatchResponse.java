@@ -15,6 +15,7 @@ public class ZBValidateBatchResponse {
 
     @SerializedName("email_batch")
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsNoRows.class, nullSafe = false)
     List<ZBValidateResponse> emailBatch;
 
     @Nullable List<LinkedHashMap<String, Object>> errors;

@@ -13,34 +13,43 @@ import java.util.Objects;
 public class ZBEmailFinderResponse {
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String email = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String domain = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String format = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String status = "";
 
     @NotNull
     @SerializedName("sub_status")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String subStatus = "";
 
     @NotNull
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String confidence = "";
 
     @NotNull
     @SerializedName("did_you_mean")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String didYouMean = "";
 
     @NotNull
     @SerializedName("failure_reason")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsEmptyText.class, nullSafe = false)
     private String failureReason = "";
 
     @NotNull
     @SerializedName("other_domain_formats")
+    @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsNoRows.class, nullSafe = false)
     private List<DomainFormat> otherDomainFormats = Collections.emptyList();
 
     public String getEmail() {

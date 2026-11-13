@@ -366,21 +366,36 @@ final class HttpMessages {
         }
     }
 
-    private static String nonBlankString(JsonObject object, String key) {
-        JsonElement value = object.get(key);
-        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+    /**
+     * The text of a message value: a string, or the non-blank strings of a list
+     * joined with newlines (the file-job rule); null when there is none.
+     */
+    private static String messageText(JsonElement value) {
+        if (value == null || value.isJsonNull()) {
             return null;
         }
-        String text = value.getAsString().trim();
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            parts.add(value.getAsString());
+        } else if (value.isJsonArray()) {
+            for (JsonElement item : value.getAsJsonArray()) {
+                if (item.isJsonPrimitive() && item.getAsJsonPrimitive().isString()) {
+                    parts.add(item.getAsString());
+                }
+            }
+        }
+        String text = parts.stream().map(String::trim).filter(part -> !part.isEmpty())
+                .collect(java.util.stream.Collectors.joining("\n"));
         return text.isEmpty() ? null : stripPrefix(text);
     }
 
     /**
      * The message when a body is nothing but a message: an object with no
-     * "success" field whose keys are all message keys, at least one a
-     * non-empty string; null otherwise. Only for the email finder and domain
-     * search, whose result is never a bare message. LIVE: guessformat answers
-     * an invalid or drained key with an HTTP 200 and
+     * "success" field whose keys are all message keys, whatever their values
+     * (a string, blank, null or a list); null otherwise. Only for the email
+     * finder and domain search, whose result is never a bare message. A message
+     * with no text is reported as such. LIVE: guessformat answers an invalid or
+     * drained key with an HTTP 200 and
      * {"Message": "Invalid API key or your account ran out of credits"}.
      * Not for validate: a repeated greylist_processing request answers
      * {"Message": "Greylist validation still in progress..."}, a result.
@@ -390,16 +405,18 @@ final class HttpMessages {
         if (object == null || object.size() == 0) {
             return null;
         }
-        String message = null;
         for (String key : object.keySet()) {
             if (!MESSAGE_KEYS.contains(key)) {
                 return null;
             }
-            if (message == null) {
-                message = nonBlankString(object, key);
+        }
+        for (String key : object.keySet()) {
+            String message = messageText(object.get(key));
+            if (message != null) {
+                return message;
             }
         }
-        return message;
+        return "ZeroBounce returned an error with no message text.";
     }
 
     private static String firstText(JsonObject object, String... keys) {
