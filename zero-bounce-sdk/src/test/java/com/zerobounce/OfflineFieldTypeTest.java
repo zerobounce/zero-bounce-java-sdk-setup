@@ -583,7 +583,7 @@ class OfflineFieldTypeTest {
                 StandardCharsets.UTF_8);
         java.util.Set<String> names = new java.util.TreeSet<>();
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "@NotNull\\s+(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*private\\s+[^=;]+?\\s(\\w+)\\s*=").matcher(source);
+                "@NotNull\\s+(?:@[\\w.]+(?:\\([^)]*\\))?\\s+)*(?:private\\s+)?[^=;(]+?\\s(\\w+)\\s*[=;]").matcher(source);
         while (matcher.find()) {
             names.add(matcher.group(1));
         }
@@ -600,6 +600,28 @@ class OfflineFieldTypeTest {
     }
 
     /**
+     * The value a {@code @NotNull} field reads as when the JSON leaves it out or sends null:
+     * the empty value of its type, whatever a fresh model holds (a fresh model that starts
+     * the field as null must still read as the empty value).
+     */
+    private static Object emptyValueOf(Class<?> model, Field field) throws Exception {
+        Object fresh = defaultOf(model, field);
+        if (fresh != null) {
+            return fresh;
+        }
+        if (field.getType() == String.class) {
+            return "";
+        }
+        if (field.getType() == boolean.class || field.getType() == Boolean.class) {
+            return false;
+        }
+        if (List.class.isAssignableFrom(field.getType())) {
+            return new ArrayList<>();
+        }
+        throw new AssertionError("no empty value for " + model.getSimpleName() + "." + field.getName());
+    }
+
+    /**
      * standard.md section 3: where the public type is not nullable, a JSON null reads
      * as that type's empty value ({@code ""}, {@code false}, an empty list), never as
      * null and never as an error. Every {@code @NotNull} field of every typed model, and
@@ -608,6 +630,20 @@ class OfflineFieldTypeTest {
      */
     @Test
     void aNullInANotNullFieldReadsAsItsEmptyValue() throws Exception {
+        sweepNotNullFields(false);
+    }
+
+    /**
+     * standard.md section 3: a missing optional field reads exactly like a null one. Every
+     * {@code @NotNull} field of every typed model (and of the nested rows) is left out of
+     * an otherwise valid answer once; the decoded value must be the field's empty value.
+     */
+    @Test
+    void aMissingNotNullFieldReadsAsItsEmptyValue() throws Exception {
+        sweepNotNullFields(true);
+    }
+
+    private void sweepNotNullFields(boolean absent) throws Exception {
         Map<Class<?>, List<String>> documented = documented();
         Map<Type, List<Method>> byType = new LinkedHashMap<>();
         for (Method method : typedMethods()) {
@@ -622,13 +658,17 @@ class OfflineFieldTypeTest {
             Class<?> model = (Class<?>) (list ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
             String baseText = documented.containsKey(model) ? documented.get(model).get(0) : "{}";
             for (Field field : modelFields(model)) {
-                Object expected = defaultOf(model, field);
                 // Only a field the public type marks @NotNull is checked; a @Nullable one stays null.
                 if (REQUIRED.contains(jsonName(field)) || !notNullFields(model).contains(field.getName())) {
                     continue;
                 }
+                Object expected = emptyValueOf(model, field);
                 JsonObject body = JsonParser.parseString(baseText).getAsJsonObject();
-                body.add(jsonName(field), JsonNull.INSTANCE);
+                if (absent) {
+                    body.remove(jsonName(field));
+                } else {
+                    body.add(jsonName(field), JsonNull.INSTANCE);
+                }
                 String text = list ? "[" + body + "]" : body.toString();
                 run(entry.getValue(), text, (method, sent, outcome) -> {
                     Object decoded = outcome.successes.size() == 1 ? outcome.successes.get(0) : null;
@@ -665,7 +705,9 @@ class OfflineFieldTypeTest {
                     }
                 }
                 JsonObject row = new JsonObject();
-                row.add(jsonName(field), JsonNull.INSTANCE);
+                if (!absent) {
+                    row.add(jsonName(field), JsonNull.INSTANCE);
+                }
                 row.addProperty("confidence".equals(jsonName(field)) ? "format" : "confidence", "x");
                 String rowText = "{\"other_domain_formats\":[" + row + "]}";
                 String expectedField = "";

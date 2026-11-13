@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
@@ -13,10 +14,11 @@ import java.util.Objects;
  */
 public class ZBValidateBatchResponse {
 
+    /** Starts as an empty batch, so an answer without {@code email_batch} reads as one (standard.md section 3). */
     @SerializedName("email_batch")
     @NotNull
     @com.google.gson.annotations.JsonAdapter(value = StrictTypes.NullAsNoRows.class, nullSafe = false)
-    List<ZBValidateResponse> emailBatch;
+    List<ZBValidateResponse> emailBatch = new ArrayList<>();
 
     @Nullable List<LinkedHashMap<String, Object>> errors;
 
