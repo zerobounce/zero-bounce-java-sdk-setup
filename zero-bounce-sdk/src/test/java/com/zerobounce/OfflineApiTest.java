@@ -2,14 +2,13 @@ package com.zerobounce;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.apache.http.HttpEntity;
-import org.apache.http.StatusLine;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpRequestBase;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -19,8 +18,6 @@ import org.mockito.Mockito;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -804,17 +801,15 @@ class OfflineApiTest {
     }
 
     @Test
-    void urlConnectionDoesNotFollowRedirects() throws Exception {
-        ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
-        sdk.initialize("key");
-        URL url = mock(URL.class);
-        HttpURLConnection connection = mock(HttpURLConnection.class);
-        when(url.openConnection()).thenReturn(connection);
-        when(connection.getResponseCode()).thenReturn(200);
-        when(connection.getInputStream()).thenReturn(new ByteArrayInputStream("{\"Credits\":\"1\"}".getBytes(StandardCharsets.UTF_8)));
-        doReturn(url).when(sdk).createUrlFrom(anyString());
-        sdk.getCredits(response -> assertEquals("1", response.getCredits()), error -> fail(error.getErrors().toString()));
-        verify(connection).setInstanceFollowRedirects(false);
+    void jsonCallsDoNotFollowRedirects() throws Exception {
+        try (LoopbackServer server = new LoopbackServer(LoopbackServer.redirect(302, "https://elsewhere.invalid/"));
+             MockedStatic<HttpClients> ignored = server.apacheClients()) {
+            ZeroBounceSDK sdk = server.sdk();
+            sdk.initialize("key");
+            sdk.getCredits(response -> fail("redirect accepted"), error -> assertEquals(302, error.getStatusCode()));
+            assertEquals(1, server.requests().size());
+            assertFalse(server.apacheConfigs.get(0).isRedirectsEnabled());
+        }
     }
 
     @Test
@@ -822,23 +817,23 @@ class OfflineApiTest {
         ZeroBounceSDK sdk = new ZeroBounceSDK();
         sdk.initialize("key");
         CloseableHttpClient client = mock(CloseableHttpClient.class);
-        CloseableHttpResponse response = mock(CloseableHttpResponse.class);
+        ClassicHttpResponse response = mock(ClassicHttpResponse.class);
         HttpEntity entity = mock(HttpEntity.class);
-        StatusLine status = mock(StatusLine.class);
-        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
-        when(client.execute(captor.capture())).thenReturn(response);
+        ArgumentCaptor<HttpUriRequestBase> captor = ArgumentCaptor.forClass(HttpUriRequestBase.class);
+        when(client.execute(captor.capture(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
+                .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
+                        .handleResponse(response));
         when(response.getEntity()).thenReturn(entity);
-        when(response.getStatusLine()).thenReturn(status);
-        when(status.getStatusCode()).thenReturn(200);
+        when(response.getCode()).thenReturn(200);
         when(response.getFirstHeader("Content-Type")).thenReturn(null);
         when(entity.getContent()).thenReturn(new ByteArrayInputStream("email\n".getBytes(StandardCharsets.UTF_8)));
         try (MockedStatic<HttpClients> clients = Mockito.mockStatic(HttpClients.class)) {
-            clients.when(HttpClients::createDefault).thenReturn(client);
+            clients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(client));
             Path out = tempDir.resolve("apache.csv");
             sdk.getFile("fid", out.toString(), responseBody -> {
             }, error -> fail(error.getErrors().toString()));
         }
-        RequestConfig config = ((HttpRequestBase) captor.getValue()).getConfig();
+        RequestConfig config = captor.getValue().getConfig();
         assertNotNull(config);
         assertFalse(config.isRedirectsEnabled());
     }
@@ -959,12 +954,9 @@ class OfflineApiTest {
         // an empty error list and status 0.
         ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
         sdk.initialize(METHOD_PATH_KEY);
-        URL url = mock(URL.class);
-        HttpURLConnection connection = mock(HttpURLConnection.class);
-        when(url.openConnection()).thenReturn(connection);
-        when(connection.getResponseCode()).thenReturn(500);
-        when(connection.getErrorStream()).thenReturn(null);
-        doReturn(url).when(sdk).createUrlFrom(anyString());
+        doReturn(new SdkHttp.Result(500, "", new byte[0])).when(sdk)
+                .exchangeHttp(anyString(), anyString(), org.mockito.ArgumentMatchers.nullable(String.class),
+                        org.mockito.ArgumentMatchers.nullable(byte[].class), org.mockito.ArgumentMatchers.nullable(Map.class));
         for (Map.Entry<String, Call> entry : Map.of(
                 "validate", (Call) (ok, err) -> sdk.validate("a@example.com", "", ok, err),
                 "getCredits", (Call) (ok, err) -> sdk.getCredits(ok, err)

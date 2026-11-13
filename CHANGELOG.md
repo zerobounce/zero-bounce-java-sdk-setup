@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- All HTTP requests in `ZeroBounceSDK` and `ZeroBounceWarmup`, including multipart uploads and file downloads, now use Apache HttpClient 5.6.5 and HttpCore 5.4.4. The SDK no longer depends on HttpClient 4, HttpCore 4 or the separate HttpMime artifact. Redirects and automatic retries are disabled; timeouts, response bytes and callback behavior are preserved.
+
 ### Deprecated
 
 - `ZeroBounceWarmup.EmailContent.setIndustry` (not an API field; not sent), `EmailContent.setWebsite` (use `setCompanyWebsite`), `ManagedSending.setDailyLimit` (the API does not apply a daily limit; not sent) and `ManagedSending.setTimezoneOffset(Integer)` (use `setTimezoneOffset(double)`; an int literal already calls it). They still compile and work as described under Fixed.

@@ -3,16 +3,16 @@ package com.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.StatusLine;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.ContentType;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.core5.net.URIBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,9 +26,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.*;
-import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -1609,20 +1607,20 @@ public class ZeroBounceSDKTest {
     @Test
     public void getFile_WithOptions_AppendsDownloadTypeAndActivityData() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        ClassicHttpResponse mockedResponse = mock(ClassicHttpResponse.class);
         HttpEntity mockedEntity = mock(HttpEntity.class);
-        StatusLine statusLine = mock(StatusLine.class);
         Header header = mock(Header.class);
-        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
+        ArgumentCaptor<HttpUriRequestBase> captor = ArgumentCaptor.forClass(HttpUriRequestBase.class);
 
         try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
-            httpClients.when(HttpClients::createDefault).thenReturn(httpClient);
-            when(httpClient.execute(captor.capture())).thenReturn(mockedResponse);
+            httpClients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
+            when(httpClient.execute(captor.capture(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
+                .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
+                        .handleResponse(mockedResponse));
             when(mockedResponse.getEntity()).thenReturn(mockedEntity);
-            when(mockedResponse.getStatusLine()).thenReturn(statusLine);
             when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
             when(header.getValue()).thenReturn("text/csv");
-            when(statusLine.getStatusCode()).thenReturn(200);
+            when(mockedResponse.getCode()).thenReturn(200);
             when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
 
             File out = File.createTempFile("zbj-getfile-opts", ".csv");
@@ -1637,7 +1635,7 @@ public class ZeroBounceSDKTest {
                     response -> assertEquals(out.getAbsolutePath(), response.getLocalFilePath()),
                     err -> fail(err.toString()));
 
-            String uri = captor.getValue().getURI().toString();
+            String uri = captor.getValue().getUri().toString();
             assertTrue(uri.contains("download_type=combined"), uri);
             assertTrue(uri.contains("activity_data=true"), uri);
             assertTrue(uri.contains("file_id=abc-id"), uri);
@@ -1647,20 +1645,20 @@ public class ZeroBounceSDKTest {
     @Test
     public void scoringGetFile_WithOptions_DoesNotAppendActivityData() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        ClassicHttpResponse mockedResponse = mock(ClassicHttpResponse.class);
         HttpEntity mockedEntity = mock(HttpEntity.class);
-        StatusLine statusLine = mock(StatusLine.class);
         Header header = mock(Header.class);
-        ArgumentCaptor<HttpUriRequest> captor = ArgumentCaptor.forClass(HttpUriRequest.class);
+        ArgumentCaptor<HttpUriRequestBase> captor = ArgumentCaptor.forClass(HttpUriRequestBase.class);
 
         try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
-            httpClients.when(HttpClients::createDefault).thenReturn(httpClient);
-            when(httpClient.execute(captor.capture())).thenReturn(mockedResponse);
+            httpClients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
+            when(httpClient.execute(captor.capture(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
+                .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
+                        .handleResponse(mockedResponse));
             when(mockedResponse.getEntity()).thenReturn(mockedEntity);
-            when(mockedResponse.getStatusLine()).thenReturn(statusLine);
             when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
             when(header.getValue()).thenReturn("text/csv");
-            when(statusLine.getStatusCode()).thenReturn(200);
+            when(mockedResponse.getCode()).thenReturn(200);
             when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
 
             File out = File.createTempFile("zbj-scoring-opts", ".csv");
@@ -1675,7 +1673,7 @@ public class ZeroBounceSDKTest {
                     response -> assertEquals(out.getAbsolutePath(), response.getLocalFilePath()),
                     err -> fail(err.toString()));
 
-            String uri = captor.getValue().getURI().toString();
+            String uri = captor.getValue().getUri().toString();
             assertTrue(uri.contains("download_type=phase_2"), uri);
             assertFalse(uri.contains("activity_data"), uri);
         }
@@ -1701,14 +1699,10 @@ public class ZeroBounceSDKTest {
             @NotNull String errorResponse,
             Runnable block
     ) throws IOException {
-        URL url = mock(URL.class, withSettings().useConstructor(urlPath));
-        HttpURLConnection con = mock(HttpURLConnection.class);
-        lenient().when(url.openConnection()).thenReturn(con);
-        lenient().when(con.getResponseCode()).thenReturn(statusCode);
-        lenient().when(con.getOutputStream()).thenReturn(new ByteArrayOutputStream());
-        lenient().when(con.getInputStream()).thenReturn(new ByteArrayInputStream(response.getBytes()));
-        lenient().when(con.getErrorStream()).thenReturn(new ByteArrayInputStream(errorResponse.getBytes()));
-        lenient().doReturn(url).when(zeroBounceSDK).createUrlFrom(anyString());
+        lenient().doReturn(new SdkHttp.Result(statusCode, "application/json",
+                (statusCode > 299 ? errorResponse : response).getBytes(StandardCharsets.UTF_8)))
+                .when(zeroBounceSDK).exchangeHttp(anyString(), anyString(), nullable(String.class),
+                        nullable(byte[].class), nullable(Map.class));
         block.run();
     }
 
@@ -1720,9 +1714,8 @@ public class ZeroBounceSDKTest {
             ThrowingRunnable block
     ) throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CloseableHttpResponse mockedResponse = mock(CloseableHttpResponse.class);
+        ClassicHttpResponse mockedResponse = mock(ClassicHttpResponse.class);
         HttpEntity mockedEntity = mock(HttpEntity.class);
-        StatusLine statusLine = mock(StatusLine.class);
         Header header = mock(Header.class);
 
         try (
@@ -1732,13 +1725,14 @@ public class ZeroBounceSDKTest {
                 );
                 MockedStatic<HttpClients> ignored1 = Mockito.mockStatic(HttpClients.class)
         ) {
-            lenient().when(HttpClients.createDefault()).thenReturn(httpClient);
-            lenient().when(httpClient.execute(any())).thenReturn(mockedResponse);
+            lenient().when(HttpClients.custom()).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
+            lenient().when(httpClient.execute(any(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
+                .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
+                        .handleResponse(mockedResponse));
             lenient().when(mockedResponse.getEntity()).thenReturn(mockedEntity);
-            lenient().when(mockedResponse.getStatusLine()).thenReturn(statusLine);
             lenient().when(mockedResponse.getFirstHeader("Content-Type")).thenReturn(header);
             lenient().when(header.getValue()).thenReturn(contentType);
-            lenient().when(statusLine.getStatusCode()).thenReturn(statusCode);
+            lenient().when(mockedResponse.getCode()).thenReturn(statusCode);
             lenient().when(mockedEntity.getContent()).thenReturn(new ByteArrayInputStream(response.getBytes()));
 
             block.run();

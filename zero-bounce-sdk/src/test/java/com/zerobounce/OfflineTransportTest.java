@@ -1,7 +1,7 @@
 package com.zerobounce;
 
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedStatic;
@@ -11,7 +11,6 @@ import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -90,10 +89,7 @@ class OfflineTransportTest {
     /**
      * A 200 that declares 1000 bytes and closes after 33 is a transport failure
      * (status 0) on every path, like Apache's "Premature end of Content-Length
-     * delimited message body", and a download leaves no file. From JDK 25,
-     * HttpURLConnection detects the short body itself and throws "Premature EOF"
-     * before the SDK's own check sees the end of the stream; either message is a
-     * transport failure.
+     * delimited message body", and a download leaves no file.
      */
     @Test
     void everyRequestPathTreatsABodyCutShortAsATransportFailure() throws Exception {
@@ -145,10 +141,8 @@ class OfflineTransportTest {
                                 || outcome.errors.get(0).getStatusCode() != status) {
                             failures.add(status + " " + outcome);
                         }
-                        // A POST in fixed-length streaming mode cannot follow a
-                        // redirect either way, so the setting is checked as well.
-                        for (HttpURLConnection connection : List.copyOf(server.connections)) {
-                            if (connection.getInstanceFollowRedirects()) {
+                        for (RequestConfig config : List.copyOf(server.apacheConfigs)) {
+                            if (config.isRedirectsEnabled()) {
                                 failures.add(outcome.signature + " opened a connection that follows redirects");
                             }
                         }
@@ -160,12 +154,14 @@ class OfflineTransportTest {
 
     /**
      * Every request the SDK sends has the documented default connect and read
-     * timeout, 120 s, on the default settings: each HttpURLConnection, and each
-     * Apache request's config (connect, socket and connection-request
-     * timeouts). The exact value, so a changed or dropped default fails (T2).
+     * timeout, 120 s, on the default settings. HttpClient 5 configures connection
+     * establishment on the connection manager and response/lease timeouts on
+     * each request. The exact value, so a changed or dropped default fails (T2).
      */
     @Test
     void everyRequestPathSetsConnectAndReadTimeouts() throws Exception {
+        assertEquals(DEFAULT_TIMEOUT, SdkHttp.connectionConfig(DEFAULT_TIMEOUT).getConnectTimeout().toMilliseconds());
+        assertEquals(DEFAULT_TIMEOUT, SdkHttp.connectionConfig(DEFAULT_TIMEOUT).getSocketTimeout().toMilliseconds());
         RequestSweep sweep = new RequestSweep(tempDir);
         LoopbackServer.Responder csv = LoopbackServer.answer(200, "text/csv", CSV);
         LoopbackServer.Responder json = LoopbackServer.answer(200, "application/json", "{}".getBytes(StandardCharsets.UTF_8));
@@ -174,25 +170,90 @@ class OfflineTransportTest {
             (target.contains("getfile") || target.contains("download") ? csv : json).respond(request, out);
         })) {
             sweep(sweep, server, (method, outcome, failures) -> {
-                List<HttpURLConnection> connections = List.copyOf(server.connections);
                 List<RequestConfig> configs = List.copyOf(server.apacheConfigs);
-                if (connections.size() + configs.size() < server.requests().size()) {
+                if (configs.size() < server.requests().size()) {
                     failures.add(outcome.signature + " sent a request the sweep could not inspect");
                 }
-                for (HttpURLConnection connection : connections) {
-                    if (connection.getConnectTimeout() != DEFAULT_TIMEOUT || connection.getReadTimeout() != DEFAULT_TIMEOUT) {
-                        failures.add(outcome.signature + " connect " + connection.getConnectTimeout()
-                                + " ms, read " + connection.getReadTimeout() + " ms");
-                    }
-                }
                 for (RequestConfig config : configs) {
-                    if (config == null || config.getConnectTimeout() != DEFAULT_TIMEOUT
-                            || config.getSocketTimeout() != DEFAULT_TIMEOUT
-                            || config.getConnectionRequestTimeout() != DEFAULT_TIMEOUT) {
+                    if (config == null || config.getResponseTimeout().toMilliseconds() != DEFAULT_TIMEOUT
+                            || config.getConnectionRequestTimeout().toMilliseconds() != DEFAULT_TIMEOUT) {
                         failures.add(outcome.signature + " Apache config " + config);
                     }
                 }
             });
+        }
+    }
+
+    @Test
+    void everyRequestPathReports429And503WithoutRetrying() throws Exception {
+        for (int status : new int[]{429, 503}) {
+            Path dir = tempDir.resolve(String.valueOf(status));
+            Files.createDirectories(dir);
+            RequestSweep sweep = new RequestSweep(dir);
+            try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(status,
+                    "application/json", "{\"error\":\"Try again later\"}".getBytes(StandardCharsets.UTF_8)))) {
+                sweep(sweep, server, (method, outcome, failures) -> {
+                    if (server.requests().size() != 1 || !outcome.successes.isEmpty()
+                            || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != status) {
+                        failures.add(status + " " + outcome + " requests=" + server.requests().size());
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void jsonFormsAndAuthenticationReachTheServerUnchanged() throws Exception {
+        String key = "key+with/slash";
+        String email = "té+tag@example.com";
+        List<ErrorResponse> errors = new ArrayList<>();
+        try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(400,
+                "application/json", "{\"error\":\"offline fixture\"}".getBytes(StandardCharsets.UTF_8)));
+             MockedStatic<HttpClients> ignored = server.apacheClients()) {
+            ZeroBounceSDK sdk = server.sdk();
+            sdk.initialize(key);
+            sdk.validateBatch(List.of(new ZBValidateBatchData(email, null)), r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request json = server.requests().get(0);
+            assertEquals("POST", json.method);
+            assertEquals("application/json; charset=UTF-8", json.headers.get("content-type"));
+            assertEquals("{\"api_key\":\"" + key + "\",\"email_batch\":[{\"email_address\":\"" + email + "\"}]}",
+                    new String(json.body, StandardCharsets.UTF_8));
+
+            ZBValidateRequestOptions options = new ZBValidateRequestOptions();
+            options.setUsePost(true);
+            sdk.validateWithOptions(email, options, r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request form = server.requests().get(1);
+            assertEquals("POST", form.method);
+            assertEquals("application/x-www-form-urlencoded", form.headers.get("content-type"));
+            String body = new String(form.body, StandardCharsets.UTF_8);
+            assertTrue(body.contains("api_key=key%2Bwith%2Fslash"), body);
+            assertTrue(body.contains("email=t%C3%A9%2Btag%40example.com"), body);
+
+            sdk.createInboxPlacementTest("wire check", null, r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request bearer = server.requests().get(2);
+            assertEquals("Bearer " + key, bearer.headers.get("authorization"));
+            assertFalse(bearer.target.contains("api_key"), bearer.target);
+            assertEquals("{\"name\":\"wire check\"}", new String(bearer.body, StandardCharsets.UTF_8));
+
+            ZeroBounceWarmup warmup = server.warmup();
+            warmup.initialize(key);
+            warmup.getSeedCount(r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request warmupRequest = server.requests().get(3);
+            assertEquals(key, warmupRequest.headers.get("api-key"));
+            assertFalse(warmupRequest.target.contains(key), warmupRequest.target);
+            assertEquals(4, server.requests().size());
+            assertEquals(4, errors.size());
+            for (ErrorResponse error : errors) {
+                assertEquals(400, error.getStatusCode());
+            }
         }
     }
 

@@ -14,8 +14,8 @@ Guidance for AI coding agents working in this repository.
 - `ZBValidateOptions`, `ZBBulkFileJobOptions`, `ZBValidateBatchOptions`, `ZBValidateRequestOptions`: the option objects, each with a package-private `fill` that both builds the request and rejects an invalid combination before anything is sent.
 - `zero-bounce-sdk/src/main/java/com/zerobounce/ZeroBounceWarmup.java`: a separate client for the Warmup API, a different product with its own host and its own team-scoped key. Not part of `ZeroBounceSDK`.
 - `zero-bounce-sdk/src/main/java/com/zerobounce/HttpMessages.java`: turns HTTP failures, HTML pages, and empty or non-JSON bodies into a short `ErrorResponse`.
-- `zero-bounce-sdk/src/main/java/com/zerobounce/SdkHttp.java`: per-client HTTP seam. Production leaves `transport` null.
-- `zero-bounce-sdk/src/test/java/com/zerobounce/OfflineApiTest.java`, `OfflineWarmupTest.java`: the offline suites. `FakeApi` (and a mocked `HttpURLConnection`) answer every call and record the url, method, headers and body, so the assertions are on what actually went on the wire.
+- `zero-bounce-sdk/src/main/java/com/zerobounce/SdkHttp.java`: shared Apache HttpClient 5 exchange and timeout configuration, plus the per-client fake transport seam. Production leaves `transport` null. Response handlers consume and close responses; clients are closed after each exchange. Redirects and automatic retries are disabled.
+- `zero-bounce-sdk/src/test/java/com/zerobounce/OfflineApiTest.java`, `OfflineWarmupTest.java`: the offline suites. `FakeApi` and replacement `exchangeHttp` methods record the URL, method, headers and body. `LoopbackServer` routes real HttpClient 5 builders to a local server for transport and multipart tests.
 - `live/LiveApi.java`: the opt-in live suite. It sits outside the Maven module's source root, so `mvn test` and CI never compile or run it.
 - `zero-bounce-sdk/pom.xml`: SDK build. The version is `<sdk.version>` inside `<properties>`.
 - `pom.xml`: the JavaFX sample. Its `<version>` is `1.0-SNAPSHOT` and is not the SDK version.

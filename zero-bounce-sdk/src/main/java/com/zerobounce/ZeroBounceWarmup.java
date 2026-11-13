@@ -8,8 +8,7 @@ import com.google.gson.JsonParser;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
@@ -136,6 +135,13 @@ public class ZeroBounceWarmup {
         return URI.create(url).toURL();
     }
 
+    /** One HttpClient 5 exchange, separate from callback delivery. */
+    SdkHttp.Result exchangeHttp(String method, String url, String contentType, byte[] body,
+            Map<String, String> headers) throws IOException {
+        return SdkHttp.exchange(method, URI.create(createUrlFrom(url).toExternalForm()),
+                contentType, body, headers, timeoutInMillis);
+    }
+
     private boolean notReady(@NotNull ZeroBounceSDK.OnErrorCallback errorCallback) {
         if (setupProblem == null) {
             return false;
@@ -162,37 +168,13 @@ public class ZeroBounceWarmup {
         // caller's error callback must reach the caller, not be reported again.
         Result result = new Result();
         try {
-            HttpURLConnection con = (HttpURLConnection) createUrlFrom(url).openConnection();
-            con.setRequestMethod(method);
-            con.setRequestProperty("Accept", "application/json");
-            con.setRequestProperty("API-Key", apiKey);
-            con.setConnectTimeout(timeoutInMillis);
-            con.setReadTimeout(timeoutInMillis);
-            con.setInstanceFollowRedirects(false);
-
-            if (jsonBody != null) {
-                byte[] out = jsonBody.getBytes(StandardCharsets.UTF_8);
-                con.setRequestProperty("Content-Type", "application/json");
-                con.setDoOutput(true);
-                con.setFixedLengthStreamingMode(out.length);
-                con.connect();
-                try (OutputStream os = con.getOutputStream()) {
-                    os.write(out);
-                }
-            }
-
-            result.status = con.getResponseCode();
-            String contentType = con.getHeaderField("Content-Type");
-            result.contentType = contentType != null ? contentType : "";
-
-            // A failed response with no body has no error stream at all; read
-            // it as an empty body so the status is kept.
-            java.io.InputStream stream = SdkHttp.checkedBody(
-                    con, result.status > 299 ? con.getErrorStream() : con.getInputStream());
-            // The body as it arrived: a CSV download keeps its line breaks.
-            String content = stream == null ? "" : SdkHttp.readText(stream);
-            con.disconnect();
-            result.body = content;
+            SdkHttp.Result response = exchangeHttp(method, url,
+                    jsonBody == null ? null : "application/json",
+                    jsonBody == null ? null : jsonBody.getBytes(StandardCharsets.UTF_8),
+                    Map.of("API-Key", apiKey));
+            result.status = response.status;
+            result.contentType = response.contentType;
+            result.body = new String(response.body, StandardCharsets.UTF_8);
         } catch (Exception e) {
             // Rebuilt rather than wrapped: the original holds the URL and headers.
             errorCallback.onError(ErrorResponse.parseError(redact(e.getMessage(), secrets)));

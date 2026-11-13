@@ -54,39 +54,22 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Not imported by the SDK: it pins the commons-codec that httpclient 4.5.14
-             brings in (1.11) to a current release. -->
-        <dependency>
-            <groupId>commons-codec</groupId>
-            <artifactId>commons-codec</artifactId>
-            <version>1.22.1</version>
-        </dependency>
-
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.14.0</version>
         </dependency>
 
-        <!-- The SDK uses Apache HttpClient 4 (org.apache.http) for the multipart
-             uploads and file downloads, and nothing from HttpClient 5. -->
+        <!-- All HTTP calls, including multipart uploads, use the supported 5.x APIs. -->
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>4.5.14</version>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>5.6.5</version>
         </dependency>
-
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpcore</artifactId>
-            <version>4.4.16</version>
-        </dependency>
-
-        <!-- https://mvnrepository.com/artifact/org.apache.httpcomponents/httpmime -->
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpmime</artifactId>
-            <version>4.5.14</version>
+            <groupId>org.apache.httpcomponents.core5</groupId>
+            <artifactId>httpcore5</artifactId>
+            <version>5.4.4</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/junit/junit -->
