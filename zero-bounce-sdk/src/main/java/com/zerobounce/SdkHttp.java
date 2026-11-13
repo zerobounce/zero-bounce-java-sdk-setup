@@ -4,6 +4,7 @@ import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.core5.http.ContentType;
@@ -48,10 +49,13 @@ final class SdkHttp {
      * Clients shared by every {@link ZeroBounceSDK} and {@link ZeroBounceWarmup},
      * one per timeout, so calls reuse connections as HttpURLConnection did instead
      * of paying a new TCP and TLS handshake each time. SDK users never close them.
+     * Reads are lock-free; a new timeout is admitted under the map's lock.
      */
     private static final ConcurrentMap<Integer, CloseableHttpClient> SHARED = new ConcurrentHashMap<>();
     /** Past this many distinct timeouts, a call gets a client of its own, closed after it. */
     private static final int MAX_SHARED_CLIENTS = 8;
+    /** An idle pooled connection is closed by the shared client's evictor once idle this long. */
+    private static final TimeValue MAX_IDLE = TimeValue.ofSeconds(5);
 
     static ConnectionConfig connectionConfig(int timeoutMillis) {
         Timeout timeout = Timeout.ofMilliseconds(timeoutMillis);
@@ -71,13 +75,21 @@ final class SdkHttp {
                 .setRedirectsEnabled(false)
                 .setConnectionRequestTimeout(timeout)
                 .setResponseTimeout(timeout)
-                // How long an idle connection stays pooled when the server does not say.
-                .setConnectionKeepAlive(TimeValue.ofSeconds(5))
+                // How long an idle connection may be reused when the server does not say.
+                .setConnectionKeepAlive(MAX_IDLE)
                 .build();
     }
 
-    static CloseableHttpClient newClient(int timeoutMillis) {
-        return HttpClients.custom()
+    /**
+     * @param shared whether the client outlives the call. A shared client also
+     *               runs HttpClient's idle-connection evictor, one daemon thread
+     *               that closes connections idle for {@link #MAX_IDLE} or past their
+     *               keep-alive. The pool itself never closes an idle connection until
+     *               it is next used, so without it a burst of concurrent calls would
+     *               leave that many sockets open indefinitely.
+     */
+    static CloseableHttpClient newClient(int timeoutMillis, boolean shared) {
+        HttpClientBuilder builder = HttpClients.custom()
                 .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create()
                         .setDefaultConnectionConfig(connectionConfig(timeoutMillis))
                         // No limit on concurrent calls, as before: HttpURLConnection had
@@ -95,17 +107,31 @@ final class SdkHttp {
                 .useSystemProperties()
                 .disableRedirectHandling()
                 .disableAutomaticRetries()
-                .disableCookieManagement()
-                .build();
+                .disableCookieManagement();
+        if (shared) {
+            builder.evictExpiredConnections().evictIdleConnections(MAX_IDLE);
+        }
+        return builder.build();
     }
 
-    /** The shared client for {@code timeoutMillis}, or null past {@link #MAX_SHARED_CLIENTS}. */
+    /**
+     * The shared client for {@code timeoutMillis}, or null once
+     * {@link #MAX_SHARED_CLIENTS} other timeouts have one. The size check and the
+     * insert happen under one lock, so concurrent callers cannot pass the limit.
+     */
     static CloseableHttpClient sharedClient(int timeoutMillis) {
         CloseableHttpClient client = SHARED.get(timeoutMillis);
-        if (client != null || SHARED.size() >= MAX_SHARED_CLIENTS) {
+        if (client != null) {
             return client;
         }
-        return SHARED.computeIfAbsent(timeoutMillis, SdkHttp::newClient);
+        synchronized (SHARED) {
+            client = SHARED.get(timeoutMillis);
+            if (client == null && SHARED.size() < MAX_SHARED_CLIENTS) {
+                client = newClient(timeoutMillis, true);
+                SHARED.put(timeoutMillis, client);
+            }
+            return client;
+        }
     }
 
     /**
@@ -113,15 +139,15 @@ final class SdkHttp {
      * The offline suites call it whenever they replace {@code HttpClients.custom()}.
      */
     static void closeSharedClients() {
-        for (Integer timeout : SHARED.keySet()) {
-            CloseableHttpClient client = SHARED.remove(timeout);
-            if (client != null) {
+        synchronized (SHARED) {
+            for (CloseableHttpClient client : SHARED.values()) {
                 try {
                     client.close();
                 } catch (IOException ignored) {
                     // nothing left to release
                 }
             }
+            SHARED.clear();
         }
     }
 
@@ -153,7 +179,7 @@ final class SdkHttp {
         if (shared != null) {
             return shared.execute(request, READ);
         }
-        try (CloseableHttpClient client = newClient(timeoutMillis)) {
+        try (CloseableHttpClient client = newClient(timeoutMillis, false)) {
             return client.execute(request, READ);
         }
     }

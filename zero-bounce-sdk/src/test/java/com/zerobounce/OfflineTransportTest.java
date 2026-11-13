@@ -19,6 +19,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -254,6 +259,39 @@ class OfflineTransportTest {
             }
             assertNull(SdkHttp.sharedClient(99_999), "a ninth distinct timeout");
         } finally {
+            SdkHttp.closeSharedClients();
+        }
+    }
+
+    /**
+     * Callers that arrive together with distinct timeouts cannot push the shared
+     * clients past eight: the size check and the insert are one step.
+     */
+    @Test
+    void concurrentCallersCannotPassTheSharedClientLimit() throws Exception {
+        SdkHttp.closeSharedClients();
+        int callers = 64;
+        ExecutorService pool = Executors.newFixedThreadPool(callers);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Boolean>> admitted = new ArrayList<>();
+            for (int i = 0; i < callers; i++) {
+                int timeout = 10_000 + i;
+                admitted.add(pool.submit(() -> {
+                    start.await();
+                    return SdkHttp.sharedClient(timeout) != null;
+                }));
+            }
+            start.countDown();
+            int shared = 0;
+            for (Future<Boolean> result : admitted) {
+                if (result.get(10, TimeUnit.SECONDS)) {
+                    shared++;
+                }
+            }
+            assertEquals(8, shared, "distinct timeouts given a shared client");
+        } finally {
+            pool.shutdownNow();
             SdkHttp.closeSharedClients();
         }
     }
