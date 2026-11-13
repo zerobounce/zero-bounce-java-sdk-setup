@@ -193,6 +193,22 @@ class OfflineSendFileMultipartTest {
                         scoringOptions, ok::add, err::add)));
     }
 
+    /**
+     * A return URL that is not set is not sent (check R2), on the scoring upload as on
+     * the validation upload: a scoring options object without setReturnUrl sends no
+     * return_url field, not an empty one.
+     */
+    @Test
+    void anUnsetReturnUrlIsNotSent() throws Exception {
+        String scoring = "[api_key=" + KEY + ", email_address_column=1, has_header_row=false,"
+                + " file[in.csv]=" + CSV + "]";
+        assertEquals("/v2/scoring/sendfile " + scoring, upload((sdk, file, ok, err) ->
+                sdk.scoringSendFile(file, 1, new ZeroBounceSDK.ScoringSendFileOptions(), ok::add, err::add)));
+        assertEquals("/v2/sendfile [api_key=" + KEY + ", email_address_column=1, file[in.csv]=" + CSV + "]",
+                upload((sdk, file, ok, err) -> sdk.sendFile(file, 1, new ZeroBounceSDK.SendFileOptions(),
+                        ok::add, err::add)));
+    }
+
     /** The four overloads above are all there are; a new one must be added here. */
     @Test
     void everySendFileOverloadIsCovered() {

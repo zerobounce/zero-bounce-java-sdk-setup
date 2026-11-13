@@ -3,6 +3,7 @@ package com.zerobounce;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.annotations.JsonAdapter;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -48,6 +50,9 @@ class OfflineFieldTypeTest {
 
     private static final String KEY = "field-type-key";
     private static final FieldNamingPolicy NAMES = FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES;
+
+    /** JSON names a call cannot answer without (null is an error for these). */
+    private static final Set<String> REQUIRED = Set.of("Credits", "address", "status");
 
     /** The documented example responses, by the success type of the calls they answer. */
     private static Map<Class<?>, List<String>> documented() throws Exception {
@@ -186,9 +191,12 @@ class OfflineFieldTypeTest {
         List<String> wrong = new ArrayList<>();
         if (raw == String.class) {
             wrong.addAll(List.of("true", "[]", "[5]", "{}"));
-            // A score is a number in the API; the SDK keeps it as text, so a number is not wrong there.
+            // A score is a number in the API; the SDK keeps it as text, so a whole number is not wrong there.
             if (field == null || field.getAnnotation(JsonAdapter.class) == null) {
                 wrong.add("5");
+            } else if (field.getAnnotation(JsonAdapter.class).value() == StrictTypes.IntegerText.class) {
+                wrong.addAll(List.of("5.5", "5.0", "1e2", "\"5.9\"", "\"abc\"", "\"\"", "2147483648",
+                        "\"2147483648\"", "-2147483649"));
             }
         } else if (raw.isEnum()) {
             wrong.addAll(List.of("5", "true", "[]", "{}"));
@@ -335,6 +343,133 @@ class OfflineFieldTypeTest {
                     expectError(failures));
         }
         run(batch, "{\"email_batch\":[{\"address\":\"a@b.c\",\"status\":\"valid\"}]}", expectSuccess(failures));
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * {@code "success"} is a JSON boolean. The string {@code "false"} (any case) is not
+     * a failure report read as false, nor a success: on every ZeroBounceSDK request
+     * method, JSON and download alike, it is an error with status 200 (standard.md
+     * section 3, E4). The Warmup client has its own test.
+     */
+    @Test
+    void aSuccessStringFalseIsAnErrorWithStatus200OnEveryRequestMethod() throws Exception {
+        List<Method> methods = new ArrayList<>();
+        for (Method method : RequestSweep.allRequestMethods()) {
+            if (method.getDeclaringClass() == ZeroBounceSDK.class) {
+                methods.add(method);
+            }
+        }
+        assertTrue(methods.size() > 40, "request methods: " + methods.size());
+        List<String> failures = new ArrayList<>();
+        for (String body : List.of("{\"success\":\"false\",\"message\":\"nope\"}",
+                "{\"success\":\"False\",\"message\":\"nope\"}", "{\"success\":\"false\"}",
+                "{\"success\":\"FALSE\",\"error\":\"nope\"}")) {
+            run(methods, body, expectError(failures));
+        }
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * An upload's message may be an array of strings: the SDK joins the items with a
+     * newline into its one string (standard.md section 3). An empty array is an empty message.
+     */
+    @Test
+    void anUploadMessageListIsJoinedWithNewlines() throws Exception {
+        List<Method> uploads = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            if (successType(method) == ZBSendFileResponse.class) {
+                uploads.add(method);
+            }
+        }
+        List<String> failures = new ArrayList<>();
+        String[][] cases = {{"[\"ok\",\"also\"]", "ok\nalso"}, {"[\"only\"]", "only"}, {"[]", ""}};
+        for (String[] c : cases) {
+            run(uploads, "{\"success\":true,\"message\":" + c[0] + ",\"file_id\":\"x\"}", (method, body, outcome) -> {
+                Object sent = outcome.successes.size() == 1 ? outcome.successes.get(0) : null;
+                String text = sent instanceof ZBSendFileResponse ? ((ZBSendFileResponse) sent).getMessage() : null;
+                if (outcome.thrown != null || !outcome.errors.isEmpty() || !c[1].equals(text)) {
+                    failures.add(body + " expected " + c[1].replace("\n", "\\n") + ": " + outcome);
+                }
+            });
+        }
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * {@code null} is accepted for an optional field (standard.md section 3): on every
+     * typed call, each top-level field and each validateBatch row field set to null, one
+     * at a time, leaves an otherwise valid answer a success. The fields a call cannot
+     * answer without ({@code Credits}, {@code address}, {@code status}) are excluded.
+     */
+    @Test
+    void nullInAnOptionalFieldIsNotAnError() throws Exception {
+        Map<Class<?>, List<String>> documented = documented();
+        Map<Type, List<Method>> byType = new LinkedHashMap<>();
+        for (Method method : typedMethods()) {
+            byType.computeIfAbsent(successType(method), k -> new ArrayList<>()).add(method);
+        }
+        List<String> failures = new ArrayList<>();
+        int bodies = 0;
+        for (Map.Entry<Type, List<Method>> entry : byType.entrySet()) {
+            Type type = entry.getKey();
+            boolean list = type instanceof ParameterizedType
+                    && ((ParameterizedType) type).getRawType() == List.class;
+            Class<?> model = (Class<?>) (list ? ((ParameterizedType) type).getActualTypeArguments()[0] : type);
+            String baseText = documented.containsKey(model) ? documented.get(model).get(0) : "{}";
+            for (Field field : modelFields(model)) {
+                if (REQUIRED.contains(jsonName(field))) {
+                    continue;
+                }
+                JsonObject body = JsonParser.parseString(baseText).getAsJsonObject();
+                body.add(jsonName(field), JsonNull.INSTANCE);
+                String text = list ? "[" + body + "]" : body.toString();
+                run(entry.getValue(), text, expectSuccess(failures));
+                bodies++;
+            }
+            if (model == ZBValidateBatchResponse.class) {
+                for (Field field : modelFields(ZBValidateBatchData.class)) {
+                    if (REQUIRED.contains(jsonName(field))) {
+                        continue;
+                    }
+                    JsonObject row = JsonParser.parseString(
+                            "{\"address\":\"a@b.c\",\"status\":\"valid\"}").getAsJsonObject();
+                    row.add(jsonName(field), JsonNull.INSTANCE);
+                    run(entry.getValue(), "{\"email_batch\":[" + row + "]}", expectSuccess(failures));
+                    bodies++;
+                }
+            }
+        }
+        assertTrue(bodies > 100, "null bodies sent: " + bodies);
+        assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * The AI score is an integer in the API and is kept as text (check E7): a JSON
+     * integer, or a string holding one, within the int range is a result; a
+     * fraction, an exponent, a non-number or an out-of-range value is an error with
+     * status 200 on both scoring calls.
+     */
+    @Test
+    void theScoreIsAnIntegerOnEveryScoringCall() throws Exception {
+        List<Method> scoring = new ArrayList<>();
+        for (Method method : typedMethods()) {
+            if (successType(method) == ZBScoreEmailResponse.class) {
+                scoring.add(method);
+            }
+        }
+        assertTrue(scoring.size() >= 3, "scoring overloads: " + scoring);
+        List<String> failures = new ArrayList<>();
+        for (String body : List.of("{\"score\":5.5}", "{\"score\":5.0}", "{\"score\":1e2}",
+                "{\"score\":1e400}", "{\"score\":\"5.9\"}", "{\"score\":\"abc\"}", "{\"score\":\"\"}",
+                "{\"score\":\" 9\"}", "{\"score\":true}", "{\"score\":[9]}", "{\"score\":{}}",
+                "{\"score\":2147483648}", "{\"score\":\"2147483648\"}", "{\"score\":\"+9\"}")) {
+            run(scoring, body, expectError(failures));
+        }
+        for (String body : List.of("{\"score\":9}", "{\"score\":\"9\"}", "{\"score\":\"-1\"}",
+                "{\"score\":0}", "{\"score\":null}", "{\"score\":2147483647}", "{\"score\":-2147483648}")) {
+            run(scoring, body, expectSuccess(failures));
+        }
         assertTrue(failures.isEmpty(), failures.size() + " failures:\n" + String.join("\n", failures));
     }
 

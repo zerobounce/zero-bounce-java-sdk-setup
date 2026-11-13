@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -113,6 +114,25 @@ class OfflineToStringTest {
         for (Class<?> type : models()) {
             String text = instance(type).toString();
             assertTrue(text.startsWith(type.getSimpleName() + "{"), text);
+        }
+    }
+
+    /**
+     * The clients print no key (check S6, standard.md section 3): {@code toString} of a
+     * client holding the API key, and of a Warmup client holding the Warmup key, contains
+     * neither key. The key fields are private and are read only by the request code.
+     */
+    @Test
+    void theClientsPrintNoKey() throws Exception {
+        String key = "tostring-api-key-7d21x";
+        String warmupKey = "tostring-warmup-key-b4c9y";
+        ZeroBounceSDK sdk = new ZeroBounceSDK();
+        sdk.initialize(key);
+        ZeroBounceWarmup warmup = new ZeroBounceWarmup();
+        warmup.initialize(warmupKey);
+        for (Object client : List.of(sdk, warmup)) {
+            String printed = client.toString();
+            assertFalse(printed.contains(key) || printed.contains(warmupKey), printed);
         }
     }
 }

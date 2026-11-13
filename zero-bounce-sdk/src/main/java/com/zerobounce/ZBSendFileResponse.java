@@ -105,16 +105,16 @@ public class ZBSendFileResponse {
             if (jobject.has("message")) {
                 if (jobject.get("message").isJsonArray()) {
                     JsonArray array = jobject.get("message").getAsJsonArray();
-                    // Every item is a string (not null); the first is the message.
+                    // Every item is a string (not null); the items are joined with a newline.
+                    java.util.List<String> items = new java.util.ArrayList<>();
                     for (JsonElement item : array) {
                         String text = StrictTypes.text(item, "message");
                         if (text == null) {
                             throw new JsonParseException("ZeroBounce returned null in message, which is not a string.");
                         }
-                        if (r.message == null) {
-                            r.message = text;
-                        }
+                        items.add(text);
                     }
+                    r.message = String.join("\n", items);
                 } else {
                     r.message = StrictTypes.text(jobject.get("message"), "message");
                 }

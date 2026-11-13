@@ -3320,8 +3320,8 @@ public class ZeroBounceSDK {
      */
     public static class ScoringSendFileOptions {
 
-        @NotNull
-        String returnUrl = "";
+        @Nullable
+        String returnUrl = null;
 
         @NotNull
         Boolean hasHeaderRow = false;
@@ -3329,7 +3329,7 @@ public class ZeroBounceSDK {
         @Nullable
         Boolean removeDuplicate = null;
 
-        public ScoringSendFileOptions setReturnUrl(@NotNull String returnUrl) {
+        public ScoringSendFileOptions setReturnUrl(@Nullable String returnUrl) {
             this.returnUrl = returnUrl;
             return this;
         }

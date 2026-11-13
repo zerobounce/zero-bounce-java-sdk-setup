@@ -82,6 +82,50 @@ final class StrictTypes {
     }
 
     /**
+     * An integer the SDK keeps as text (the AI score): a JSON integer or a string
+     * holding one, within the int range; null is accepted. A fraction, an exponent,
+     * a non-numeric string, a boolean, an array or an object is an error (E7).
+     */
+    static final class IntegerText extends TypeAdapter<String> {
+        @Override
+        public void write(JsonWriter out, String value) throws IOException {
+            out.value(value);
+        }
+
+        @Override
+        public String read(JsonReader in) throws IOException {
+            JsonToken token = in.peek();
+            if (token == JsonToken.NULL) {
+                in.nextNull();
+                return null;
+            }
+            if (token == JsonToken.STRING || token == JsonToken.NUMBER) {
+                String path = in.getPath();
+                String text = in.nextString();
+                if (INTEGER.matcher(text).matches() && fitsInt(text)) {
+                    return text;
+                }
+                String field = path.startsWith("$.") ? path.substring(2) : path;
+                throw new JsonParseException("ZeroBounce returned "
+                        + (token == JsonToken.NUMBER ? "a number" : "a string") + " for " + field
+                        + ", which is not an integer.");
+            }
+            String path = in.getPath();
+            in.skipValue();
+            throw wrongType(path, token, "an integer");
+        }
+
+        private static boolean fitsInt(String text) {
+            try {
+                Integer.parseInt(text);
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+    }
+
+    /**
      * Enums (status, sub-status): a JSON string or null; Gson's own reading of the
      * string is kept. Maps (batch error rows): a JSON object or null, not the
      * array of pairs Gson would otherwise also read as a map.
