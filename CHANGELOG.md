@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- All HTTP requests in `ZeroBounceSDK` and `ZeroBounceWarmup`, including multipart uploads and file downloads, now use Apache HttpClient 5.6.5 and HttpCore 5.4.4. Redirects and automatic retries are disabled; timeouts, response bytes and callback behavior are preserved.
+- Requests reuse connections: one shared client per timeout value serves every `ZeroBounceSDK` and `ZeroBounceWarmup` instance, so repeated calls skip a new TCP and TLS handshake. Up to eight timeout values get a shared client; a call with any other timeout gets a client of its own, closed after the call. Nothing needs closing. Each shared client runs one daemon thread, HttpClient's idle-connection evictor, which closes connections that have been idle for 5 seconds or are past the server's `Keep-Alive` timeout. A pooled connection idle for more than a second is checked before it is reused.
+- Every request honours the JVM's proxy and TLS settings (`https.proxyHost`, the default `ProxySelector`, `javax.net.ssl.*`), as the calls sent through `HttpURLConnection` did.
+- Requests send HttpClient's own `User-Agent` (`Apache-HttpClient/5.6.5 (Java/…)`). The calls sent through `HttpURLConnection` sent `Java/…`.
+- **Behaviour change:** `validateBatch` and the other calls that POST a JSON body label it `Content-Type: application/json; charset=UTF-8`. Up to 3.0.1 `HttpURLConnection` labelled it `application/x-www-form-urlencoded`, its default.
+- The text fields of multipart uploads (`sendFile`, `scoringSendFile`, the bulk email finder, domain search and list evaluator uploads) are sent as UTF-8 `text/plain` without a `Content-Transfer-Encoding` header. Up to 3.0.1 they were ISO-8859-1.
+- HttpClient 5 logs through SLF4J (`slf4j-api` 1.7.36). An application with no SLF4J binding sees SLF4J's one-time "no binding" notice on stderr at its first request. At DEBUG, HttpClient's loggers write the API key, the Warmup key and the SMTP password: the request line carries `api_key`, `org.apache.hc.client5.http.headers` writes `Authorization` and `API-Key`, and `org.apache.hc.client5.http.wire` writes request bodies. Keep `org.apache.hc` at INFO or above in production; logback with no configuration file logs at DEBUG. Up to 3.0.1 the multipart uploads, `getFile` and `scoringGetFile` logged the same through HttpClient 4 and commons-logging, and `HttpURLConnection` logged the request line and headers to `java.util.logging` at FINE.
+
 ### Deprecated
 
 - `ZeroBounceWarmup.EmailContent.setIndustry` (not an API field; not sent), `EmailContent.setWebsite` (use `setCompanyWebsite`), `ManagedSending.setDailyLimit` (the API does not apply a daily limit; not sent) and `ManagedSending.setTimezoneOffset(Integer)` (use `setTimezoneOffset(double)`; an int literal already calls it). They still compile and work as described under Fixed.
+
+### Removed
+
+- The SDK no longer depends on Apache HttpClient 4 (`org.apache.httpcomponents:httpclient`), HttpCore 4, HttpMime or Commons Codec, so they are no longer on an application's classpath through it. An application that uses `org.apache.http` classes itself must declare those dependencies.
 
 ### Fixed
 

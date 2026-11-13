@@ -1,12 +1,12 @@
 package com.zerobounce;
 
-import org.apache.http.HttpHost;
-import org.apache.http.HttpRequestInterceptor;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.conn.routing.HttpRoute;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.HttpRequestInterceptor;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
+import org.apache.hc.client5.http.HttpRoute;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
@@ -15,14 +15,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
-import java.net.URL;
-import java.net.URLConnection;
-import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,10 +35,8 @@ import static org.mockito.Mockito.spy;
 /**
  * A real HTTP/1.1 server on a loopback socket, answering every connection with
  * raw bytes the test chooses: a body cut short of its {@code Content-Length}, a
- * redirect, or nothing at all. The SDK's real clients talk to it: the
- * {@code HttpURLConnection} paths through {@link #sdk()} and {@link #warmup()},
- * whose URLs are re-pointed here, and the Apache HttpClient paths through
- * {@link #apacheClients()}. Nothing reaches the network.
+ * redirect, or nothing at all. The SDK's real HttpClient 5 exchanges are routed
+ * here by {@link #apacheClients()}. Nothing reaches the live API.
  */
 final class LoopbackServer implements AutoCloseable {
 
@@ -70,8 +64,6 @@ final class LoopbackServer implements AutoCloseable {
     private final List<Request> requests = Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch closed = new CountDownLatch(1);
 
-    /** Every HttpURLConnection the clients from {@link #sdk()} and {@link #warmup()} opened. */
-    final List<HttpURLConnection> connections = Collections.synchronizedList(new ArrayList<>());
     /** The request config of every request the clients from {@link #apacheClients()} sent. */
     final List<RequestConfig> apacheConfigs = Collections.synchronizedList(new ArrayList<>());
 
@@ -95,7 +87,6 @@ final class LoopbackServer implements AutoCloseable {
 
     void clear() {
         requests.clear();
-        connections.clear();
         apacheConfigs.clear();
     }
 
@@ -276,25 +267,13 @@ final class LoopbackServer implements AutoCloseable {
         return "http://127.0.0.1:" + port() + uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
     }
 
-    /** A URL on this server whose connection is recorded in {@link #connections}. */
-    private URL recordingUrl(String url) throws IOException {
-        return URL.of(URI.create(local(url)), new URLStreamHandler() {
-            @Override
-            protected URLConnection openConnection(URL u) throws IOException {
-                HttpURLConnection connection = (HttpURLConnection) URI.create(u.toExternalForm()).toURL().openConnection();
-                connections.add(connection);
-                return connection;
-            }
-        });
-    }
-
     /**
-     * A {@link ZeroBounceSDK} whose HttpURLConnection requests come here. Its
+     * A {@link ZeroBounceSDK} whose ordinary requests come here. Its
      * Apache HttpClient requests need {@link #apacheClients()} as well.
      */
     ZeroBounceSDK sdk() throws Exception {
         ZeroBounceSDK sdk = spy(new ZeroBounceSDK());
-        doAnswer(invocation -> recordingUrl(invocation.getArgument(0))).when(sdk).createUrlFrom(anyString());
+        doAnswer(invocation -> URI.create(local(invocation.getArgument(0))).toURL()).when(sdk).createUrlFrom(anyString());
         // The spy copied the original's Priority3Api, which still calls the
         // original's createUrlFrom.
         Field field = ZeroBounceSDK.class.getDeclaredField("priority3Api");
@@ -305,23 +284,22 @@ final class LoopbackServer implements AutoCloseable {
 
     ZeroBounceWarmup warmup() throws Exception {
         ZeroBounceWarmup warmup = spy(new ZeroBounceWarmup());
-        doAnswer(invocation -> recordingUrl(invocation.getArgument(0))).when(warmup).createUrlFrom(anyString());
+        doAnswer(invocation -> URI.create(local(invocation.getArgument(0))).toURL()).when(warmup).createUrlFrom(anyString());
         return warmup;
     }
 
     /**
-     * Until closed, every {@code HttpClients.createDefault()} on this thread
-     * returns a real client routed to this server (or to the loopback host and
+     * Until closed, every {@code HttpClients.custom()} on this thread
+     * returns a real builder routed to this server (or to the loopback host and
      * port a redirect names), which records each request's config.
      */
     MockedStatic<HttpClients> apacheClients() {
-        MockedStatic<HttpClients> clients = Mockito.mockStatic(HttpClients.class);
-        clients.when(HttpClients::createDefault).thenAnswer(invocation -> HttpClientBuilder.create()
-                .setRoutePlanner((target, request, context) -> new HttpRoute(new HttpHost("127.0.0.1",
-                        "127.0.0.1".equals(target.getHostName()) ? target.getPort() : port(), "http")))
-                .addInterceptorLast((HttpRequestInterceptor) (request, context) ->
-                        apacheConfigs.add(HttpClientContext.adapt(context).getRequestConfig()))
-                .build());
+        MockedStatic<HttpClients> clients = HttpClientTestSupport.mockClients();
+        clients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientBuilder.create()
+                .setRoutePlanner((target, context) -> new HttpRoute(new HttpHost("http", "127.0.0.1",
+                        "127.0.0.1".equals(target.getHostName()) ? target.getPort() : port())))
+                .addRequestInterceptorLast((HttpRequestInterceptor) (request, entity, context) ->
+                        apacheConfigs.add(HttpClientContext.cast(context).getRequestConfig())));
         return clients;
     }
 }

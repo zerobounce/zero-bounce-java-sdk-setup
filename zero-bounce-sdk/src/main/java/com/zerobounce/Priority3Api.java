@@ -1,16 +1,13 @@
 package com.zerobounce;
 
 import com.google.gson.reflect.TypeToken;
-import org.apache.http.HttpEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.mime.MultipartEntityBuilder;
-import org.apache.http.entity.mime.content.FileBody;
-import org.apache.http.entity.mime.content.InputStreamBody;
-import org.apache.http.entity.mime.content.StringBody;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.entity.mime.FileBody;
+import org.apache.hc.client5.http.entity.mime.InputStreamBody;
+import org.apache.hc.client5.http.entity.mime.StringBody;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -198,16 +195,10 @@ final class Priority3Api {
                 contentType = result.contentType;
                 body = result.body;
             } else {
-                java.net.HttpURLConnection con = (java.net.HttpURLConnection) sdk.createUrlFrom(url).openConnection();
-                con.setInstanceFollowRedirects(false);
-                con.setConnectTimeout(sdk.priority3TimeoutMillis());
-                con.setReadTimeout(sdk.priority3TimeoutMillis());
-                status = con.getResponseCode();
-                contentType = con.getContentType();
-                InputStream stream = SdkHttp.checkedBody(con, status > 299 ? con.getErrorStream() : con.getInputStream());
-                // A failed response with no body has no error stream at all.
-                body = stream == null ? new byte[0] : stream.readAllBytes();
-                con.disconnect();
+                SdkHttp.Result result = sdk.exchangeHttp("GET", url, null, null, null);
+                status = result.status;
+                contentType = result.contentType;
+                body = result.body;
             }
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
@@ -290,10 +281,9 @@ final class Priority3Api {
         if (deliverMultipartTransport(url, fields, file.getName(), successCallback, errorCallback)) {
             return;
         }
-        MultipartResponse response;
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+        SdkHttp.Result response;
+        try {
             HttpPost uploadFile = new HttpPost(url);
-            uploadFile.setConfig(sdk.apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
             for (Map.Entry<String, String> entry : fields.entrySet()) {
                 builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
@@ -301,12 +291,12 @@ final class Priority3Api {
             builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
             builder.addPart("file", new FileBody(file));
             uploadFile.setEntity(builder.build());
-            response = readMultipartResponse(httpClient.execute(uploadFile));
+            response = SdkHttp.execute(uploadFile, sdk.priority3TimeoutMillis());
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
             return;
         }
-        sdk.deliverSendFileResponse(response.status, response.contentType, response.body,
+        sdk.deliverSendFileResponse(response.status, response.contentType, new String(response.body, StandardCharsets.UTF_8),
                 successCallback, errorCallback);
     }
 
@@ -322,10 +312,9 @@ final class Priority3Api {
         if (deliverMultipartTransport(url, fields, fileName, successCallback, errorCallback)) {
             return;
         }
-        MultipartResponse response;
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+        SdkHttp.Result response;
+        try {
             HttpPost uploadFile = new HttpPost(url);
-            uploadFile.setConfig(sdk.apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
             for (Map.Entry<String, String> entry : fields.entrySet()) {
                 builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
@@ -333,12 +322,12 @@ final class Priority3Api {
             builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
             builder.addPart("file", new InputStreamBody(inputStream, ContentType.DEFAULT_BINARY, fileName));
             uploadFile.setEntity(builder.build());
-            response = readMultipartResponse(httpClient.execute(uploadFile));
+            response = SdkHttp.execute(uploadFile, sdk.priority3TimeoutMillis());
         } catch (Exception e) {
             errorCallback.onError(ErrorResponse.parseError(sdk.redactedFailure(e)));
             return;
         }
-        sdk.deliverSendFileResponse(response.status, response.contentType, response.body,
+        sdk.deliverSendFileResponse(response.status, response.contentType, new String(response.body, StandardCharsets.UTF_8),
                 successCallback, errorCallback);
     }
 
@@ -396,24 +385,4 @@ final class Priority3Api {
         return true;
     }
 
-    /** What an upload answered. */
-    private static final class MultipartResponse {
-        final int status;
-        final String contentType;
-        final String body;
-
-        MultipartResponse(int status, String contentType, String body) {
-            this.status = status;
-            this.contentType = contentType;
-            this.body = body;
-        }
-    }
-
-    private static MultipartResponse readMultipartResponse(CloseableHttpResponse response) throws IOException {
-        HttpEntity responseEntity = response.getEntity();
-        int status = response.getStatusLine().getStatusCode();
-        org.apache.http.Header type = response.getFirstHeader("Content-Type");
-        return new MultipartResponse(status, type != null ? type.getValue() : "",
-                SdkHttp.readText(responseEntity.getContent()));
-    }
 }

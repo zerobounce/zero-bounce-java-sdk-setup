@@ -1,7 +1,7 @@
 package com.zerobounce;
 
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedStatic;
@@ -11,7 +11,7 @@ import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.net.HttpURLConnection;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,10 +19,19 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,10 +99,7 @@ class OfflineTransportTest {
     /**
      * A 200 that declares 1000 bytes and closes after 33 is a transport failure
      * (status 0) on every path, like Apache's "Premature end of Content-Length
-     * delimited message body", and a download leaves no file. From JDK 25,
-     * HttpURLConnection detects the short body itself and throws "Premature EOF"
-     * before the SDK's own check sees the end of the stream; either message is a
-     * transport failure.
+     * delimited message body", and a download leaves no file.
      */
     @Test
     void everyRequestPathTreatsABodyCutShortAsATransportFailure() throws Exception {
@@ -145,10 +151,8 @@ class OfflineTransportTest {
                                 || outcome.errors.get(0).getStatusCode() != status) {
                             failures.add(status + " " + outcome);
                         }
-                        // A POST in fixed-length streaming mode cannot follow a
-                        // redirect either way, so the setting is checked as well.
-                        for (HttpURLConnection connection : List.copyOf(server.connections)) {
-                            if (connection.getInstanceFollowRedirects()) {
+                        for (RequestConfig config : List.copyOf(server.apacheConfigs)) {
+                            if (config.isRedirectsEnabled()) {
                                 failures.add(outcome.signature + " opened a connection that follows redirects");
                             }
                         }
@@ -160,12 +164,14 @@ class OfflineTransportTest {
 
     /**
      * Every request the SDK sends has the documented default connect and read
-     * timeout, 120 s, on the default settings: each HttpURLConnection, and each
-     * Apache request's config (connect, socket and connection-request
-     * timeouts). The exact value, so a changed or dropped default fails (T2).
+     * timeout, 120 s, on the default settings. HttpClient 5 configures connection
+     * establishment on the connection manager and response/lease timeouts on
+     * each request. The exact value, so a changed or dropped default fails (T2).
      */
     @Test
     void everyRequestPathSetsConnectAndReadTimeouts() throws Exception {
+        assertEquals(DEFAULT_TIMEOUT, SdkHttp.connectionConfig(DEFAULT_TIMEOUT).getConnectTimeout().toMilliseconds());
+        assertEquals(DEFAULT_TIMEOUT, SdkHttp.connectionConfig(DEFAULT_TIMEOUT).getSocketTimeout().toMilliseconds());
         RequestSweep sweep = new RequestSweep(tempDir);
         LoopbackServer.Responder csv = LoopbackServer.answer(200, "text/csv", CSV);
         LoopbackServer.Responder json = LoopbackServer.answer(200, "application/json", "{}".getBytes(StandardCharsets.UTF_8));
@@ -174,25 +180,192 @@ class OfflineTransportTest {
             (target.contains("getfile") || target.contains("download") ? csv : json).respond(request, out);
         })) {
             sweep(sweep, server, (method, outcome, failures) -> {
-                List<HttpURLConnection> connections = List.copyOf(server.connections);
                 List<RequestConfig> configs = List.copyOf(server.apacheConfigs);
-                if (connections.size() + configs.size() < server.requests().size()) {
+                if (configs.size() < server.requests().size()) {
                     failures.add(outcome.signature + " sent a request the sweep could not inspect");
                 }
-                for (HttpURLConnection connection : connections) {
-                    if (connection.getConnectTimeout() != DEFAULT_TIMEOUT || connection.getReadTimeout() != DEFAULT_TIMEOUT) {
-                        failures.add(outcome.signature + " connect " + connection.getConnectTimeout()
-                                + " ms, read " + connection.getReadTimeout() + " ms");
-                    }
-                }
                 for (RequestConfig config : configs) {
-                    if (config == null || config.getConnectTimeout() != DEFAULT_TIMEOUT
-                            || config.getSocketTimeout() != DEFAULT_TIMEOUT
-                            || config.getConnectionRequestTimeout() != DEFAULT_TIMEOUT) {
+                    if (config == null || config.getResponseTimeout().toMilliseconds() != DEFAULT_TIMEOUT
+                            || config.getConnectionRequestTimeout().toMilliseconds() != DEFAULT_TIMEOUT) {
                         failures.add(outcome.signature + " Apache config " + config);
                     }
                 }
             });
+        }
+    }
+
+    /**
+     * The real client honours the JVM proxy settings, as HttpURLConnection did:
+     * with {@code http.proxyHost} set, a request for another host goes to the
+     * proxy, in absolute form, instead of straight to that host.
+     */
+    @Test
+    void theJvmProxySettingsAreHonoured() throws Exception {
+        String host = System.getProperty("http.proxyHost");
+        String port = System.getProperty("http.proxyPort");
+        try (LoopbackServer proxy = new LoopbackServer(LoopbackServer.answer(200, "application/json",
+                "{}".getBytes(StandardCharsets.UTF_8)))) {
+            SdkHttp.closeSharedClients();
+            System.setProperty("http.proxyHost", "127.0.0.1");
+            System.setProperty("http.proxyPort", String.valueOf(proxy.port()));
+            String url = "http://proxied.invalid/v2/getcredits?api_key=" + KEY;
+            SdkHttp.Result result = SdkHttp.exchange("GET", URI.create(url), null, null, null, 5_000);
+            assertEquals(200, result.status);
+            assertEquals(1, proxy.requests().size());
+            assertEquals(url, proxy.requests().get(0).target);
+        } finally {
+            restoreProperty("http.proxyHost", host);
+            restoreProperty("http.proxyPort", port);
+            SdkHttp.closeSharedClients();
+        }
+    }
+
+    private static void restoreProperty(String name, String value) {
+        if (value == null) {
+            System.clearProperty(name);
+        } else {
+            System.setProperty(name, value);
+        }
+    }
+
+    /**
+     * Requests carry the HTTP client's own User-Agent, as HttpURLConnection sent
+     * its own: a request with none is one some Cloudflare rules block.
+     */
+    @Test
+    void requestsCarryTheHttpClientsUserAgent() throws Exception {
+        try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(200, "application/json",
+                "{}".getBytes(StandardCharsets.UTF_8)))) {
+            SdkHttp.exchange("GET", URI.create("http://127.0.0.1:" + server.port() + "/v2/getcredits"),
+                    null, null, null, 5_000);
+            String agent = server.requests().get(0).headers.get("user-agent");
+            assertTrue(agent != null && agent.startsWith("Apache-HttpClient/"), String.valueOf(agent));
+        }
+    }
+
+    /**
+     * Calls with the same timeout share one client, and so its connection pool,
+     * across calls and instances. Past eight distinct timeouts a call gets a
+     * client of its own instead of growing the set without bound.
+     */
+    @Test
+    void callsWithTheSameTimeoutShareOneClient() {
+        SdkHttp.closeSharedClients();
+        try {
+            assertSame(SdkHttp.sharedClient(1_234), SdkHttp.sharedClient(1_234));
+            assertNotSame(SdkHttp.sharedClient(1_234), SdkHttp.sharedClient(4_321));
+            for (int timeout = 1; timeout <= 6; timeout++) {
+                assertNotNull(SdkHttp.sharedClient(timeout), "shared client " + timeout);
+            }
+            assertNull(SdkHttp.sharedClient(99_999), "a ninth distinct timeout");
+        } finally {
+            SdkHttp.closeSharedClients();
+        }
+    }
+
+    /**
+     * Callers that arrive together with distinct timeouts cannot push the shared
+     * clients past eight: the size check and the insert are one step.
+     */
+    @Test
+    void concurrentCallersCannotPassTheSharedClientLimit() throws Exception {
+        SdkHttp.closeSharedClients();
+        int callers = 64;
+        ExecutorService pool = Executors.newFixedThreadPool(callers);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Boolean>> admitted = new ArrayList<>();
+            for (int i = 0; i < callers; i++) {
+                int timeout = 10_000 + i;
+                admitted.add(pool.submit(() -> {
+                    start.await();
+                    return SdkHttp.sharedClient(timeout) != null;
+                }));
+            }
+            start.countDown();
+            int shared = 0;
+            for (Future<Boolean> result : admitted) {
+                if (result.get(10, TimeUnit.SECONDS)) {
+                    shared++;
+                }
+            }
+            assertEquals(8, shared, "distinct timeouts given a shared client");
+        } finally {
+            pool.shutdownNow();
+            SdkHttp.closeSharedClients();
+        }
+    }
+
+    @Test
+    void everyRequestPathReports429And503WithoutRetrying() throws Exception {
+        for (int status : new int[]{429, 503}) {
+            Path dir = tempDir.resolve(String.valueOf(status));
+            Files.createDirectories(dir);
+            RequestSweep sweep = new RequestSweep(dir);
+            try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(status,
+                    "application/json", "{\"error\":\"Try again later\"}".getBytes(StandardCharsets.UTF_8)))) {
+                sweep(sweep, server, (method, outcome, failures) -> {
+                    if (server.requests().size() != 1 || !outcome.successes.isEmpty()
+                            || outcome.errors.size() != 1 || outcome.errors.get(0).getStatusCode() != status) {
+                        failures.add(status + " " + outcome + " requests=" + server.requests().size());
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void jsonFormsAndAuthenticationReachTheServerUnchanged() throws Exception {
+        String key = "key+with/slash";
+        String email = "té+tag@example.com";
+        List<ErrorResponse> errors = new ArrayList<>();
+        try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(400,
+                "application/json", "{\"error\":\"offline fixture\"}".getBytes(StandardCharsets.UTF_8)));
+             MockedStatic<HttpClients> ignored = server.apacheClients()) {
+            ZeroBounceSDK sdk = server.sdk();
+            sdk.initialize(key);
+            sdk.validateBatch(List.of(new ZBValidateBatchData(email, null)), r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request json = server.requests().get(0);
+            assertEquals("POST", json.method);
+            assertEquals("application/json; charset=UTF-8", json.headers.get("content-type"));
+            assertEquals("{\"api_key\":\"" + key + "\",\"email_batch\":[{\"email_address\":\"" + email + "\"}]}",
+                    new String(json.body, StandardCharsets.UTF_8));
+
+            ZBValidateRequestOptions options = new ZBValidateRequestOptions();
+            options.setUsePost(true);
+            sdk.validateWithOptions(email, options, r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request form = server.requests().get(1);
+            assertEquals("POST", form.method);
+            assertEquals("application/x-www-form-urlencoded", form.headers.get("content-type"));
+            String body = new String(form.body, StandardCharsets.UTF_8);
+            assertTrue(body.contains("api_key=key%2Bwith%2Fslash"), body);
+            assertTrue(body.contains("email=t%C3%A9%2Btag%40example.com"), body);
+
+            sdk.createInboxPlacementTest("wire check", null, r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request bearer = server.requests().get(2);
+            assertEquals("Bearer " + key, bearer.headers.get("authorization"));
+            assertFalse(bearer.target.contains("api_key"), bearer.target);
+            assertEquals("{\"name\":\"wire check\"}", new String(bearer.body, StandardCharsets.UTF_8));
+
+            ZeroBounceWarmup warmup = server.warmup();
+            warmup.initialize(key);
+            warmup.getSeedCount(r -> {
+                throw new AssertionError("expected fixture error");
+            }, errors::add);
+            LoopbackServer.Request warmupRequest = server.requests().get(3);
+            assertEquals(key, warmupRequest.headers.get("api-key"));
+            assertFalse(warmupRequest.target.contains(key), warmupRequest.target);
+            assertEquals(4, server.requests().size());
+            assertEquals(4, errors.size());
+            for (ErrorResponse error : errors) {
+                assertEquals(400, error.getStatusCode());
+            }
         }
     }
 

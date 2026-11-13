@@ -9,11 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -27,7 +23,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Offline tests for the Warmup API client. Every request is answered by a
- * mocked {@link HttpURLConnection}; nothing here reaches the live API. The
+ * replacement HTTP exchange; nothing here reaches the live API. The
  * assertions are on what actually went on the wire.
  */
 @ExtendWith(MockitoExtension.class)
@@ -88,50 +84,21 @@ public class OfflineWarmupTest {
 
     private void mockAll(int status, @NotNull String responseJson, @NotNull String contentType)
             throws IOException {
-        ByteArrayOutputStream sentBody = new ByteArrayOutputStream();
-
-        URL url = mock(URL.class,
-                withSettings().useConstructor("https://warmup-api.zerobounce.net/api/v1/warmup/seeds"));
-        HttpURLConnection con = mock(HttpURLConnection.class);
-        lenient().when(url.openConnection()).thenReturn(con);
-        lenient().when(con.getResponseCode()).thenReturn(status);
-        lenient().when(con.getHeaderField("Content-Type")).thenReturn(contentType);
-        lenient().when(con.getOutputStream()).thenReturn(sentBody);
-        lenient().when(con.getInputStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-        lenient().when(con.getErrorStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-
         lenient().doAnswer(invocation -> {
             Recorded record = new Recorded();
-            record.url = invocation.getArgument(0);
+            record.method = invocation.getArgument(0);
+            record.url = invocation.getArgument(1);
+            record.headers.put("Accept", "application/json");
+            String type = invocation.getArgument(2);
+            if (type != null) record.headers.put("Content-Type", type);
+            byte[] body = invocation.getArgument(3);
+            record.body = body == null ? "" : new String(body, StandardCharsets.UTF_8);
+            Map<String, String> headers = invocation.getArgument(4);
+            if (headers != null) record.headers.putAll(headers);
             recorded.add(record);
-            sentBody.reset();
-            return url;
-        }).when(warmup).createUrlFrom(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).method = invocation.getArgument(0);
-            }
-            return null;
-        }).when(con).setRequestMethod(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).headers
-                        .put(invocation.getArgument(0), invocation.getArgument(1));
-            }
-            return null;
-        }).when(con).setRequestProperty(anyString(), anyString());
-
-        // The body is written after setRequestMethod, so read it back lazily.
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).body = sentBody.toString(StandardCharsets.UTF_8);
-            }
-            return null;
-        }).when(con).disconnect();
+            return new SdkHttp.Result(status, contentType, responseJson.getBytes(StandardCharsets.UTF_8));
+        }).when(warmup).exchangeHttp(anyString(), anyString(), nullable(String.class),
+                nullable(byte[].class), nullable(Map.class));
     }
 
     private Recorded only() {
@@ -198,9 +165,6 @@ public class OfflineWarmupTest {
     public void aFailureWithNoBodyKeepsItsStatus() throws IOException {
         // HttpURLConnection has no error stream for a failed response with no body.
         mockAll(500, "");
-        HttpURLConnection con = (HttpURLConnection) warmup.createUrlFrom("https://x").openConnection();
-        recorded.clear();
-        when(con.getErrorStream()).thenReturn(null);
         warmup.getSeedCount(r -> fail("success"), collect);
         assertEquals(List.of("Empty response from ZeroBounce (HTTP 500)"), errors);
         assertEquals(500, lastStatus);

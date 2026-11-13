@@ -14,8 +14,8 @@ Guidance for AI coding agents working in this repository.
 - `ZBValidateOptions`, `ZBBulkFileJobOptions`, `ZBValidateBatchOptions`, `ZBValidateRequestOptions`: the option objects, each with a package-private `fill` that both builds the request and rejects an invalid combination before anything is sent.
 - `zero-bounce-sdk/src/main/java/com/zerobounce/ZeroBounceWarmup.java`: a separate client for the Warmup API, a different product with its own host and its own team-scoped key. Not part of `ZeroBounceSDK`.
 - `zero-bounce-sdk/src/main/java/com/zerobounce/HttpMessages.java`: turns HTTP failures, HTML pages, and empty or non-JSON bodies into a short `ErrorResponse`.
-- `zero-bounce-sdk/src/main/java/com/zerobounce/SdkHttp.java`: per-client HTTP seam. Production leaves `transport` null.
-- `zero-bounce-sdk/src/test/java/com/zerobounce/OfflineApiTest.java`, `OfflineWarmupTest.java`: the offline suites. `FakeApi` (and a mocked `HttpURLConnection`) answer every call and record the url, method, headers and body, so the assertions are on what actually went on the wire.
+- `zero-bounce-sdk/src/main/java/com/zerobounce/SdkHttp.java`: shared Apache HttpClient 5 exchange and timeout configuration, plus the per-client fake transport seam. Production leaves `transport` null. Response handlers consume and close responses. One shared client per timeout value (at most eight, admitted under a lock) pools connections for every instance and is never closed by SDK users; each runs HttpClient's idle-connection evictor, one daemon thread, and honours the JVM proxy and TLS system properties. Redirects and automatic retries are disabled. A test that mocks `HttpClients` must open the mock with `HttpClientTestSupport.mockClients()`, which drops the shared clients on both sides of the mock.
+- `zero-bounce-sdk/src/test/java/com/zerobounce/OfflineApiTest.java`, `OfflineWarmupTest.java`: the offline suites. `FakeApi` and replacement `exchangeHttp` methods record the URL, method, headers and body. `LoopbackServer` routes real HttpClient 5 builders to a local server for transport and multipart tests.
 - `live/LiveApi.java`: the opt-in live suite. It sits outside the Maven module's source root, so `mvn test` and CI never compile or run it.
 - `zero-bounce-sdk/pom.xml`: SDK build. The version is `<sdk.version>` inside `<properties>`.
 - `pom.xml`: the JavaFX sample. Its `<version>` is `1.0-SNAPSHOT` and is not the SDK version.
@@ -81,7 +81,7 @@ Keys come from the environment only. Never write one into a file, a commit, a lo
 - **Errors carry the HTTP status.** `ErrorResponse.getStatusCode()` is set on every path, so callers can tell a Cloudflare 403 from an API 400/404 and a Warmup 429. A failure that never reached the API leaves it 0.
 - **`ErrorResponse.parseError` already handles `detail`.** It collects every value of the error JSON, so the Inbox Placement Tester's Django-style `{"detail": ...}` surfaces without a special case. A test pins that.
 - **Offline tests only, in the Maven module.** Never call the live API from a test under `src/test`. The live suite is the separate, opt-in `live/LiveApi.java`. Tests replace `transport`: it is package-visible, so assign a `FakeApi` (or another `SdkHttp.Transport`) on that instance.
-- There is no runtime version constant and no User-Agent. Do not add one that can drift from `<sdk.version>`.
+- There is no runtime version constant, and the SDK sets no User-Agent of its own: requests carry HttpClient's default (`Apache-HttpClient/…`). Do not disable it, and do not add one that can drift from `<sdk.version>`.
 - Match the surrounding style. Do not reformat unrelated code.
 
 ## Changelog

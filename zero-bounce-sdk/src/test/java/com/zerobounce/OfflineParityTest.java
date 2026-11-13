@@ -7,11 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -28,7 +24,7 @@ import static org.mockito.Mockito.*;
  * options, real-time AI scoring, the filters, the list evaluator, the S3 and
  * SFTP/FTP bulk jobs and the Inbox Placement Tester.
  * <p>
- * Every request is answered by a mocked {@link HttpURLConnection}; nothing here
+ * Every request is answered by a replacement HTTP exchange; nothing here
  * reaches the live API. The assertions are on what actually went on the wire.
  */
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +34,7 @@ import static org.mockito.Mockito.*;
  * It is a second offline suite beside {@link OfflineApiTest} rather than part
  * of it: the two were written against different seams — {@code OfflineApiTest}
  * swaps in a {@code FakeApi} transport, while this one mocks
- * {@code HttpURLConnection} directly — and both sets of assertions are worth
+ * the HTTP exchange directly — and both sets of assertions are worth
  * keeping. The parity cases live here, the transport-level cases there.
  */
 public class OfflineParityTest {
@@ -107,48 +103,21 @@ public class OfflineParityTest {
      * Returns the recorded calls, in order.
      */
     private List<Recorded> mockAll(int status, @NotNull String responseJson) throws IOException {
-        ByteArrayOutputStream sentBody = new ByteArrayOutputStream();
-
-        URL url = mock(URL.class, withSettings().useConstructor("https://api.zerobounce.net/v2/validate"));
-        HttpURLConnection con = mock(HttpURLConnection.class);
-        lenient().when(url.openConnection()).thenReturn(con);
-        lenient().when(con.getResponseCode()).thenReturn(status);
-        lenient().when(con.getOutputStream()).thenReturn(sentBody);
-        lenient().when(con.getInputStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-        lenient().when(con.getErrorStream())
-                .thenAnswer(i -> new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8)));
-
         lenient().doAnswer(invocation -> {
             Recorded record = new Recorded();
-            record.url = invocation.getArgument(0);
+            record.method = invocation.getArgument(0);
+            record.url = invocation.getArgument(1);
+            record.headers.put("Accept", "application/json");
+            String type = invocation.getArgument(2);
+            if (type != null) record.headers.put("Content-Type", type);
+            byte[] body = invocation.getArgument(3);
+            record.body = body == null ? "" : new String(body, StandardCharsets.UTF_8);
+            Map<String, String> headers = invocation.getArgument(4);
+            if (headers != null) record.headers.putAll(headers);
             recorded.add(record);
-            sentBody.reset();
-            return url;
-        }).when(zeroBounceSDK).createUrlFrom(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).method = invocation.getArgument(0);
-            }
-            return null;
-        }).when(con).setRequestMethod(anyString());
-
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).headers
-                        .put(invocation.getArgument(0), invocation.getArgument(1));
-            }
-            return null;
-        }).when(con).setRequestProperty(anyString(), anyString());
-
-        // The body is written after setRequestMethod, so read it back lazily.
-        lenient().doAnswer(invocation -> {
-            if (!recorded.isEmpty()) {
-                recorded.get(recorded.size() - 1).body = sentBody.toString(StandardCharsets.UTF_8);
-            }
-            return null;
-        }).when(con).disconnect();
+            return new SdkHttp.Result(status, "application/json", responseJson.getBytes(StandardCharsets.UTF_8));
+        }).when(zeroBounceSDK).exchangeHttp(anyString(), anyString(), nullable(String.class),
+                nullable(byte[].class), nullable(Map.class));
 
         return recorded;
     }

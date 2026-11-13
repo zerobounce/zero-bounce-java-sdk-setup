@@ -8,26 +8,20 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.utils.URIBuilder;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.mime.MultipartEntityBuilder;
-import org.apache.http.entity.mime.content.FileBody;
-import org.apache.http.entity.mime.content.InputStreamBody;
-import org.apache.http.entity.mime.content.StringBody;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.core5.net.URIBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.entity.mime.FileBody;
+import org.apache.hc.client5.http.entity.mime.InputStreamBody;
+import org.apache.hc.client5.http.entity.mime.StringBody;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
 import java.lang.reflect.Type;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -452,14 +446,6 @@ public class ZeroBounceSDK {
         };
     }
 
-    org.apache.http.client.config.RequestConfig apacheRequestConfig() {
-        return org.apache.http.client.config.RequestConfig.custom()
-                .setRedirectsEnabled(false)
-                .setConnectTimeout(timeoutInMillis)
-                .setConnectionRequestTimeout(timeoutInMillis)
-                .setSocketTimeout(timeoutInMillis)
-                .build();
-    }
 
     String redactedFailure(@NotNull Throwable exception) {
         String message = exception.getMessage();
@@ -1006,9 +992,8 @@ public class ZeroBounceSDK {
         int status;
         String rsp;
         String responseType = null;
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+        try {
             HttpPost uploadFile = new HttpPost(urlPath);
-            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName()));
@@ -1017,15 +1002,10 @@ public class ZeroBounceSDK {
             HttpEntity multipart = builder.build();
             uploadFile.setEntity(multipart);
 
-            CloseableHttpResponse response = httpClient.execute(uploadFile);
-            HttpEntity responseEntity = response.getEntity();
-            status = response.getStatusLine().getStatusCode();
-            Header typeHeader = response.getFirstHeader("Content-Type");
-            responseType = typeHeader != null ? typeHeader.getValue() : "";
-
-            logDebug("ZeroBounceSDK::sendFile status: " + status);
-
-            rsp = SdkHttp.readText(responseEntity.getContent());
+            SdkHttp.Result response = SdkHttp.execute(uploadFile, timeoutInMillis);
+            status = response.status;
+            responseType = response.contentType;
+            rsp = new String(response.body, StandardCharsets.UTF_8);
 
             logPayload("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
@@ -1065,9 +1045,8 @@ public class ZeroBounceSDK {
         int status;
         String rsp;
         String responseType = null;
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+        try {
             HttpPost uploadFile = new HttpPost(urlPath);
-            uploadFile.setConfig(apacheRequestConfig());
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName));
@@ -1076,15 +1055,10 @@ public class ZeroBounceSDK {
             HttpEntity multipart = builder.build();
             uploadFile.setEntity(multipart);
 
-            CloseableHttpResponse response = httpClient.execute(uploadFile);
-            HttpEntity responseEntity = response.getEntity();
-            status = response.getStatusLine().getStatusCode();
-            Header typeHeader = response.getFirstHeader("Content-Type");
-            responseType = typeHeader != null ? typeHeader.getValue() : "";
-
-            logDebug("ZeroBounceSDK::sendFile status: " + status);
-
-            rsp = SdkHttp.readText(responseEntity.getContent());
+            SdkHttp.Result response = SdkHttp.execute(uploadFile, timeoutInMillis);
+            status = response.status;
+            responseType = response.contentType;
+            rsp = new String(response.body, StandardCharsets.UTF_8);
 
             logPayload("ZeroBounceSDK::sendFile rsp=" + rsp);
         } catch (Exception e) {
@@ -1280,17 +1254,10 @@ public class ZeroBounceSDK {
                 contentTypeRaw = result.contentType;
                 bodyBytes = result.body;
             } else {
-                try (CloseableHttpClient client = HttpClients.createDefault()) {
-                    HttpGet downloadFile = new HttpGet(uri);
-                    downloadFile.setConfig(apacheRequestConfig());
-                    try (CloseableHttpResponse response = client.execute(downloadFile)) {
-                        statusCode = response.getStatusLine().getStatusCode();
-                        HttpEntity entity = response.getEntity();
-                        Header ctHeader = response.getFirstHeader("Content-Type");
-                        contentTypeRaw = ctHeader != null ? ctHeader.getValue() : "";
-                        bodyBytes = entity != null ? EntityUtils.toByteArray(entity) : new byte[0];
-                    }
-                }
+                SdkHttp.Result result = SdkHttp.execute(new HttpGet(uri), timeoutInMillis);
+                statusCode = result.status;
+                contentTypeRaw = result.contentType;
+                bodyBytes = result.body;
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::getFile failed", e);
@@ -2569,31 +2536,11 @@ public class ZeroBounceSDK {
                 responseType = result.contentType;
                 rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                URL url = createUrlFrom(urlString);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
-                con.setInstanceFollowRedirects(false);
-                con.setRequestProperty("Accept", "application/json");
-                // Timeouts must be set before connect(); the POST branch connects explicitly below.
-                con.setConnectTimeout(timeoutInMillis);
-                con.setReadTimeout(timeoutInMillis);
-
-                if (body == null) {
-                    con.setRequestMethod("GET");
-                } else {
-                    con.setRequestMethod("POST");
-                    con.setDoOutput(true);
-                    con.setFixedLengthStreamingMode(payload.length);
-                    con.connect();
-                    try (OutputStream os = con.getOutputStream()) {
-                        os.write(payload);
-                    }
-                }
-
-                logDebug("ZeroBounceSDK::sendRequest executing " + httpMethod + " " + urlPath);
-                status = con.getResponseCode();
-                logDebug("ZeroBounceSDK::sendRequest status: " + status);
-                responseType = con.getContentType();
-                rsp = readResponse(con, status);
+                SdkHttp.Result result = exchangeHttp(httpMethod, urlString,
+                        payload == null ? null : "application/json; charset=UTF-8", payload, null);
+                status = result.status;
+                responseType = result.contentType;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequest failed", e);
@@ -2648,24 +2595,11 @@ public class ZeroBounceSDK {
                 responseType = result.contentType;
                 rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                URL url = createUrlFrom(urlPath);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
-                con.setInstanceFollowRedirects(false);
-                con.setRequestProperty("Accept", "application/json");
-                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-                con.setConnectTimeout(timeoutInMillis);
-                con.setReadTimeout(timeoutInMillis);
-                con.setRequestMethod("POST");
-                con.setDoOutput(true);
-                con.setFixedLengthStreamingMode(out.length);
-                con.connect();
-                try (OutputStream os = con.getOutputStream()) {
-                    os.write(out);
-                }
-
-                status = con.getResponseCode();
-                responseType = con.getContentType();
-                rsp = readResponse(con, status);
+                SdkHttp.Result result = exchangeHttp("POST", urlPath,
+                        "application/x-www-form-urlencoded", out, null);
+                status = result.status;
+                responseType = result.contentType;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendFormPostRequest failed", e);
@@ -2760,36 +2694,10 @@ public class ZeroBounceSDK {
                 responseType = result.contentType;
                 rsp = new String(result.body, StandardCharsets.UTF_8);
             } else {
-                URL url = createUrlFrom(urlString);
-                HttpURLConnection con = (HttpURLConnection) url.openConnection();
-                con.setInstanceFollowRedirects(false);
-                con.setRequestProperty("Accept", "application/json");
-                if (extraHeaders != null) {
-                    for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
-                        con.setRequestProperty(header.getKey(), header.getValue());
-                    }
-                }
-                con.setConnectTimeout(timeoutInMillis);
-                con.setReadTimeout(timeoutInMillis);
-                con.setRequestMethod(method);
-                if (contentType != null) {
-                    con.setRequestProperty("Content-Type", contentType);
-                }
-
-                if (out != null) {
-                    con.setDoOutput(true);
-                    con.setFixedLengthStreamingMode(out.length);
-                    con.connect();
-                    try (OutputStream os = con.getOutputStream()) {
-                        os.write(out);
-                    }
-                }
-
-                logDebug("ZeroBounceSDK::sendRequestWithMethod executing " + method + " " + urlPath);
-
-                status = con.getResponseCode();
-                responseType = con.getContentType();
-                rsp = readResponse(con, status);
+                SdkHttp.Result result = exchangeHttp(method, urlString, contentType, out, extraHeaders);
+                status = result.status;
+                responseType = result.contentType;
+                rsp = new String(result.body, StandardCharsets.UTF_8);
             }
         } catch (Exception e) {
             logError("ZeroBounceSDK::sendRequestWithMethod failed", e);
@@ -2834,20 +2742,11 @@ public class ZeroBounceSDK {
         deliverJson(status, responseType, rsp, typeToken, successCallback, errorCallback);
     }
 
-    /**
-     * The body of a response. A failed response with no body has no error
-     * stream at all, so that reads as an empty body rather than a
-     * NullPointerException that would lose the status.
-     */
-    private static String readResponse(@NotNull HttpURLConnection con, int status) throws IOException {
-        InputStream stream = SdkHttp.checkedBody(con, status > 299 ? con.getErrorStream() : con.getInputStream());
-        if (stream == null) {
-            con.disconnect();
-            return "";
-        }
-        String content = SdkHttp.readText(stream);
-        con.disconnect();
-        return content;
+    /** One HttpClient 5 exchange; callbacks and decoding remain with the caller. */
+    SdkHttp.Result exchangeHttp(String method, String url, String contentType, byte[] body,
+            Map<String, String> headers) throws IOException {
+        return SdkHttp.exchange(method, URI.create(createUrlFrom(url).toExternalForm()),
+                contentType, body, headers, timeoutInMillis);
     }
 
     /**

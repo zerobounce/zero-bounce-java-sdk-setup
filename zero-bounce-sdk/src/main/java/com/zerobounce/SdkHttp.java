@@ -1,16 +1,30 @@
 package com.zerobounce;
 
-import java.io.FilterInputStream;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.util.TimeValue;
+import org.apache.hc.core5.util.Timeout;
+
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
+import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
-/**
- * One outbound call. {@link Transport} replaces the network for a single {@link ZeroBounceSDK}.
- */
+/** One outbound call, with a per-client replacement transport for offline tests. */
 final class SdkHttp {
 
     final String method;
@@ -18,7 +32,6 @@ final class SdkHttp {
     final String contentType;
     final byte[] body;
     final Map<String, String> fields;
-    /** The real clients disable redirects. The offline suite asserts this stays false. */
     final boolean followRedirects;
 
     SdkHttp(String method, String url, String contentType, byte[] body, Map<String, String> fields) {
@@ -33,66 +46,141 @@ final class SdkHttp {
     }
 
     /**
-     * The body of an {@link HttpURLConnection} response, checked against its
-     * {@code Content-Length}. HttpURLConnection ends the stream quietly when the
-     * connection closes mid-body, so a body cut short would otherwise read as a
-     * complete one. Reaching the end with fewer bytes than declared throws the
-     * same message as Apache HttpClient ("Premature end of Content-Length
-     * delimited message body"), so the caller reports a transport failure with
-     * status 0 and saves nothing.
-     *
-     * @return the stream to read, or null when the response has no body stream
+     * Clients shared by every {@link ZeroBounceSDK} and {@link ZeroBounceWarmup},
+     * one per timeout, so calls reuse connections as HttpURLConnection did instead
+     * of paying a new TCP and TLS handshake each time. SDK users never close them.
+     * Reads are lock-free; a new timeout is admitted under the map's lock.
      */
-    static InputStream checkedBody(HttpURLConnection con, InputStream stream) {
-        if (stream == null) {
-            return null;
-        }
-        long declared = con.getContentLengthLong();
-        if (declared < 0) {
-            return stream;
-        }
-        return new FilterInputStream(stream) {
-            private long received;
+    private static final ConcurrentMap<Integer, CloseableHttpClient> SHARED = new ConcurrentHashMap<>();
+    /** Past this many distinct timeouts, a call gets a client of its own, closed after it. */
+    private static final int MAX_SHARED_CLIENTS = 8;
+    /** An idle pooled connection is closed by the shared client's evictor once idle this long. */
+    private static final TimeValue MAX_IDLE = TimeValue.ofSeconds(5);
 
-            @Override
-            public int read() throws IOException {
-                int b = super.read();
-                if (b < 0) {
-                    checkComplete();
-                } else {
-                    received++;
-                }
-                return b;
-            }
+    static ConnectionConfig connectionConfig(int timeoutMillis) {
+        Timeout timeout = Timeout.ofMilliseconds(timeoutMillis);
+        return ConnectionConfig.custom()
+                .setConnectTimeout(timeout)
+                .setSocketTimeout(timeout)
+                // Automatic retries are off, so a pooled connection the server has
+                // since closed would fail the call: one idle for over a second is
+                // checked before it is reused.
+                .setValidateAfterInactivity(TimeValue.ofSeconds(1))
+                .build();
+    }
 
-            @Override
-            public int read(byte[] buffer, int offset, int length) throws IOException {
-                int n = super.read(buffer, offset, length);
-                if (n < 0) {
-                    checkComplete();
-                } else {
-                    received += n;
-                }
-                return n;
-            }
-
-            private void checkComplete() throws IOException {
-                if (received < declared) {
-                    throw new IOException("Premature end of Content-Length delimited message body (expected: "
-                            + declared + "; received: " + received + ")");
-                }
-            }
-        };
+    static RequestConfig requestConfig(int timeoutMillis) {
+        Timeout timeout = Timeout.ofMilliseconds(timeoutMillis);
+        return RequestConfig.custom()
+                .setRedirectsEnabled(false)
+                .setConnectionRequestTimeout(timeout)
+                .setResponseTimeout(timeout)
+                // How long an idle connection may be reused when the server does not say.
+                .setConnectionKeepAlive(MAX_IDLE)
+                .build();
     }
 
     /**
-     * A response body exactly as it arrived, decoded as UTF-8, line breaks
-     * and all. Reading it line by line and joining the lines dropped every
-     * line break, which turned a CSV download into a single line.
+     * @param shared whether the client outlives the call. A shared client also
+     *               runs HttpClient's idle-connection evictor, one daemon thread
+     *               that closes connections idle for {@link #MAX_IDLE} or past their
+     *               keep-alive. The pool itself never closes an idle connection until
+     *               it is next used, so without it a burst of concurrent calls would
+     *               leave that many sockets open indefinitely.
      */
-    static String readText(InputStream stream) throws IOException {
-        try (InputStream in = stream) {
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    static CloseableHttpClient newClient(int timeoutMillis, boolean shared) {
+        HttpClientBuilder builder = HttpClients.custom()
+                .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create()
+                        .setDefaultConnectionConfig(connectionConfig(timeoutMillis))
+                        // No limit on concurrent calls, as before: HttpURLConnection had
+                        // none and each Apache 4 call built a client of its own. A shared
+                        // pool's default of 5 per host would make the sixth concurrent
+                        // call wait.
+                        .setMaxConnPerRoute(Integer.MAX_VALUE)
+                        .setMaxConnTotal(Integer.MAX_VALUE)
+                        .useSystemProperties()
+                        .build())
+                // The JVM's proxy and TLS settings (https.proxyHost, ProxySelector,
+                // javax.net.ssl.*), which HttpURLConnection honoured. The default
+                // User-Agent is kept: HttpURLConnection sent one too, and some
+                // Cloudflare rules block a request without one.
+                .useSystemProperties()
+                .disableRedirectHandling()
+                .disableAutomaticRetries()
+                .disableCookieManagement();
+        if (shared) {
+            builder.evictExpiredConnections().evictIdleConnections(MAX_IDLE);
+        }
+        return builder.build();
+    }
+
+    /**
+     * The shared client for {@code timeoutMillis}, or null once
+     * {@link #MAX_SHARED_CLIENTS} other timeouts have one. The size check and the
+     * insert happen under one lock, so concurrent callers cannot pass the limit.
+     */
+    static CloseableHttpClient sharedClient(int timeoutMillis) {
+        CloseableHttpClient client = SHARED.get(timeoutMillis);
+        if (client != null) {
+            return client;
+        }
+        synchronized (SHARED) {
+            client = SHARED.get(timeoutMillis);
+            if (client == null && SHARED.size() < MAX_SHARED_CLIENTS) {
+                client = newClient(timeoutMillis, true);
+                SHARED.put(timeoutMillis, client);
+            }
+            return client;
+        }
+    }
+
+    /**
+     * Closes and forgets the shared clients, so the next call builds new ones.
+     * The offline suites call it whenever they replace {@code HttpClients.custom()}.
+     */
+    static void closeSharedClients() {
+        synchronized (SHARED) {
+            for (CloseableHttpClient client : SHARED.values()) {
+                try {
+                    client.close();
+                } catch (IOException ignored) {
+                    // nothing left to release
+                }
+            }
+            SHARED.clear();
+        }
+    }
+
+    private static final HttpClientResponseHandler<Result> READ = response -> {
+        HttpEntity entity = response.getEntity();
+        Header type = response.getFirstHeader("Content-Type");
+        return new Result(response.getCode(), type == null ? "" : type.getValue(),
+                entity == null ? new byte[0] : EntityUtils.toByteArray(entity));
+    };
+
+    static Result exchange(String method, URI uri, String contentType, byte[] body,
+            Map<String, String> headers, int timeoutMillis) throws IOException {
+        HttpUriRequestBase request = new HttpUriRequestBase(method, uri);
+        request.setHeader("Accept", "application/json");
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                request.setHeader(header.getKey(), header.getValue());
+            }
+        }
+        if (body != null) {
+            request.setEntity(new ByteArrayEntity(body, contentType == null ? null : ContentType.parse(contentType)));
+        }
+        return execute(request, timeoutMillis);
+    }
+
+    static Result execute(HttpUriRequestBase request, int timeoutMillis) throws IOException {
+        request.setConfig(requestConfig(timeoutMillis));
+        CloseableHttpClient shared = sharedClient(timeoutMillis);
+        if (shared != null) {
+            return shared.execute(request, READ);
+        }
+        try (CloseableHttpClient client = newClient(timeoutMillis, false)) {
+            return client.execute(request, READ);
         }
     }
 
