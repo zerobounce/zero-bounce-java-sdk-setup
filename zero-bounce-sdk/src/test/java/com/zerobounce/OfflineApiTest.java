@@ -827,7 +827,7 @@ class OfflineApiTest {
         when(response.getCode()).thenReturn(200);
         when(response.getFirstHeader("Content-Type")).thenReturn(null);
         when(entity.getContent()).thenReturn(new ByteArrayInputStream("email\n".getBytes(StandardCharsets.UTF_8)));
-        try (MockedStatic<HttpClients> clients = Mockito.mockStatic(HttpClients.class)) {
+        try (MockedStatic<HttpClients> clients = HttpClientTestSupport.mockClients()) {
             clients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(client));
             Path out = tempDir.resolve("apache.csv");
             sdk.getFile("fid", out.toString(), responseBody -> {

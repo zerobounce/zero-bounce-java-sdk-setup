@@ -294,7 +294,7 @@ final class LoopbackServer implements AutoCloseable {
      * port a redirect names), which records each request's config.
      */
     MockedStatic<HttpClients> apacheClients() {
-        MockedStatic<HttpClients> clients = Mockito.mockStatic(HttpClients.class);
+        MockedStatic<HttpClients> clients = HttpClientTestSupport.mockClients();
         clients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientBuilder.create()
                 .setRoutePlanner((target, context) -> new HttpRoute(new HttpHost("http", "127.0.0.1",
                         "127.0.0.1".equals(target.getHostName()) ? target.getPort() : port())))

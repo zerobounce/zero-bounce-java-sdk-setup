@@ -1612,7 +1612,7 @@ public class ZeroBounceSDKTest {
         Header header = mock(Header.class);
         ArgumentCaptor<HttpUriRequestBase> captor = ArgumentCaptor.forClass(HttpUriRequestBase.class);
 
-        try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
+        try (MockedStatic<HttpClients> httpClients = HttpClientTestSupport.mockClients()) {
             httpClients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
             when(httpClient.execute(captor.capture(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
                 .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
@@ -1650,7 +1650,7 @@ public class ZeroBounceSDKTest {
         Header header = mock(Header.class);
         ArgumentCaptor<HttpUriRequestBase> captor = ArgumentCaptor.forClass(HttpUriRequestBase.class);
 
-        try (MockedStatic<HttpClients> httpClients = Mockito.mockStatic(HttpClients.class)) {
+        try (MockedStatic<HttpClients> httpClients = HttpClientTestSupport.mockClients()) {
             httpClients.when(HttpClients::custom).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
             when(httpClient.execute(captor.capture(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))
                 .thenAnswer(invocation -> invocation.<HttpClientResponseHandler<SdkHttp.Result>>getArgument(1)
@@ -1723,7 +1723,7 @@ public class ZeroBounceSDKTest {
                         HttpPost.class,
                         withSettings().useConstructor(urlPath)
                 );
-                MockedStatic<HttpClients> ignored1 = Mockito.mockStatic(HttpClients.class)
+                MockedStatic<HttpClients> ignored1 = HttpClientTestSupport.mockClients()
         ) {
             lenient().when(HttpClients.custom()).thenAnswer(invocation -> HttpClientTestSupport.builder(httpClient));
             lenient().when(httpClient.execute(any(), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<SdkHttp.Result>>any()))

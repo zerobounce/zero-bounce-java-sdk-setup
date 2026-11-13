@@ -11,6 +11,7 @@ import java.io.FileOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -181,6 +186,75 @@ class OfflineTransportTest {
                     }
                 }
             });
+        }
+    }
+
+    /**
+     * The real client honours the JVM proxy settings, as HttpURLConnection did:
+     * with {@code http.proxyHost} set, a request for another host goes to the
+     * proxy, in absolute form, instead of straight to that host.
+     */
+    @Test
+    void theJvmProxySettingsAreHonoured() throws Exception {
+        String host = System.getProperty("http.proxyHost");
+        String port = System.getProperty("http.proxyPort");
+        try (LoopbackServer proxy = new LoopbackServer(LoopbackServer.answer(200, "application/json",
+                "{}".getBytes(StandardCharsets.UTF_8)))) {
+            SdkHttp.closeSharedClients();
+            System.setProperty("http.proxyHost", "127.0.0.1");
+            System.setProperty("http.proxyPort", String.valueOf(proxy.port()));
+            String url = "http://proxied.invalid/v2/getcredits?api_key=" + KEY;
+            SdkHttp.Result result = SdkHttp.exchange("GET", URI.create(url), null, null, null, 5_000);
+            assertEquals(200, result.status);
+            assertEquals(1, proxy.requests().size());
+            assertEquals(url, proxy.requests().get(0).target);
+        } finally {
+            restoreProperty("http.proxyHost", host);
+            restoreProperty("http.proxyPort", port);
+            SdkHttp.closeSharedClients();
+        }
+    }
+
+    private static void restoreProperty(String name, String value) {
+        if (value == null) {
+            System.clearProperty(name);
+        } else {
+            System.setProperty(name, value);
+        }
+    }
+
+    /**
+     * Requests carry the HTTP client's own User-Agent, as HttpURLConnection sent
+     * its own: a request with none is one some Cloudflare rules block.
+     */
+    @Test
+    void requestsCarryTheHttpClientsUserAgent() throws Exception {
+        try (LoopbackServer server = new LoopbackServer(LoopbackServer.answer(200, "application/json",
+                "{}".getBytes(StandardCharsets.UTF_8)))) {
+            SdkHttp.exchange("GET", URI.create("http://127.0.0.1:" + server.port() + "/v2/getcredits"),
+                    null, null, null, 5_000);
+            String agent = server.requests().get(0).headers.get("user-agent");
+            assertTrue(agent != null && agent.startsWith("Apache-HttpClient/"), String.valueOf(agent));
+        }
+    }
+
+    /**
+     * Calls with the same timeout share one client, and so its connection pool,
+     * across calls and instances. Past eight distinct timeouts a call gets a
+     * client of its own instead of growing the set without bound.
+     */
+    @Test
+    void callsWithTheSameTimeoutShareOneClient() {
+        SdkHttp.closeSharedClients();
+        try {
+            assertSame(SdkHttp.sharedClient(1_234), SdkHttp.sharedClient(1_234));
+            assertNotSame(SdkHttp.sharedClient(1_234), SdkHttp.sharedClient(4_321));
+            for (int timeout = 1; timeout <= 6; timeout++) {
+                assertNotNull(SdkHttp.sharedClient(timeout), "shared client " + timeout);
+            }
+            assertNull(SdkHttp.sharedClient(99_999), "a ninth distinct timeout");
+        } finally {
+            SdkHttp.closeSharedClients();
         }
     }
 

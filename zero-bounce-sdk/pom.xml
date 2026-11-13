@@ -43,6 +43,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mockito.version>5.23.0</mockito.version>
+        <!-- The HttpCore that httpclient5 itself depends on; httpcore5 and httpcore5-h2 move together. -->
+        <httpcore5.version>5.4.4</httpcore5.version>
     </properties>
 
     <dependencies>
@@ -69,7 +71,12 @@
         <dependency>
             <groupId>org.apache.httpcomponents.core5</groupId>
             <artifactId>httpcore5</artifactId>
-            <version>5.4.4</version>
+            <version>${httpcore5.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents.core5</groupId>
+            <artifactId>httpcore5-h2</artifactId>
+            <version>${httpcore5.version}</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/junit/junit -->
