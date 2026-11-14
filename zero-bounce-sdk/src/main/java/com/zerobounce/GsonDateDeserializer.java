@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
+import java.time.format.SignStyle;
 import java.time.temporal.ChronoField;
 import java.time.temporal.TemporalAccessor;
 import java.util.Date;
@@ -51,7 +52,7 @@ public class GsonDateDeserializer implements JsonDeserializer<Date> {
 
     private static final List<Format> FORMATS = List.of(
             new Format(strict("uuuu-MM-dd HH:mm:ss.SSS"), Kind.SYSTEM_ZONE),
-            new Format(strict("MM/dd/uuuu h:mm:ss a"), Kind.SYSTEM_ZONE),
+            new Format(usTwelveHour(), Kind.SYSTEM_ZONE),
             // ISO 8601 (standard json), with or without fractional seconds, and
             // the offset written as Z, +hh:mm, +hhmm or +hh. An optional
             // [Region/Id] suffix is accepted, as ZonedDateTime.toString writes it.
@@ -62,6 +63,26 @@ public class GsonDateDeserializer implements JsonDeserializer<Date> {
     private static DateTimeFormatter strict(String pattern) {
         return new DateTimeFormatterBuilder()
                 .appendPattern(pattern)
+                .toFormatter(Locale.ROOT)
+                .withResolverStyle(ResolverStyle.STRICT);
+    }
+
+    /**
+     * {@code M/d/yyyy h:mm:ss a}: month, day and hour of one or two digits
+     * (the lenient SimpleDateFormat of 3.0.x read "1/5/2019 4:35:58 PM") and
+     * AM/PM in any case; out-of-range values are still refused.
+     */
+    private static DateTimeFormatter usTwelveHour() {
+        return new DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .appendValue(ChronoField.MONTH_OF_YEAR, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendLiteral('/')
+                .appendValue(ChronoField.DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendLiteral('/')
+                .appendPattern("uuuu")
+                .appendLiteral(' ')
+                .appendValue(ChronoField.CLOCK_HOUR_OF_AMPM, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendPattern(":mm:ss a")
                 .toFormatter(Locale.ROOT)
                 .withResolverStyle(ResolverStyle.STRICT);
     }

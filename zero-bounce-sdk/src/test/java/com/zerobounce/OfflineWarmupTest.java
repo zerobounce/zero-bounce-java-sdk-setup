@@ -621,6 +621,23 @@ public class OfflineWarmupTest {
     }
 
     @Test
+    public void a204IsTheEmptySuccessWhateverItsBody() throws IOException {
+        // The status alone is the documented empty success; the body is not read.
+        mockAll(204, "not json at all");
+        List<JsonObject> seen = new ArrayList<>();
+        warmup.deleteSendingAccount("a@b.com", seen::add, this::failOnError);
+        assertEquals(1, seen.size());
+        assertNull(seen.get(0));
+
+        recorded.clear();
+        mockAll(204, "{\"a\":1}");
+        seen.clear();
+        warmup.deleteSendingAccount("a@b.com", seen::add, this::failOnError);
+        assertEquals(1, seen.size());
+        assertNull(seen.get(0));
+    }
+
+    @Test
     public void aListPayloadComesBackUnderData() throws IOException {
         mockAll(200, "[{\"seed\":\"a@b.com\"},{\"seed\":\"c@d.com\"}]");
         List<JsonObject> seen = new ArrayList<>();

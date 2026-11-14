@@ -2984,6 +2984,7 @@ public class ZeroBounceSDK {
         // A 2xx message-only body with no text is reported as its fixed message, not by
         // echoing its keys: {"error": null} is one error, not an empty list.
         if (HttpMessages.preferShortMessage(body)
+                || HttpMessages.hasNonBooleanFalseSuccess(body)
                 || inA2xxBody && HttpMessages.messageOnlyFailure(body, greylistIsResult) != null) {
             errorCallback.onError(ErrorResponse.parseError(failure, status));
         } else {

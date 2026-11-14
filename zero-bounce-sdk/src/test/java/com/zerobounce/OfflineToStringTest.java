@@ -28,7 +28,8 @@ class OfflineToStringTest {
         String name = type.getSimpleName();
         return Modifier.isPublic(type.getModifiers())
                 && !type.isInterface() && !type.isEnum() && type.getEnclosingClass() == null
-                && (name.endsWith("Response") || name.equals("ZBS3ListFileEntry") || name.equals("DomainFormat"));
+                && (name.endsWith("Response") || name.equals("ZBS3ListFileEntry") || name.equals("DomainFormat")
+                        || name.equals("ZBValidateBatchData"));
     }
 
     private static List<Class<?>> models() throws Exception {

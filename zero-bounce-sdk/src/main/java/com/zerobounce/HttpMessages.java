@@ -425,7 +425,7 @@ final class HttpMessages {
                 return null;
             }
         }
-        if (greylistIsResult && object.size() == 1 && object.has("Message")) {
+        if (greylistIsResult && object.size() == 1 && isGreylistMessage(object.get("Message"))) {
             return null;
         }
         for (String key : object.keySet()) {
@@ -435,6 +435,31 @@ final class HttpMessages {
             }
         }
         return NO_MESSAGE_TEXT;
+    }
+
+    /** Whether a value is the greylist answer's text: a string with something in it. */
+    static boolean isGreylistMessage(JsonElement value) {
+        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
+                && !value.getAsString().isBlank();
+    }
+
+    /**
+     * Whether a body is a JSON object whose {@code success} is a string or a
+     * number that reads as false ({@code "false"}, {@code 0}, {@code "0"}): the
+     * error is then its message text or a fixed message, not every value of the body.
+     */
+    static boolean hasNonBooleanFalseSuccess(String body) {
+        try {
+            JsonElement parsed = JsonParser.parseString(body);
+            if (!parsed.isJsonObject()) {
+                return false;
+            }
+            JsonElement success = parsed.getAsJsonObject().get("success");
+            return success != null && success.isJsonPrimitive() && !success.getAsJsonPrimitive().isBoolean()
+                    && Boolean.FALSE.equals(StrictBooleanAdapter.fromElement(success, "success"));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static String firstText(JsonObject object, String... keys) {

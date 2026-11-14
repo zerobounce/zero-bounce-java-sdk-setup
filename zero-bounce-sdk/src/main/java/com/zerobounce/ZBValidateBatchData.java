@@ -35,6 +35,14 @@ public class ZBValidateBatchData {
     }
 
     @Override
+    public String toString() {
+        return "ZBValidateBatchData{" +
+                "email=" + email +
+                ", ip=" + ip +
+                '}';
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(email, ip);
     }

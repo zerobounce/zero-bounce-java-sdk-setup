@@ -305,7 +305,7 @@ final class StrictTypes {
             }
             return null;
         }
-        if (object.has("Message")) {
+        if (HttpMessages.isGreylistMessage(object.get("Message"))) {
             // The greylist answer: a result that may carry nothing but Message
             // (or the address with it) while the retry is still running.
             return null;

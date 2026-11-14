@@ -116,6 +116,48 @@ class J1ParsingDateDeserializerTest {
     }
 
     @Test
+    void unpaddedFieldsAndAnyCaseAmPmAreAccepted() {
+        // 3.0.x's SimpleDateFormat read these.
+        ZoneId zone = ZoneId.systemDefault();
+        assertEquals(LocalDateTime.of(2019, 1, 5, 16, 35, 58).atZone(zone).toInstant(),
+                decode("1/5/2019 4:35:58 PM").toInstant());
+        assertEquals(LocalDateTime.of(2018, 10, 20, 16, 35, 58).atZone(zone).toInstant(),
+                decode("10/20/2018 4:35:58 pm").toInstant());
+        assertEquals(LocalDateTime.of(2018, 10, 20, 4, 35, 58).atZone(zone).toInstant(),
+                decode("10/20/2018 04:35:58 Am").toInstant());
+        assertEquals(LocalDateTime.of(2019, 1, 5, 0, 5, 8).atZone(zone).toInstant(),
+                decode("01/5/2019 12:05:08 aM").toInstant());
+        assertEquals(LocalDateTime.of(2019, 11, 5, 12, 5, 8).atZone(zone).toInstant(),
+                decode("11/05/2019 12:05:08 pm").toInstant());
+    }
+
+    @Test
+    void unpaddedAndLowerCaseFormsStillRejectBadValuesAndJunk() {
+        String[] bad = {
+                "13/5/2019 4:35:58 PM",
+                "0/5/2019 4:35:58 PM",
+                "1/0/2019 4:35:58 PM",
+                "1/32/2019 4:35:58 PM",
+                "2/30/2019 4:35:58 pm",
+                "1/5/2019 0:35:58 pm",
+                "1/5/2019 13:35:58 pm",
+                "1/5/2019 4:60:58 pm",
+                "1/5/2019 4:35:60 pm",
+                "1/5/2019 4:35:58 XM",
+                "1/5/2019 4:35:58 pm junk",
+                "1/5/2019 4:35:58pm",
+                "123/5/2019 4:35:58 pm",
+                "001/5/2019 4:35:58 pm",
+                "1/005/2019 4:35:58 pm",
+                "1/5/2019 004:35:58 pm",
+                " 1/5/2019 4:35:58 pm",
+        };
+        for (String text : bad) {
+            assertThrows(JsonParseException.class, () -> decode(text), "[" + text + "]");
+        }
+    }
+
+    @Test
     void outOfRangeOrRolledOverDatesAreRejected() {
         String[] bad = {
                 "2026-13-45 99:99:99.999",
