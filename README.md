@@ -68,13 +68,18 @@ Two loggers can write during a request:
   the API key, the Warmup key, the SMTP password and uploaded files.
 
 Before each request the SDK checks every HttpClient logger that can write the API key, the SMTP password or text
-the server sent:
+the server sent (17 loggers in all):
 
-- `org.apache.hc.client5.http.impl.classic.MainClientExec`, `org.apache.hc.client5.http.headers` and
-  `org.apache.hc.client5.http.wire`, which write the request URI, the request headers and the request bytes;
-- `org.apache.hc.client5.http.impl.io.LenientHttpResponseParser`, `org.apache.hc.client5.http.impl.auth.BasicScheme`,
-  `org.apache.hc.client5.http.impl.auth.DigestScheme` and `org.apache.hc.client5.http.impl.auth.BearerScheme`, which
-  write a garbled status line or an authentication challenge, and so can echo the server's text back.
+- the request loggers `org.apache.hc.client5.http.impl.classic.MainClientExec`, `org.apache.hc.client5.http.headers`,
+  `org.apache.hc.client5.http.wire` and `org.apache.hc.client5.http.impl.routing.DistributedProxySelector`, which write
+  the request URI, the request headers and the request bytes;
+- the loggers that write text the server sent, such as a garbled status line or an authentication challenge, which can
+  echo the server's text back: `org.apache.hc.client5.http.impl.io.LenientHttpResponseParser`; in
+  `org.apache.hc.client5.http.impl.auth`, `BasicScheme`, `DigestScheme`, `BearerScheme`, `NTLMScheme`,
+  `GGSSchemeBase`, `ScramScheme`, `AuthenticationHandler`, `AuthCacheKeeper` and `BasicAuthCache`;
+  `org.apache.hc.client5.http.impl.DefaultAuthenticationStrategy`;
+  `org.apache.hc.client5.http.impl.classic.ConnectExec`; and
+  `org.apache.hc.client5.http.protocol.RequestAuthCache`.
 
 While any of them is at DEBUG or TRACE, the call sends nothing and reports status 0 with the message "Apache HttpClient
 debug logging (org.apache.hc) is enabled and would write your API key to the log; set org.apache.hc to INFO or above."
@@ -83,7 +88,9 @@ A level changed at run time applies to the next call.
 SLF4J binds its logging backend on first use. A call made while that is still under way waits for it to finish, for up
 to 10 seconds. If it has not finished by then, the call sends nothing and reports status 0 with the message "SLF4J is
 still initialising its logging, so the Apache HttpClient logging level could not be checked and no request was sent;
-retry the call." Once the backend is bound, the next call is checked as usual.
+retry the call." Once the backend is bound, the next call is checked as usual. If SLF4J never finishes binding (a binding threw an
+error), it stays unbound and every later call is refused at once with the same message, instead of each waiting 10
+seconds.
 
 Keep `org.apache.hc` at INFO or above in production. Logback with no configuration file logs
 everything at DEBUG, so if you use Logback without a `logback.xml`, start from this one:
@@ -246,7 +253,7 @@ Then you can use any of the SDK methods, for example:
     ```java
     ZeroBounceSDK.getInstance().findDomain(
         null,
-        "COMPANY_NAME_TO_TEST",
+        "<COMPANY_NAME_TO_TEST>",
         new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
             @Override
             public void onSuccess(ZBFindDomainResponse response) {
@@ -792,7 +799,7 @@ The change is not a simple one-to-one replacement, as the functionality has been
     ```java
     ZeroBounceSDK.getInstance().findDomain(
         null,
-        "COMPANY_NAME_TO_TEST",
+        "<COMPANY_NAME_TO_TEST>",
         new ZeroBounceSDK.OnSuccessCallback<ZBFindDomainResponse>() {
             @Override
             public void onSuccess(ZBFindDomainResponse response) {

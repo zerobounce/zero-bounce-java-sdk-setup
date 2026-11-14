@@ -39,11 +39,7 @@ If there is no `mvn` on the host, use `./mvnw` in `zero-bounce-sdk/` (its wrappe
 cd ../sdk-docs && docker compose run --rm --build java
 ```
 
-That build runs `mvn -q test` and fails the build if a test fails — but the container's `CMD` then fails on `/root/.m2` permissions, which is not a test failure. To see the test output, or to run against the working tree without rebuilding:
-
-```sh
-docker run --rm -u 0 -v "$PWD":/src -w /src/zero-bounce-sdk zerobounce-sdk-java:test mvn -B test
-```
+That build fetches the dependencies, then runs `mvn -q -o test` with no network (`RUN --network=none`) and fails the build if a test fails. The container's `CMD` runs the suite again offline as the image's unprivileged user (uid 65532), from the Maven repository the build filled (`/m2`, owned by that user).
 
 The live suite is compiled and run by hand, never by Maven:
 

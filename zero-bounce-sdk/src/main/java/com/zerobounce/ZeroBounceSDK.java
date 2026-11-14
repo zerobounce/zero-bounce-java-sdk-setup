@@ -3115,6 +3115,9 @@ public class ZeroBounceSDK {
             // A short name of its own, not one built from the target's: a target of 214 to 255 characters
             // would otherwise have a temporary name longer than the file system allows.
             temp = target.resolveSibling("." + Long.toHexString(java.util.concurrent.ThreadLocalRandom.current().nextLong()) + ".part");
+            // Created with the permissions of the file it replaces from the start, so the bytes are never
+            // readable more widely than they were in the target while they are being written.
+            createTempWithPermissionsOf(target, temp);
             try (OutputStream outStream = opener.open(temp.toFile())) {
                 outStream.write(body);
             }
@@ -3143,16 +3146,42 @@ public class ZeroBounceSDK {
         return true;
     }
 
-    /** The file a download is written to: the target itself, or for a symbolic link the file it names. */
+    /** The most links followed in a chain, as the operating system's own limit. */
+    private static final int MAX_LINK_HOPS = 40;
+
+    /**
+     * The file a download is written to: the target itself, or for a symbolic link the file the whole
+     * chain of links names, even when that file does not exist yet (l1 -> l2 -> missing writes
+     * {@code missing}, and both links stay links).
+     */
     private static java.nio.file.Path resolvedDownloadTarget(java.nio.file.Path target) throws IOException {
-        if (!java.nio.file.Files.isSymbolicLink(target)) {
-            return target;
+        java.nio.file.Path current = target;
+        for (int hops = 0; java.nio.file.Files.isSymbolicLink(current); hops++) {
+            if (hops >= MAX_LINK_HOPS) {
+                throw new IOException("Too many levels of symbolic links.");
+            }
+            try {
+                return current.toRealPath();
+            } catch (java.nio.file.NoSuchFileException dangling) {
+                // Not resolvable to an existing file: follow one link and try again.
+                current = current.resolveSibling(java.nio.file.Files.readSymbolicLink(current)).toAbsolutePath().normalize();
+            }
         }
-        try {
-            return target.toRealPath();
-        } catch (java.nio.file.NoSuchFileException dangling) {
-            // A link to a file that does not exist yet: the file is created where the link points.
-            return target.resolveSibling(java.nio.file.Files.readSymbolicLink(target)).toAbsolutePath().normalize();
+        return current;
+    }
+
+    /**
+     * Creates the empty temporary file with the permissions of the regular file it will replace (the
+     * system's umask can only narrow them). A new target keeps the usual permissions of a direct write.
+     */
+    private static void createTempWithPermissionsOf(java.nio.file.Path target, java.nio.file.Path temp) throws IOException {
+        if (java.nio.file.Files.isRegularFile(target)) {
+            try {
+                java.nio.file.Files.createFile(temp, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                        java.nio.file.Files.getPosixFilePermissions(target)));
+            } catch (UnsupportedOperationException noPosixPermissions) {
+                // A file system without POSIX permissions has nothing to keep.
+            }
         }
     }
 

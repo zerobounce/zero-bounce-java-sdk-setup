@@ -296,6 +296,8 @@ final class SdkHttp {
     /** The one place every request sent through HttpClient 5 goes, so every path is checked. */
     static Result execute(HttpUriRequestBase request, int timeoutMillis) throws IOException {
         refuseWhileKeyLogging();
+        // Every request asks for JSON, multipart uploads included (exchange sets the same header).
+        request.setHeader("Accept", "application/json");
         request.setConfig(requestConfig(timeoutMillis));
         CloseableHttpClient shared = sharedClient(timeoutMillis);
         if (shared != null) {
