@@ -15,7 +15,9 @@ import org.apache.hc.core5.net.URIBuilder;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.client5.http.entity.mime.HttpMultipartMode;
 import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.entity.mime.ContentBody;
 import org.apache.hc.client5.http.entity.mime.FileBody;
+import org.apache.hc.client5.http.entity.mime.FormBodyPartBuilder;
 import org.apache.hc.client5.http.entity.mime.InputStreamBody;
 import org.apache.hc.client5.http.entity.mime.StringBody;
 import org.jetbrains.annotations.NotNull;
@@ -28,7 +30,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
@@ -93,9 +97,13 @@ public class ZeroBounceSDK {
     String inboxPlacementBaseUrl = "https://bulkapi.zerobounce.net/api/ipt";
 
     private final Priority3Api priority3Api = new Priority3Api(this);
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+    /** The day format of getApiUsage. A DateTimeFormatter is immutable, so one instance serves every thread. */
+    private static final DateTimeFormatter API_USAGE_DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US);
 
-    private String apiKey;
+    /**
+     * Never serialised: a Gson or other serialiser that reaches the client must not print the key.
+     */
+    private transient String apiKey;
     /** Why the key given to initialize was refused, or null when it was accepted. */
     private String apiKeyProblem;
     private int timeoutInMillis;
@@ -844,8 +852,8 @@ public class ZeroBounceSDK {
                 new HashMap<>() {
                     {
                         put("api_key", apiKey);
-                        put("start_date", dateFormat.format(startDate));
-                        put("end_date", dateFormat.format(endDate));
+                        put("start_date", apiUsageDay(startDate));
+                        put("end_date", apiUsageDay(endDate));
                     }
                 },
                 null,
@@ -854,6 +862,11 @@ public class ZeroBounceSDK {
                 successCallback,
                 errorCallback
         );
+    }
+
+    /** The local calendar day of {@code date}, as getApiUsage sends it. */
+    static String apiUsageDay(Date date) {
+        return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate().format(API_USAGE_DAY);
     }
 
     /**
@@ -1042,7 +1055,7 @@ public class ZeroBounceSDK {
                     .setCharset(StandardCharsets.UTF_8);
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, file.getName()));
-            builder.addPart("file", new FileBody(file));
+            addLegacyPart(builder, "file", new FileBody(file, FILE_PART_TYPE));
 
             HttpEntity multipart = builder.build();
             uploadFile.setEntity(multipart);
@@ -1100,7 +1113,7 @@ public class ZeroBounceSDK {
                     .setCharset(StandardCharsets.UTF_8);
             // The same fields the offline transport sees, from one builder.
             addTextParts(builder, sendFileMultipartFields(scoring, emailAddressColumnIndex, options, fileName));
-            builder.addPart("file", new InputStreamBody(inputStream, ContentType.create("text/csv"), fileName));
+            addLegacyPart(builder, "file", new InputStreamBody(inputStream, FILE_PART_TYPE, fileName));
 
             HttpEntity multipart = builder.build();
             uploadFile.setEntity(multipart);
@@ -3085,18 +3098,27 @@ public class ZeroBounceSDK {
         java.nio.file.Path target = file.getAbsoluteFile().toPath();
         java.nio.file.Path temp = null;
         try {
+            // A symbolic link is written through to the file it names, as 3.0.x did: a rename over the
+            // link itself would replace the link with a regular file.
+            target = resolvedDownloadTarget(target);
+            // An existing read-only file is refused before anything is written, so it is left as it was.
+            if (java.nio.file.Files.exists(target) && !java.nio.file.Files.isWritable(target)) {
+                errorCallback.onError(ErrorResponse.parseError("The file is read-only, so it was not replaced."));
+                return false;
+            }
             // The directories of the target are made here, once a body has
             // arrived, so a failed request creates nothing.
             File parent = target.toFile().getParentFile();
             if (parent != null) {
                 parent.mkdirs();
             }
-            // Named here rather than by Files.createTempFile, so the file gets
-            // the same permissions a direct write would have given it.
-            temp = target.resolveSibling("." + target.getFileName() + "." + java.util.UUID.randomUUID() + ".part");
+            // A short name of its own, not one built from the target's: a target of 214 to 255 characters
+            // would otherwise have a temporary name longer than the file system allows.
+            temp = target.resolveSibling("." + Long.toHexString(java.util.concurrent.ThreadLocalRandom.current().nextLong()) + ".part");
             try (OutputStream outStream = opener.open(temp.toFile())) {
                 outStream.write(body);
             }
+            copyPermissionsOfExisting(target, temp);
             try {
                 atomicMove.move(temp, target);
             } catch (java.nio.file.AtomicMoveNotSupportedException e) {
@@ -3121,11 +3143,58 @@ public class ZeroBounceSDK {
         return true;
     }
 
-    /** Every field but the file itself, as text/plain parts in the map's order. */
+    /** The file a download is written to: the target itself, or for a symbolic link the file it names. */
+    private static java.nio.file.Path resolvedDownloadTarget(java.nio.file.Path target) throws IOException {
+        if (!java.nio.file.Files.isSymbolicLink(target)) {
+            return target;
+        }
+        try {
+            return target.toRealPath();
+        } catch (java.nio.file.NoSuchFileException dangling) {
+            // A link to a file that does not exist yet: the file is created where the link points.
+            return target.resolveSibling(java.nio.file.Files.readSymbolicLink(target)).toAbsolutePath().normalize();
+        }
+    }
+
+    /**
+     * Gives the temporary file the permissions of the file it replaces, so a rename does not widen or
+     * narrow them. A new file keeps the usual permissions of a direct write.
+     */
+    private static void copyPermissionsOfExisting(java.nio.file.Path target, java.nio.file.Path temp) throws IOException {
+        if (!java.nio.file.Files.isRegularFile(target)) {
+            return;
+        }
+        try {
+            java.nio.file.Files.setPosixFilePermissions(temp, java.nio.file.Files.getPosixFilePermissions(target));
+        } catch (UnsupportedOperationException noPosixPermissions) {
+            // A file system without POSIX permissions has nothing to keep.
+        }
+    }
+
+    /**
+     * The type of every uploaded file part, on every path: httpmime's default binary type,
+     * which a {@link FileBody} takes when none is given. No documented type exists for the
+     * uploaded file, so the SDK does not guess one from the name.
+     */
+    static final ContentType FILE_PART_TYPE = ContentType.DEFAULT_BINARY;
+
+    /** The type of every text field: UTF-8, whatever the platform default of the httpcore5 constant. */
+    static final ContentType TEXT_FIELD_TYPE = ContentType.TEXT_PLAIN.withCharset(StandardCharsets.UTF_8);
+
+    /**
+     * Adds a part in LEGACY form. {@link MultipartEntityBuilder#addPart(String, ContentBody)} builds
+     * its part in STRICT form whatever the builder's mode, and STRICT adds an RFC 2231
+     * {@code filename*} to a name outside Latin-1, which RFC 7578 section 4.2 forbids.
+     */
+    static void addLegacyPart(MultipartEntityBuilder builder, String name, ContentBody body) {
+        builder.addPart(FormBodyPartBuilder.create(name, body, HttpMultipartMode.LEGACY).build());
+    }
+
+    /** Every field but the file itself, as text parts in the map's order. */
     private static void addTextParts(MultipartEntityBuilder builder, Map<String, String> fields) {
         for (Map.Entry<String, String> field : fields.entrySet()) {
             if (!"file".equals(field.getKey())) {
-                builder.addPart(field.getKey(), new StringBody(field.getValue(), ContentType.TEXT_PLAIN));
+                addLegacyPart(builder, field.getKey(), new StringBody(field.getValue(), TEXT_FIELD_TYPE));
             }
         }
     }

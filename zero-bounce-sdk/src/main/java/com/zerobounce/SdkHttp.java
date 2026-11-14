@@ -39,23 +39,43 @@ final class SdkHttp {
      * 5.4.4 writes no logs). {@code MainClientExec} writes "executing GET &lt;uri&gt;", with
      * {@code api_key} in the query; {@code headers} writes the request line and every
      * request header, {@code API-Key} and {@code Authorization} among them; {@code wire}
-     * writes every byte sent, bodies included.
+     * writes every byte sent, bodies included; {@code DistributedProxySelector} writes the
+     * URI of each request it selects a proxy for (not on the SDK's route today; guarded so a
+     * future route planner cannot leak through it).
      */
     static final List<String> KEY_LOGGERS = List.of(
             "org.apache.hc.client5.http.impl.classic.MainClientExec",
             "org.apache.hc.client5.http.headers",
-            "org.apache.hc.client5.http.wire");
+            "org.apache.hc.client5.http.wire",
+            "org.apache.hc.client5.http.impl.routing.DistributedProxySelector");
 
     /**
      * Loggers whose DEBUG or TRACE output carries text the server sent (a garbage status
-     * line, an authentication challenge), which may echo the key back. Guarded like
-     * {@link #KEY_LOGGERS}, and kept apart from them because they write only when the
-     * server answers in a particular way: {@code LenientHttpResponseParser} logs a
-     * garbage line it is given, and {@code BasicScheme} logs the realm of a Basic challenge.
+     * line, an authentication challenge, a CONNECT answer), which may echo the key back.
+     * Guarded like {@link #KEY_LOGGERS}, and kept apart from them because they write only
+     * when the server answers in a particular way: {@code LenientHttpResponseParser} logs a
+     * garbage line it is given; {@code BasicScheme}, {@code DigestScheme} and
+     * {@code BearerScheme} log the realm or error text of a challenge; the auth handler and
+     * strategy log the parsed challenges; {@code ConnectExec} logs a refused CONNECT answer.
+     * The other schemes ({@code NTLMScheme}, {@code GGSSchemeBase}, {@code ScramScheme})
+     * log challenge and token data the same way, and the auth caches log the scheme objects
+     * they cache or reuse, which carry the challenge. The completeness test fails for any
+     * httpclient5 logger that is neither here nor in its cleared list.
      */
     static final List<String> SERVER_TEXT_LOGGERS = List.of(
             "org.apache.hc.client5.http.impl.io.LenientHttpResponseParser",
-            "org.apache.hc.client5.http.impl.auth.BasicScheme");
+            "org.apache.hc.client5.http.impl.auth.BasicScheme",
+            "org.apache.hc.client5.http.impl.auth.DigestScheme",
+            "org.apache.hc.client5.http.impl.auth.BearerScheme",
+            "org.apache.hc.client5.http.impl.auth.AuthenticationHandler",
+            "org.apache.hc.client5.http.impl.DefaultAuthenticationStrategy",
+            "org.apache.hc.client5.http.impl.auth.NTLMScheme",
+            "org.apache.hc.client5.http.impl.auth.GGSSchemeBase",
+            "org.apache.hc.client5.http.impl.auth.ScramScheme",
+            "org.apache.hc.client5.http.impl.classic.ConnectExec",
+            "org.apache.hc.client5.http.impl.auth.AuthCacheKeeper",
+            "org.apache.hc.client5.http.impl.auth.BasicAuthCache",
+            "org.apache.hc.client5.http.protocol.RequestAuthCache");
 
     /** The error a call reports, with no request sent, while one of {@link #KEY_LOGGERS} is at DEBUG or TRACE. */
     static final String KEY_LOGGING_REFUSED = "Apache HttpClient debug logging (org.apache.hc) is enabled "
@@ -142,10 +162,14 @@ final class SdkHttp {
                         .useSystemProperties()
                         .build())
                 // The JVM's proxy and TLS settings (https.proxyHost, ProxySelector,
-                // javax.net.ssl.*), which HttpURLConnection honoured. The default
+                // javax.net.ssl.*), which HttpURLConnection honoured. A shared client
+                // reads the default ProxySelector once, when it is built. The default
                 // User-Agent is kept: HttpURLConnection sent one too, and some
                 // Cloudflare rules block a request without one.
                 .useSystemProperties()
+                // No Accept-Encoding and no decoding: the API does not compress, and
+                // HttpClient's decoder would inflate a gzip body with no size cap.
+                .disableContentCompression()
                 .disableRedirectHandling()
                 .disableAutomaticRetries()
                 .disableCookieManagement();
@@ -241,9 +265,19 @@ final class SdkHttp {
      * refused only if it does not finish within {@link #SLF4J_WAIT_MILLIS}.
      */
     private static void awaitLoggerFactory() throws IOException {
+        if (!(LoggerFactory.getILoggerFactory() instanceof SubstituteLoggerFactory)) {
+            loggerBindingStuck = false;
+            return;
+        }
+        // A binding that threw an Error leaves SLF4J ONGOING for good. After one full wait
+        // has timed out, later calls are refused at once instead of each waiting again.
+        if (loggerBindingStuck) {
+            throw new IOException(KEY_LOGGING_UNCHECKED);
+        }
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SLF4J_WAIT_MILLIS);
         while (LoggerFactory.getILoggerFactory() instanceof SubstituteLoggerFactory) {
             if (System.nanoTime() - deadline >= 0) {
+                loggerBindingStuck = true;
                 throw new IOException(KEY_LOGGING_UNCHECKED);
             }
             try {
@@ -253,7 +287,11 @@ final class SdkHttp {
                 throw new IOException(KEY_LOGGING_UNCHECKED, e);
             }
         }
+        loggerBindingStuck = false;
     }
+
+    /** Set when a wait for SLF4J timed out; cleared once SLF4J is bound. */
+    static volatile boolean loggerBindingStuck;
 
     /** The one place every request sent through HttpClient 5 goes, so every path is checked. */
     static Result execute(HttpUriRequestBase request, int timeoutMillis) throws IOException {

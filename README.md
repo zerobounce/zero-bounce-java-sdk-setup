@@ -6,7 +6,7 @@
 - Keep API keys on a trusted server. Do not embed them in mobile apps or browser JavaScript that untrusted users can inspect.
 - Custom API base URLs (when supported) must use `https://`. Do not pass end-user-controlled hosts into those settings.
 - Request URLs include `api_key` as a query parameter (ZeroBounce API contract). Do not log full request URLs or enable payload debug logging in production.
-- Requests are sent by Apache HttpClient 5, which logs through SLF4J. At DEBUG it logs the request line (with `api_key`), every request header (including `Authorization` and `API-Key`) and the raw request bytes (form fields such as the SMTP password, and uploaded files). The SDK refuses to send while `org.apache.hc.client5.http.impl.classic.MainClientExec`, `org.apache.hc.client5.http.headers` or `org.apache.hc.client5.http.wire` is at DEBUG or TRACE. Keep `org.apache.hc` at INFO or above in production; see [Controlling SDK logging](#controlling-sdk-logging) for a configuration. Logback with no configuration file logs everything at DEBUG.
+- Requests are sent by Apache HttpClient 5, which logs through SLF4J. At DEBUG it logs the request line (with `api_key`), every request header (including `Authorization` and `API-Key`) and the raw request bytes (form fields such as the SMTP password, and uploaded files). The SDK refuses to send while any HttpClient logger that can write the key or server text is at DEBUG or TRACE; the list is under [Controlling SDK logging](#controlling-sdk-logging). Keep `org.apache.hc` at INFO or above in production; that section also shows a configuration. Logback with no configuration file logs everything at DEBUG.
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.zerobounce.java/zerobouncesdk?label=Latest%20release)](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk)
 
@@ -37,7 +37,7 @@ The SDK is published on [Maven Central](https://mvnrepository.com/artifact/com.z
 Releases are published with the GitHub Actions `Publish` workflow; see ***Publication*** below. To publish by hand:
 
 1. Set *autoPublish* to *false* for the `central-publishing-maven-plugin` in the `release` profile of the **zero-bounce-sdk** `pom.xml` if you don't want the artifact to be published on Maven Central automatically.
-2. Use the command: `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease` from the **zero-bounce-sdk** folder.
+2. Set the GPG passphrase in the `MAVEN_GPG_PASSPHRASE` environment variable, then run `mvn --no-transfer-progress --batch-mode clean deploy -Prelease` from the **zero-bounce-sdk** folder.
 
 ### Sample app vs. published SDK
 
@@ -67,11 +67,23 @@ Two loggers can write during a request:
 - **Apache HttpClient**, which sends the requests, logs through your SLF4J backend. At DEBUG it writes
   the API key, the Warmup key, the SMTP password and uploaded files.
 
-Before each request the SDK checks three of those loggers: `org.apache.hc.client5.http.impl.classic.MainClientExec`,
-`org.apache.hc.client5.http.headers` and `org.apache.hc.client5.http.wire`. While any of them is at DEBUG or TRACE,
-the call sends nothing and reports status 0 with the message "Apache HttpClient debug logging (org.apache.hc) is
-enabled and would write your API key to the log; set org.apache.hc to INFO or above." A level changed at run time
-applies to the next call.
+Before each request the SDK checks every HttpClient logger that can write the API key, the SMTP password or text
+the server sent:
+
+- `org.apache.hc.client5.http.impl.classic.MainClientExec`, `org.apache.hc.client5.http.headers` and
+  `org.apache.hc.client5.http.wire`, which write the request URI, the request headers and the request bytes;
+- `org.apache.hc.client5.http.impl.io.LenientHttpResponseParser`, `org.apache.hc.client5.http.impl.auth.BasicScheme`,
+  `org.apache.hc.client5.http.impl.auth.DigestScheme` and `org.apache.hc.client5.http.impl.auth.BearerScheme`, which
+  write a garbled status line or an authentication challenge, and so can echo the server's text back.
+
+While any of them is at DEBUG or TRACE, the call sends nothing and reports status 0 with the message "Apache HttpClient
+debug logging (org.apache.hc) is enabled and would write your API key to the log; set org.apache.hc to INFO or above."
+A level changed at run time applies to the next call.
+
+SLF4J binds its logging backend on first use. A call made while that is still under way waits for it to finish, for up
+to 10 seconds. If it has not finished by then, the call sends nothing and reports status 0 with the message "SLF4J is
+still initialising its logging, so the Apache HttpClient logging level could not be checked and no request was sent;
+retry the call." Once the backend is bound, the next call is checked as usual.
 
 Keep `org.apache.hc` at INFO or above in production. Logback with no configuration file logs
 everything at DEBUG, so if you use Logback without a `logback.xml`, start from this one:
@@ -162,26 +174,6 @@ Then you can use any of the SDK methods, for example:
             @Override
             public void onError(ErrorResponse errorResponse) {
                 System.out.println("validateBatch error=" + errorResponse.getErrors());
-            }
-        });
-    ```
-
-* ##### Find the email and other domain formats based on a given domain name
-    ```java
-    ZeroBounceSDK.getInstance().guessFormat(
-        "<DOMAIN_TO_TEST>",
-        null,
-        null,
-        null,
-        new ZeroBounceSDK.OnSuccessCallback<ZBEmailFinderResponse>() {
-            @Override
-            public void onSuccess(ZBEmailFinderResponse response) {
-                System.out.println("guessFormat response=" + response.toString());
-            }
-        }, new ZeroBounceSDK.OnErrorCallback() {
-            @Override
-            public void onError(ErrorResponse errorResponse) {
-                System.out.println("guessFormat error=" + errorResponse.getErrors());
             }
         });
     ```
@@ -866,6 +858,8 @@ docker compose build java
 docker compose run --rm java
 ```
 
+`docker compose build java` already runs the test suite (the image's `RUN mvn -q test`); `docker compose run --rm java` runs it again offline, as the image's unprivileged user (uid 65532), from the Maven repository the build filled.
+
 You can also build from this repository root: `docker build -t zerobounce-java-sdk:test .` (uses `.dockerignore` to exclude `target/`, IDE files, and `local-libs`).
 
 ### Run tests (local)
@@ -888,7 +882,7 @@ Publishing to Maven Central goes through the Sonatype Central Portal, using the 
 
 1. Set `sdk.version` in `zero-bounce-sdk/pom.xml` to the new version, create a **git tag** for it (e.g. `v2.2.0`), and push the tag.
 2. In the repo go to **Actions → Publish**, click **Run workflow**, enter the tag (e.g. `v2.2.0`), and run.
-3. The workflow checks that the tag exists, then runs `mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=... clean deploy -Prelease` in `zero-bounce-sdk`. That builds and tests the SDK, signs the jars with GPG, and the `central-publishing-maven-plugin` uploads them to the Central Portal. `autoPublish` is `true` in the `release` profile, so the deployment is published once the Portal has validated it, without a manual step.
+3. The workflow checks that the tag exists, then runs `mvn --no-transfer-progress --batch-mode clean deploy -Prelease` in `zero-bounce-sdk`, with the signing passphrase in `MAVEN_GPG_PASSPHRASE`, which the Maven GPG plugin reads. That builds and tests the SDK, signs the jars with GPG, and the `central-publishing-maven-plugin` uploads them to the Central Portal. `autoPublish` is `true` in the `release` profile, so the deployment is published once the Portal has validated it, without a manual step.
 4. When the publish job succeeds, the workflow creates a GitHub Release for the tag with generated release notes.
 
 The workflow reads these secrets: `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` (a Central Portal user token, for the `central` server), `SIGNING_KEY` (the GPG private key) and `SIGNING_PASSWORD` (its passphrase). If any of them changes, update it on GitHub.
@@ -899,9 +893,9 @@ To publish from your local machine instead of the workflow:
 1. Import the GPG key to your local machine (see below).
 2. Add a `<server>` with the id `central` to your `~/.m2/settings.xml`, with a Central Portal user token as its username and password.
 3. If you want to check the deployment before it goes to Maven Central, set *autoPublish* to *false* for the `central-publishing-maven-plugin` in the `release` profile of `zero-bounce-sdk/pom.xml`.
-4. From the **zero-bounce-sdk** folder, run:
+4. From the **zero-bounce-sdk** folder, with `MAVEN_GPG_PASSPHRASE` set to the passphrase, run:
     ```shell
-    mvn --no-transfer-progress --batch-mode -Dgpg.passphrase=<YOUR_PASSPHRASE> clean deploy -Prelease
+    mvn --no-transfer-progress --batch-mode clean deploy -Prelease
     ```
 
 With *autoPublish* set to *false*, the upload waits on the [Central Portal deployments page](https://central.sonatype.com/publishing/deployments) until you publish (or drop) it there. Once published, the artifact appears on the [Maven Repository](https://repo1.maven.org/maven2/com/zerobounce/java/zerobouncesdk/) and on [Central search](https://central.sonatype.com/artifact/com.zerobounce.java/zerobouncesdk); the [MVN Repository](https://mvnrepository.com/artifact/com.zerobounce.java/zerobouncesdk) index picks it up later.

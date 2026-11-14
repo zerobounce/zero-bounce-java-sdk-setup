@@ -297,10 +297,10 @@ final class Priority3Api {
                     .setMode(HttpMultipartMode.LEGACY)
                     .setCharset(StandardCharsets.UTF_8);
             for (Map.Entry<String, String> entry : fields.entrySet()) {
-                builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
+                ZeroBounceSDK.addLegacyPart(builder, entry.getKey(), new StringBody(entry.getValue(), ZeroBounceSDK.TEXT_FIELD_TYPE));
             }
-            builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
-            builder.addPart("file", new FileBody(file));
+            ZeroBounceSDK.addLegacyPart(builder, "api_key", new StringBody(sdk.priority3ApiKey(), ZeroBounceSDK.TEXT_FIELD_TYPE));
+            ZeroBounceSDK.addLegacyPart(builder, "file", new FileBody(file, ZeroBounceSDK.FILE_PART_TYPE));
             uploadFile.setEntity(builder.build());
             response = SdkHttp.execute(uploadFile, sdk.priority3TimeoutMillis());
         } catch (Exception e) {
@@ -333,10 +333,10 @@ final class Priority3Api {
                     .setMode(HttpMultipartMode.LEGACY)
                     .setCharset(StandardCharsets.UTF_8);
             for (Map.Entry<String, String> entry : fields.entrySet()) {
-                builder.addPart(entry.getKey(), new StringBody(entry.getValue(), ContentType.TEXT_PLAIN));
+                ZeroBounceSDK.addLegacyPart(builder, entry.getKey(), new StringBody(entry.getValue(), ZeroBounceSDK.TEXT_FIELD_TYPE));
             }
-            builder.addPart("api_key", new StringBody(sdk.priority3ApiKey(), ContentType.TEXT_PLAIN));
-            builder.addPart("file", new InputStreamBody(inputStream, ContentType.DEFAULT_BINARY, fileName));
+            ZeroBounceSDK.addLegacyPart(builder, "api_key", new StringBody(sdk.priority3ApiKey(), ZeroBounceSDK.TEXT_FIELD_TYPE));
+            ZeroBounceSDK.addLegacyPart(builder, "file", new InputStreamBody(inputStream, ZeroBounceSDK.FILE_PART_TYPE, fileName));
             uploadFile.setEntity(builder.build());
             response = SdkHttp.execute(uploadFile, sdk.priority3TimeoutMillis());
         } catch (Exception e) {

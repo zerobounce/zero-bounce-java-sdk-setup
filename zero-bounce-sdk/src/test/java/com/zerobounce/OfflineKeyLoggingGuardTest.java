@@ -291,6 +291,11 @@ class OfflineKeyLoggingGuardTest {
     @Test
     void eachListedLoggerWritesTheKeyAtDebug() throws Exception {
         for (String logger : SdkHttp.KEY_LOGGERS) {
+            if (logger.endsWith(".DistributedProxySelector")) {
+                // Guarded defensively: it writes request URIs, but only a client whose route
+                // planner uses it reaches it, and the SDK's system-properties planner does not.
+                continue;
+            }
             allAtInfo();
             level(logger, Level.FINE);
             Capture log = capture();

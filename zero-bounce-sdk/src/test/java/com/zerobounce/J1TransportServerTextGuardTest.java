@@ -60,9 +60,28 @@ class J1TransportServerTextGuardTest {
         public void close() {
         }
     }
-    private static final String PARSER = "org.apache.hc.client5.http.impl.io.LenientHttpResponseParser";
-    private static final String BASIC = "org.apache.hc.client5.http.impl.auth.BasicScheme";
     private static final String KEY = "j1-text-key-0123456789";
+
+    /**
+     * The server-text loggers, named here and not read from {@link SdkHttp#SERVER_TEXT_LOGGERS}:
+     * the list under test must match this one exactly, so dropping a logger from it fails.
+     */
+    private static final List<String> EXPECTED = List.of(
+            "org.apache.hc.client5.http.impl.io.LenientHttpResponseParser",
+            "org.apache.hc.client5.http.impl.auth.BasicScheme",
+            "org.apache.hc.client5.http.impl.auth.DigestScheme",
+            "org.apache.hc.client5.http.impl.auth.BearerScheme",
+            "org.apache.hc.client5.http.impl.auth.AuthenticationHandler",
+            "org.apache.hc.client5.http.impl.DefaultAuthenticationStrategy",
+            "org.apache.hc.client5.http.impl.auth.NTLMScheme",
+            "org.apache.hc.client5.http.impl.auth.GGSSchemeBase",
+            "org.apache.hc.client5.http.impl.auth.ScramScheme",
+            "org.apache.hc.client5.http.impl.classic.ConnectExec",
+            "org.apache.hc.client5.http.impl.auth.AuthCacheKeeper",
+            "org.apache.hc.client5.http.impl.auth.BasicAuthCache",
+            "org.apache.hc.client5.http.protocol.RequestAuthCache");
+    private static final String PARSER = EXPECTED.get(0);
+    private static final String BASIC = EXPECTED.get(1);
 
     @AfterEach
     void restoreLevels() {
@@ -91,10 +110,16 @@ class J1TransportServerTextGuardTest {
         Logger.getLogger("").removeHandler(log);
     }
 
+    /** The list under test is exactly the expected one: a logger dropped from it fails here. */
+    @Test
+    void theServerTextListNamesTheExpectedLoggers() {
+        assertEquals(EXPECTED, SdkHttp.SERVER_TEXT_LOGGERS);
+    }
+
     /** Each server-text logger at DEBUG or TRACE refuses the call before a request is sent. */
     @Test
     void serverTextLoggersRefuseWhileAtDebugOrTrace() throws Exception {
-        for (String logger : SdkHttp.SERVER_TEXT_LOGGERS) {
+        for (String logger : EXPECTED) {
             for (Level level : List.of(Level.FINE, Level.FINEST)) {
                 level(logger, level);
                 try (J1TransportServer server = J1TransportServer.plain((request, out) ->

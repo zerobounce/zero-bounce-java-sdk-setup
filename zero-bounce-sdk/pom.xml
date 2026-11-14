@@ -38,14 +38,13 @@
         <sdk.version>3.0.1</sdk.version>
         <java.version>21</java.version>
         <junit.version>6.1.3</junit.version>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mockito.version>5.23.0</mockito.version>
         <!-- The HttpCore that httpclient5 itself depends on; httpcore5 and httpcore5-h2 move together. -->
         <httpcore5.version>5.4.4</httpcore5.version>
-        <!-- Test scope only: the java.util.logging binding for SLF4J 1.7, whose logger levels the tests set at run time. -->
+        <!-- SLF4J 1.7 line: slf4j-api (optional, see the dependencies) and, in test scope only, the java.util.logging binding whose logger levels the tests set at run time. -->
         <slf4j.version>1.7.36</slf4j.version>
     </properties>
 
@@ -64,11 +63,19 @@
             <version>2.14.0</version>
         </dependency>
 
-        <!-- All HTTP calls, including multipart uploads, use the supported 5.x APIs. SdkHttp logs through
-             slf4j-api, which arrives here (compile scope) through httpclient5. Do not declare slf4j-api
-             directly: a direct declaration sits at the depth of an application's logging backend
-             (logback-classic brings slf4j-api too) and wins the tie when this SDK is listed first, which
-             silences the application's logging. -->
+        <!-- SdkHttp logs through slf4j-api directly, so it is declared here for dependency scanners and
+             SBOMs. It is optional: an optional dependency is not passed on to an application, so the
+             application's own logging backend keeps the tie-break (a compile-scope declaration here would
+             sit at this SDK's depth and could win over the backend, silencing its logging). httpclient5
+             still brings slf4j-api to the application, as it did before. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- All HTTP calls, including multipart uploads, use the supported 5.x APIs. -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>

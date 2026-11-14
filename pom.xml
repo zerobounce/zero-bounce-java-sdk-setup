@@ -12,21 +12,12 @@
     <properties>
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <!-- Keep JavaFX on the 21 LTS line: it runs on Java 21, the JDK the SDK
         is built and tested with. Newer JavaFX lines need a newer JDK (the 26.0.2
         jars are class file version 68, Java 24) and fail to compile here. -->
         <javafx.version>21.0.13</javafx.version>
     </properties>
-
-    <repositories>
-        <repository>
-            <id>local-repo</id>
-            <name>Local Repo</name>
-            <url>file://${project.basedir}/local-libs</url>
-        </repository>
-    </repositories>
 
     <dependencies>
         <dependency>

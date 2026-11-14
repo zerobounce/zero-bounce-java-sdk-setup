@@ -46,9 +46,11 @@ public class ZeroBounceWarmup {
 
     private static final ZeroBounceWarmup instance = new ZeroBounceWarmup();
 
-    private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
+    /** Transient: a Gson instance is not client data, and reflecting into it fails on JDK 17+. */
+    private final transient Gson gson = new GsonBuilder().disableHtmlEscaping().create();
 
-    private String apiKey;
+    /** Transient so that Gson.toJson(client) never writes the Warmup key. */
+    private transient String apiKey;
     private String root = DEFAULT_BASE_URL + BASE_PATH;
     private int timeoutInMillis = DEFAULT_TIMEOUT_MILLIS;
     /** Why the client is unusable, or null when it is ready. */
@@ -80,30 +82,42 @@ public class ZeroBounceWarmup {
      * A key with surrounding whitespace or control characters, or a base URL
      * that is not https, is rejected here: every later call then fails with
      * that message rather than sending the key anywhere.
+     * <p>
+     * A null key or base URL is a programming error: it is refused with an
+     * {@link IllegalArgumentException} before anything is stored, so an
+     * already initialized client keeps its key, host and state.
+     *
+     * @throws IllegalArgumentException when {@code apiKey} or {@code baseUrl} is null
      */
     public void initialize(@NotNull String apiKey, @NotNull String baseUrl) {
-        this.apiKey = apiKey;
+        if (apiKey == null) {
+            throw new IllegalArgumentException("api_key is required");
+        }
+        if (baseUrl == null) {
+            throw new IllegalArgumentException("base_url is required");
+        }
+        // Every argument is checked first; the fields are then set together.
+        String problem = null;
+        String newRoot = root;
         if (apiKey.isBlank()) {
-            setupProblem = "api_key is required";
-            return;
-        }
-        // A key with surrounding whitespace or control characters would be
-        // quoted, unredacted, in the transport's own error.
-        if (isUnicodeSpace(apiKey.charAt(0)) || isUnicodeSpace(apiKey.charAt(apiKey.length() - 1))
+            problem = "api_key is required";
+        } else if (isUnicodeSpace(apiKey.charAt(0)) || isUnicodeSpace(apiKey.charAt(apiKey.length() - 1))
                 || hasControlCharacters(apiKey)) {
-            setupProblem = "api_key has surrounding whitespace or control characters";
-            return;
+            // A key with surrounding whitespace or control characters would be
+            // quoted, unredacted, in the transport's own error.
+            problem = "api_key has surrounding whitespace or control characters";
+        } else if (!baseUrl.regionMatches(true, 0, "https://", 0, 8)) {
+            problem = "base_url must be an https:// URL";
+        } else {
+            String trimmed = baseUrl;
+            while (trimmed.endsWith("/")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 1);
+            }
+            newRoot = trimmed + BASE_PATH;
         }
-        if (!baseUrl.regionMatches(true, 0, "https://", 0, 8)) {
-            setupProblem = "base_url must be an https:// URL";
-            return;
-        }
-        String trimmed = baseUrl;
-        while (trimmed.endsWith("/")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 1);
-        }
-        root = trimmed + BASE_PATH;
-        setupProblem = null;
+        this.apiKey = apiKey;
+        this.root = newRoot;
+        this.setupProblem = problem;
     }
 
     /** The request timeout in milliseconds, 0 for none. */
