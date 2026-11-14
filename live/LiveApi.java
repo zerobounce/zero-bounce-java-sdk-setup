@@ -67,10 +67,24 @@ public final class LiveApi {
     private static final String CALLBACK = "https://example.com/zerobounce-sdk-live-test";
     private static final String SANDBOX = "valid@example.com";
 
+    /**
+     * How long the bulk delete is retried, and how often. See the delete check
+     * for the measurements behind the budget.
+     */
+    private static final int DELETE_BUDGET_SECONDS = 720;
+
+    private static final int DELETE_POLL_SECONDS = 10;
+
     private static int passed;
     private static int failed;
     private static int skipped;
     private static final List<String> failures = new ArrayList<>();
+
+    /**
+     * Bulk jobs this run uploaded but could not delete again. A live run must
+     * never leave one behind unannounced, so they are printed with the summary.
+     */
+    private static final List<String> leaked = new ArrayList<>();
 
     private static String env(String name) {
         String value = System.getenv(name);
@@ -180,6 +194,14 @@ public final class LiveApi {
                 System.out.println("  - " + line);
             }
         }
+        if (!leaked.isEmpty()) {
+            System.out.println("\n!!! BULK JOBS LEFT ON THE LIVE ACCOUNT -- delete them by hand:");
+            for (String id : leaked) {
+                System.out.println("  !!! file_id " + id);
+            }
+            System.out.println("      GET https://bulkapi.zerobounce.net/v2/deletefile"
+                    + "?api_key=<key>&file_id=<id>");
+        }
         System.exit(failed == 0 ? 0 : 1);
     }
 
@@ -190,11 +212,26 @@ public final class LiveApi {
         ZeroBounceSDK zb = sdk();
         AtomicReference<String> before = new AtomicReference<>(null);
 
-        check("getCredits returns a balance", () -> run((ok, err) ->
-                zb.getCredits(response -> {
-                    before.set(response.getCredits());
-                    ok.run();
-                }, err)));
+        check("getCredits returns a positive balance", () -> {
+            AtomicReference<String> problem = new AtomicReference<>("no response");
+            zb.getCredits(response -> {
+                before.set(response.getCredits());
+                // LIVE: "-1" is what the API answers for an INVALID key, and it
+                // arrives on an HTTP 200. Accepting it would let this check sit
+                // green while every other call in the suite failed on a dead
+                // key, so a usable balance is required instead.
+                long credits;
+                try {
+                    credits = Long.parseLong(String.valueOf(response.getCredits()).trim());
+                } catch (NumberFormatException e) {
+                    problem.set("credits is not a number: " + response.getCredits());
+                    return;
+                }
+                problem.set(credits > 0 ? null : "credit balance is " + credits
+                        + (credits < 0 ? " (-1 means the API key is invalid)" : ""));
+            }, error -> problem.set(redact(error.getErrors().toString())));
+            return problem.get();
+        });
 
         check("getApiUsage parses the documented date formats", () -> run((ok, err) -> {
             long day = 24L * 3600 * 1000;
@@ -393,25 +430,55 @@ public final class LiveApi {
             skip("the uploaded validation job is deleted again", "upload did not produce a file id");
         } else {
             check("the uploaded validation job is deleted again", () -> {
-                // LIVE: a just-accepted job answers "File cannot be found" for
-                // a short while, so the delete is retried rather than leaving
-                // the job behind.
-                AtomicReference<String> last = new AtomicReference<>("");
-                for (int attempt = 0; attempt < 12; attempt++) {
+                // LIVE: a bulk job cannot be deleted until the API has
+                // finished processing it. Until then deletefile answers
+                // "File cannot be found." on an HTTP 200, which says nothing
+                // about the real state -- the job is there, it just is not
+                // deletable yet, so the old fixed 12 x 10s window silently
+                // left paid jobs on the account whenever the queue was slow.
+                //
+                // Measured by uploading a two-row file and polling deletefile
+                // every 5s: it became deletable after 126s, 126s, 128s, 128s
+                // and 130s on a quiet queue, against about 10 minutes on a
+                // busy one. The wait is queue time, so no window is
+                // guaranteed, and file_status is not a usable gate either --
+                // the job reads "Processing", and can read "Complete", while
+                // the delete still refuses. The delete is therefore its own
+                // probe: tried once up front and again every
+                // DELETE_POLL_SECONDS, so an ordinary run costs the ~2
+                // minutes the queue really takes rather than the whole
+                // budget. The budget is deliberately generous, because the
+                // alternative to waiting is leaving a job behind on the live
+                // account.
+                long deadline = System.currentTimeMillis() + DELETE_BUDGET_SECONDS * 1000L;
+                AtomicReference<String> last = new AtomicReference<>("no response");
+                AtomicReference<String> state = new AtomicReference<>("unknown");
+                while (true) {
                     AtomicReference<Boolean> done = new AtomicReference<>(false);
                     zb.deleteFile(fileId.get(), response -> done.set(true),
                             error -> last.set(redact(error.getErrors().toString())));
                     if (done.get()) {
                         return null;
                     }
+                    if (System.currentTimeMillis() >= deadline) {
+                        break;
+                    }
+                    zb.fileStatus(fileId.get(),
+                            status -> state.set(status.getFileStatus() == null
+                                    ? "unknown" : status.getFileStatus()),
+                            error -> { });
                     try {
-                        Thread.sleep(10_000);
+                        Thread.sleep(DELETE_POLL_SECONDS * 1000L);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
                     }
                 }
-                return "could not delete " + fileId.get() + " after retrying: " + last.get();
+                // Never give up quietly: the job is still on the live account.
+                leaked.add(fileId.get());
+                return "could not delete " + fileId.get() + " within "
+                        + DELETE_BUDGET_SECONDS + "s (last file_status: " + state.get()
+                        + ", last error: " + last.get() + ")";
             });
         }
     }
