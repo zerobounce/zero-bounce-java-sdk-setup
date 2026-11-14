@@ -12,8 +12,11 @@ COPY . .
 
 WORKDIR /app/zero-bounce-sdk
 
-# Fetch every dependency and plugin into /m2 (the only step that needs the network).
-RUN mkdir -p /m2 /m2-config && mvn -q dependency:go-offline
+# Fetch every dependency and plugin into /m2 (the only step that needs the network). go-offline does not fetch
+# the surefire JUnit provider or the JUnit launcher that surefire resolves at test time, so get them explicitly.
+RUN mkdir -p /m2 /m2-config && mvn -q dependency:go-offline \
+ && mvn -q dependency:get -Dartifact=org.apache.maven.surefire:surefire-junit-platform:3.5.6 \
+ && mvn -q dependency:get -Dartifact=org.junit.platform:junit-platform-launcher:6.1.3
 
 # Run the suite offline with no network at all, so a build-time run cannot reach any server.
 RUN --network=none mvn -q -o test && chown -R 65532:65532 /m2 /m2-config /app

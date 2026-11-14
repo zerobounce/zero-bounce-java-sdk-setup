@@ -45,12 +45,12 @@ public class ZBValidateResponse {
     //@Nullable [true/false] If the email comes from a free provider.
     @SerializedName("free_email")
     @Nullable
-    private Boolean freeEmail = false;
+    private Boolean freeEmail = null;
 
     // [true/false] Does the domain have an MX record.
     @SerializedName("mx_found")
     @Nullable
-    private Boolean mxFound = false;
+    private Boolean mxFound = null;
 
     // The preferred MX record of the domain
     @SerializedName("mx_record")

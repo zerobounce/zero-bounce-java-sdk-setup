@@ -184,6 +184,11 @@ final class Priority3Api {
     ) {
         errorCallback = sdk.redacting(errorCallback);
         // The same pre-check as getFile: a directory is refused before any request.
+        String pathProblem = ZeroBounceSDK.badDownloadPath(downloadPath);
+        if (pathProblem != null) {
+            errorCallback.onError(ErrorResponse.parseError(pathProblem));
+            return;
+        }
         if (new File(downloadPath).isDirectory()) {
             errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
             return;

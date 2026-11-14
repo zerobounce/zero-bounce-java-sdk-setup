@@ -153,8 +153,12 @@ public class ZeroBounceSDK {
      *
      * @param apiKey          the API key
      * @param timeoutInMillis the timeout in milliseconds to use for all requests (0 for no timeout)
+     * @throws IllegalArgumentException when the timeout is negative
      */
     public void initialize(String apiKey, int timeoutInMillis) {
+        if (timeoutInMillis < 0) {
+            throw new IllegalArgumentException("timeout must not be negative");
+        }
         setApiKey(apiKey);
         this.timeoutInMillis = timeoutInMillis;
     }
@@ -250,7 +254,8 @@ public class ZeroBounceSDK {
     }
 
     private static boolean isUnicodeSpace(char c) {
-        return Character.isWhitespace(c) || Character.isSpaceChar(c);
+        return Character.isWhitespace(c) || Character.isSpaceChar(c)
+                || Character.getType(c) == Character.FORMAT;
     }
 
     /**
@@ -408,9 +413,9 @@ public class ZeroBounceSDK {
                 continue;
             }
             char escape = text.charAt(i + 1);
-            int simple = "\"\\/bfnrt".indexOf(escape);
+            int simple = "\"\\/bfnrt'".indexOf(escape);
             if (simple >= 0) {
-                out.append("\"\\/\b\f\n\r\t".charAt(simple));
+                out.append("\"\\/\b\f\n\r\t'".charAt(simple));
                 i++;
             } else if (escape == 'u' && i + 5 < text.length()
                     && hexValue((byte) text.charAt(i + 2)) >= 0 && hexValue((byte) text.charAt(i + 3)) >= 0
@@ -604,6 +609,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "emails", emails)) return;
         validateBatch(emails, null, successCallback, errorCallback);
     }
 
@@ -625,6 +631,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "emails", emails)) return;
         if (invalidApiKey(errorCallback)) return;
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -671,6 +678,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBValidateBatchResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "emails", emails)) return;
         ZBValidateOptions mapped = null;
         if (options != null) {
             mapped = new ZBValidateOptions()
@@ -695,6 +703,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBEmailFinderResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "domain", domain)) return;
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
@@ -845,6 +854,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBGetApiUsageResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "start_date", startDate)) return;
+        if (nullArgument(errorCallback, "end_date", endDate)) return;
         if (invalidApiKey(errorCallback)) return;
 
         sendRequest(
@@ -912,6 +923,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) throws ZBException {
+        if (nullArgument(errorCallback, "file", file)) return;
         if (invalidApiKey(errorCallback)) return;
 
         _sendFile(false, file, emailAddressColumnIndex, options, successCallback, errorCallback);
@@ -936,6 +948,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) throws ZBException {
+        if (nullArgument(errorCallback, "input_stream", inputStream)) return;
+        if (nullArgument(errorCallback, "file_name", fileName)) return;
         if (invalidApiKey(errorCallback)) return;
 
         _sendFileStream(false, inputStream, fileName, emailAddressColumnIndex, options, successCallback, errorCallback);
@@ -957,6 +971,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) throws ZBException {
+        if (nullArgument(errorCallback, "file", file)) return;
         if (invalidApiKey(errorCallback)) return;
 
         SendFileOptions newOptions = null;
@@ -996,6 +1011,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) throws ZBException {
+        if (nullArgument(errorCallback, "input_stream", inputStream)) return;
+        if (nullArgument(errorCallback, "file_name", fileName)) return;
         if (invalidApiKey(errorCallback)) return;
 
         SendFileOptions newOptions = null;
@@ -1297,6 +1314,11 @@ public class ZeroBounceSDK {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
             return;
         }
+        String pathProblem = badDownloadPath(downloadPath);
+        if (pathProblem != null) {
+            errorCallback.onError(ErrorResponse.parseError(pathProblem));
+            return;
+        }
         File file = new File(downloadPath);
         if (file.isDirectory()) {
             errorCallback.onError(ErrorResponse.parseError("Invalid file path"));
@@ -1498,6 +1520,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "email", email)) return;
         scoreEmail(email, false, successCallback, errorCallback);
     }
 
@@ -1512,6 +1535,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBScoreEmailResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "email", email)) return;
         if (invalidApiKey(errorCallback)) return;
         if (email.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: email"));
@@ -1543,6 +1567,9 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonElement> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "rule", rule)) return;
+        if (nullArgument(errorCallback, "target", target)) return;
+        if (nullArgument(errorCallback, "value", value)) return;
         // Read as a JsonElement for the same reason as listFilters: the filter
         // endpoints do not always answer with a JSON object.
         filterRequest("/filters/add", rule, target, value, true,
@@ -1558,6 +1585,9 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonElement> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "rule", rule)) return;
+        if (nullArgument(errorCallback, "target", target)) return;
+        if (nullArgument(errorCallback, "value", value)) return;
         // Read as a JsonElement for the same reason as listFilters: the filter
         // endpoints do not always answer with a JSON object.
         filterRequest("/filters/delete", rule, target, value, true,
@@ -1717,6 +1747,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/validateS3file", options, successCallback, errorCallback);
     }
 
@@ -1726,6 +1757,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/scoreS3file", options, successCallback, errorCallback);
     }
 
@@ -1735,6 +1767,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/emailFinderS3file", options, successCallback, errorCallback);
     }
 
@@ -1744,6 +1777,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/domainSearchS3file", options, successCallback, errorCallback);
     }
 
@@ -1759,6 +1793,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file_id", fileId)) return;
         exportBulkFile("/exportS3file", "export_bucket", fileId, exportBucket, successCallback, errorCallback);
     }
 
@@ -1779,6 +1814,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/validateSFTPfile", options, successCallback, errorCallback);
     }
 
@@ -1788,6 +1824,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/scoreSFTPfile", options, successCallback, errorCallback);
     }
 
@@ -1797,6 +1834,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/emailFinderSFTPfile", options, successCallback, errorCallback);
     }
 
@@ -1806,6 +1844,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob("/domainSearchSFTPfile", options, successCallback, errorCallback);
     }
 
@@ -1825,6 +1864,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file_id", fileId)) return;
         exportBulkFile("/exportSFTPfile", "export_path", fileId, exportPath, successCallback, errorCallback);
     }
 
@@ -1926,6 +1966,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonObject> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file_id", fileId)) return;
         if (invalidApiKey(errorCallback)) return;
         if (fileId.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
@@ -1965,6 +2006,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file_id", fileId)) return;
         if (invalidApiKey(errorCallback)) return;
         if (fileId.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: file_id"));
@@ -2028,6 +2070,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonObject> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "name", name)) return;
         if (name.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: name"));
             return;
@@ -2056,6 +2099,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonObject> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "test_id", testId)) return;
         String segment = inboxPlacementTestPath(testId, errorCallback);
         if (segment == null) return;
         inboxPlacementRequest("GET", "/test/" + segment, null, null, successCallback, errorCallback);
@@ -2085,6 +2129,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonObject> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "test_id", testId)) return;
         String segment = inboxPlacementTestPath(testId, errorCallback);
         if (segment == null) return;
         inboxPlacementRequest("DELETE", "/test/" + segment, null, null, successCallback, errorCallback);
@@ -2104,6 +2149,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<JsonObject> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "webhook_url", webhookUrl)) return;
         if (webhookUrl.trim().isEmpty()) {
             errorCallback.onError(ErrorResponse.parseError("Empty parameter: webhook_url"));
             return;
@@ -2318,6 +2364,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file", file)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendEmailFinderFile(file, domainColumn, options, successCallback, errorCallback);
     }
@@ -2330,6 +2377,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "input_stream", inputStream)) return;
+        if (nullArgument(errorCallback, "file_name", fileName)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendEmailFinderFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
     }
@@ -2372,6 +2421,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file", file)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendDomainSearchFile(file, domainColumn, options, successCallback, errorCallback);
     }
@@ -2384,6 +2434,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "input_stream", inputStream)) return;
+        if (nullArgument(errorCallback, "file_name", fileName)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendDomainSearchFileStream(inputStream, fileName, domainColumn, options, successCallback, errorCallback);
     }
@@ -2425,6 +2477,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "file", file)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendListEvaluatorFile(file, emailAddressColumn, successCallback, errorCallback);
     }
@@ -2436,6 +2489,8 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "input_stream", inputStream)) return;
+        if (nullArgument(errorCallback, "file_name", fileName)) return;
         if (invalidApiKey(errorCallback)) return;
         priority3Api.sendListEvaluatorFileStream(inputStream, fileName, emailAddressColumn, successCallback, errorCallback);
     }
@@ -2453,6 +2508,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob(
                 "/validateS3file",
                 options.toJobOptions(),
@@ -2475,6 +2531,7 @@ public class ZeroBounceSDK {
             @NotNull OnSuccessCallback<ZBSendFileResponse> successCallback,
             @NotNull OnErrorCallback errorCallback
     ) {
+        if (nullArgument(errorCallback, "options", options)) return;
         bulkRootFileJob(
                 "/scoreS3file",
                 options.toJobOptions(),
@@ -2992,6 +3049,11 @@ public class ZeroBounceSDK {
             // "Error:" prefix such as {"error": "Error: Error: ..."}.
             ErrorResponse parsed = ErrorResponse.parseError(body, status);
             parsed.getErrors().replaceAll(HttpMessages::stripPrefix);
+            if (parsed.getErrors().stream().allMatch(String::isEmpty)) {
+                // Nothing but empty text, such as "Error:": the one fixed message.
+                parsed.getErrors().clear();
+                parsed.getErrors().add(failure);
+            }
             errorCallback.onError(parsed);
         }
         return true;
@@ -3037,7 +3099,7 @@ public class ZeroBounceSDK {
      * in any of those cases.
      */
     static @Nullable ErrorResponse downloadError(int status, byte[] body, @Nullable String contentType) {
-        String text = new String(body, StandardCharsets.UTF_8);
+        String text = HttpMessages.stripBom(new String(body, StandardCharsets.UTF_8));
         String failure = HttpMessages.downloadFailure(status, body, contentType);
         if (failure != null) {
             ErrorResponse error = HttpMessages.preferShortMessage(text)
@@ -3140,11 +3202,39 @@ public class ZeroBounceSDK {
                 }
             }
             String message = e.getMessage();
+            if (e instanceof java.nio.file.AccessDeniedException
+                    || (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("permission denied"))) {
+                message = "Cannot write " + target + " (permission denied)";
+            }
             errorCallback.onError(ErrorResponse.parseError(
                     message == null || message.isBlank() ? "Could not write the file." : message));
             return false;
         }
         return true;
+    }
+
+    /**
+     * Why a download path cannot name a file, or null: it is null or empty, or ends in a
+     * separator (a directory). Checked before any request is sent.
+     */
+    static @Nullable String badDownloadPath(@Nullable String path) {
+        if (path == null || path.isBlank()) {
+            return "Empty parameter: download_path";
+        }
+        char last = path.charAt(path.length() - 1);
+        if (last == '/' || last == File.separatorChar) {
+            return "Invalid file path";
+        }
+        return null;
+    }
+
+    /** A required argument left null is reported through the error callback (status 0); nothing is sent. */
+    private static boolean nullArgument(@NotNull OnErrorCallback errorCallback, String name, @Nullable Object value) {
+        if (value == null) {
+            errorCallback.onError(ErrorResponse.parseError("Empty parameter: " + name));
+            return true;
+        }
+        return false;
     }
 
     /** The most links followed in a chain, as the operating system's own limit. */
@@ -3165,7 +3255,10 @@ public class ZeroBounceSDK {
                 return current.toRealPath();
             } catch (java.nio.file.NoSuchFileException dangling) {
                 // Not resolvable to an existing file: follow one link and try again.
-                current = current.resolveSibling(java.nio.file.Files.readSymbolicLink(current)).toAbsolutePath().normalize();
+                // Relative to the link's real parent directory: a ".." climbs out of the directory the
+                // link is really in, which is not the textual parent when a directory above is a link.
+                java.nio.file.Path realParent = current.toAbsolutePath().getParent().toRealPath();
+                current = realParent.resolve(java.nio.file.Files.readSymbolicLink(current)).normalize();
             }
         }
         return current;

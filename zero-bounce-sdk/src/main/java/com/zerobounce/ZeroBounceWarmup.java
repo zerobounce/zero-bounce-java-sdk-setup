@@ -122,12 +122,16 @@ public class ZeroBounceWarmup {
 
     /** The request timeout in milliseconds, 0 for none. */
     public void setTimeout(int timeoutInMillis) {
+        if (timeoutInMillis < 0) {
+            throw new IllegalArgumentException("timeout must not be negative");
+        }
         this.timeoutInMillis = timeoutInMillis;
     }
 
     /** Whitespace in the Unicode sense (U+0020, U+00A0, U+2028, U+3000 ...), as the main client checks. */
     private static boolean isUnicodeSpace(char c) {
-        return Character.isWhitespace(c) || Character.isSpaceChar(c);
+        return Character.isWhitespace(c) || Character.isSpaceChar(c)
+                || Character.getType(c) == Character.FORMAT;
     }
 
     private static boolean hasControlCharacters(String value) {
@@ -282,11 +286,11 @@ public class ZeroBounceWarmup {
         }
         // A CSV is never a JSON object or array, whatever the content type says:
         // {"success": false, ...} served as text/csv is the API's error, not a file.
-        if (result.body.trim().isEmpty()
+        if (HttpMessages.stripBom(result.body).trim().isEmpty()
                 || HttpMessages.isJsonMediaType(result.contentType)
                 || HttpMessages.downloadJsonError(result.body)) {
             errorCallback.onError(ErrorResponse.parseError(
-                    redact(messageFromBody(result.body, result.status)), result.status));
+                    redact(messageFromBody(HttpMessages.stripBom(result.body), result.status)), result.status));
             return;
         }
         // An HTML page on a 200 (a proxy's or Cloudflare's block page) is not

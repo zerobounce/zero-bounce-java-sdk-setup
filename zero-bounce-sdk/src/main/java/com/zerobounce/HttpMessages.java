@@ -16,13 +16,13 @@ final class HttpMessages {
     }
 
     static boolean looksLikeHtml(String body, String contentType) {
-        if (contentType != null && contentType.toLowerCase().contains("text/html")) {
+        if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).contains("text/html")) {
             return true;
         }
         if (body == null) {
             return false;
         }
-        String sample = body.substring(0, Math.min(body.length(), 2000)).toLowerCase();
+        String sample = body.substring(0, Math.min(body.length(), 2000)).toLowerCase(java.util.Locale.ROOT);
         return sample.contains("<!doctype html")
                 || sample.contains("<html")
                 || sample.contains("<head")
@@ -243,7 +243,7 @@ final class HttpMessages {
      * {@code {"status": "error"}} served as text/csv or text/plain.
      */
     static boolean downloadJsonError(String body) {
-        String trimmed = body == null ? "" : body.trim();
+        String trimmed = body == null ? "" : stripBom(body).trim();
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
             return false;
         }
@@ -320,17 +320,21 @@ final class HttpMessages {
             // left for the decoder to report, rather than read as false.
             if (object.has("success") && object.get("success").isJsonPrimitive()
                     && Boolean.FALSE.equals(StrictBooleanAdapter.fromElement(object.get("success"), "success"))) {
-                return firstText(object, "message", "error", "error_message");
+                String message = firstText(object, "message", "error", "error_message");
+                if (message.equals(FALLBACK_FAILURE) && hasPrefixOnlyText(object, "message", "error", "error_message")) {
+                    return NO_MESSAGE_TEXT;
+                }
+                return message;
             }
             if (object.has("error") && !object.get("error").isJsonNull()) {
                 String message = text(object.get("error"));
-                if (message != null && !message.isBlank()) {
+                if (message != null && !stripPrefix(message).isEmpty()) {
                     return stripPrefix(message);
                 }
             }
             if (object.has("error_message")) {
                 String message = text(object.get("error_message"));
-                if (message != null && !message.isBlank()) {
+                if (message != null && !stripPrefix(message).isEmpty()) {
                     return stripPrefix(message);
                 }
             }
@@ -339,7 +343,7 @@ final class HttpMessages {
             // out of credits"} on an HTTP 200.
             if (object.has("Error")) {
                 String message = text(object.get("Error"));
-                if (message != null && !message.isBlank()) {
+                if (message != null && !stripPrefix(message).isEmpty()) {
                     return stripPrefix(message);
                 }
             }
@@ -391,7 +395,8 @@ final class HttpMessages {
         }
         String text = parts.stream().map(String::trim).filter(part -> !part.isEmpty())
                 .collect(java.util.stream.Collectors.joining("\n"));
-        return text.isEmpty() ? null : stripPrefix(text);
+        String stripped = text.isEmpty() ? "" : stripPrefix(text);
+        return stripped.isEmpty() ? null : stripped;
     }
 
     /**
@@ -462,14 +467,27 @@ final class HttpMessages {
         }
     }
 
+    /** Whether a key holds text that is nothing but an "Error:" prefix. */
+    private static boolean hasPrefixOnlyText(JsonObject object, String... keys) {
+        for (String key : keys) {
+            String message = text(object.get(key));
+            if (message != null && !message.isBlank() && stripPrefix(message).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final String FALLBACK_FAILURE = "Request not processed successfully.";
+
     private static String firstText(JsonObject object, String... keys) {
         for (String key : keys) {
             String message = text(object.get(key));
-            if (message != null && !message.isBlank()) {
+            if (message != null && !stripPrefix(message).isEmpty()) {
                 return stripPrefix(message);
             }
         }
-        return "Request not processed successfully.";
+        return FALLBACK_FAILURE;
     }
 
     private static String text(JsonElement element) {
@@ -485,6 +503,10 @@ final class HttpMessages {
                 return first.getAsString();
             }
         }
+        if ((element.isJsonObject() && element.getAsJsonObject().size() == 0)
+                || (element.isJsonArray() && element.getAsJsonArray().isEmpty())) {
+            return null;
+        }
         return element.toString();
     }
 
@@ -497,20 +519,31 @@ final class HttpMessages {
     }
 
     private static String htmlTitle(String body) {
-        String lower = body.toLowerCase();
-        int start = lower.indexOf("<title");
+        // Indexes come from the original string: lower-casing can change a
+        // string's length (U+0130 becomes two chars), so no index is carried
+        // across a toLowerCase().
+        int start = indexOfIgnoreCase(body, "<title", 0);
         if (start < 0) {
             return "";
         }
-        int openEnd = lower.indexOf('>', start);
+        int openEnd = body.indexOf('>', start);
         if (openEnd < 0) {
             return "";
         }
-        int close = lower.indexOf("</title>", openEnd);
+        int close = indexOfIgnoreCase(body, "</title>", openEnd);
         if (close < 0) {
             return "";
         }
         return body.substring(openEnd + 1, close).trim();
+    }
+
+    private static int indexOfIgnoreCase(String text, String target, int from) {
+        for (int i = Math.max(0, from); i + target.length() <= text.length(); i++) {
+            if (text.regionMatches(true, i, target, 0, target.length())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static String messageFromBody(String trimmed, int status) {
@@ -595,6 +628,11 @@ final class HttpMessages {
         } catch (RuntimeException ignored) {
             return true;
         }
+    }
+
+    /** The text without one leading UTF-8 byte order mark (U+FEFF). */
+    static String stripBom(String text) {
+        return text != null && !text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text;
     }
 
     static String stripPrefix(String message) {

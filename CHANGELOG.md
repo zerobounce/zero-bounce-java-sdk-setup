@@ -109,8 +109,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The key and the SMTP password are also redacted in the URL-encoded form of each JSON-escaped spelling (with `+` or `%20` for a space), as sent by a server that echoes a URL-encoded JSON request body. Repository only: the test secrets now contain a space, `"`, `/`, `+`, `%`, `&`, `=`, `<`, `>`, `'` and `\`, every spelling is checked to differ from the others, and a test fails if any one spelling is dropped from the SDK.
 - **Behaviour change:** while any HttpClient 5 logger that can write the request (`MainClientExec`, `org.apache.hc.client5.http.headers`, `org.apache.hc.client5.http.wire`, `DistributedProxySelector`) or text the server sent (`LenientHttpResponseParser`, the `BasicScheme`, `DigestScheme`, `BearerScheme`, `NTLMScheme`, `GGSSchemeBase` and `ScramScheme` authentication schemes, `AuthenticationHandler`, `DefaultAuthenticationStrategy`, `ConnectExec` and the auth caches) is at DEBUG or TRACE, every request method sends nothing and reports status 0 with "Apache HttpClient debug logging (org.apache.hc) is enabled and would write your API key to the log; set org.apache.hc to INFO or above." The request loggers write the URI with `api_key`, every request header (`API-Key`, `Authorization`) and the request bytes, bodies included (the SMTP password, uploaded files); the others write text the server sent, such as a garbled status line or an authentication challenge, which can echo the key back. A test scans the httpclient5 jar and fails on any logger that is neither guarded nor cleared. The check runs before each request, so a level changed at run time applies to the next call; a call already sending is not stopped. Keep `org.apache.hc` at INFO or above. A call made while SLF4J is still binding its backend waits up to 10 seconds for it, then is refused with status 0 and "SLF4J is still initialising its logging, so the Apache HttpClient logging level could not be checked and no request was sent; retry the call." If SLF4J never finishes binding (a binding threw an error), later calls are refused at once instead of each waiting.
 - Repository only: the guard is tested against a loopback server. Each guarded logger at DEBUG and at TRACE refuses every public request method of both clients, found by reflection, with no request sent; with them at INFO every method sends; no other HttpClient logger writes a key or the SMTP password at DEBUG. The test binding (slf4j-jdk14) is test scope and is not in the published artifact.
+- An HTML error page with a character before `<title>` that changes length when lower-cased (U+0130) no longer throws `StringIndexOutOfBoundsException` out of every call; HTML titles are found without locale dependence (also under a tr-TR default locale).
+- `free_email` and `mx_found` read `null` when the field is missing (validate and every batch row), like a JSON null; they no longer default to `false`.
+- A message-only error body with no usable text (`{"error":{}}`, `{"error":[]}`, `"Error:"`, `"[Error]: "`, `success:false` with `"Error:"`) gives exactly one error with the fixed "no message text" message.
+- A null required argument is reported through the error callback (status 0) and sends no request, instead of a `NullPointerException` (or a request for `validateBatch(null)`, `guessFormat(null, ...)`, filters, uploads).
+- Redaction also decodes backslash-escaped quotes (`\'`), so an SMTP password containing `'` echoed in a header error is masked.
+- API keys padded with zero-width or other format characters (U+200B, U+FEFF, U+180E) are refused like whitespace, in both clients.
+- Downloads: a leading UTF-8 byte order mark no longer hides a JSON error body (SDK downloads and Warmup CSV); a dangling relative link containing `..` is resolved against the link's real directory; an empty download path or one ending in a separator is refused before the request is sent.
+- Behaviour change: a download target in a read-only directory fails with "Cannot write <path> (permission denied)" (3.0.1 wrote in place into a writable existing file).
+- A negative timeout is rejected with `IllegalArgumentException` (`initialize(key, timeout)`, `ZeroBounceWarmup.setTimeout`).
 
-## [3.0.1] - 2026-11-12
+## [3.0.1] - 2026-11-12 (tagged, never published)
+
+The `v3.0.1` tag exists, but this version was never published: Maven Central's latest release is 3.0.0 and there is no GitHub release for 3.0.1. Its changes ship in the next release, 3.0.2, which is built against 3.0.0.
 
 ### Fixed
 
@@ -118,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZBGetApiUsageResponse.toString()` includes `subStatusLeadingPeriodRemoved` and `subStatusAliasAddress`, which 3.0.0 left out.
 - Repository only: a test sweeps every public request method of `ZeroBounceSDK`, found and invoked by reflection, and fails if any of them sends a request over anything but HTTPS, or if a public request method is missing from the sweep. Another checks the `toString()` of every response model for its type name and every field.
 
-## [3.0.0] - 2026-11-12
+## [3.0.0] - 2026-11-11
 
 ### Breaking
 
@@ -228,7 +239,13 @@ No changes to the SDK source. Dependency and build updates only.
 
 - `ZBValidateResponse.catchallDomain`, read from `catchall_domain`.
 
+## [2.1.2] and [2.1.1]
+
+Published to Maven Central with no changelog entry kept.
+
 ## [2.1.0] - 2026-04-05
+
+No 2.1.0 artifact exists on Maven Central; the changes below first shipped in 2.1.1.
 
 ### Added
 
@@ -239,6 +256,10 @@ No changes to the SDK source. Dependency and build updates only.
 ### Fixed
 
 - `getFile` calls the error callback when the body is a JSON error, including HTTP 200 with `"success": false`, instead of saving that body as the results file.
+
+## [2.0.19]
+
+Published to Maven Central with no changelog entry kept.
 
 ## [2.0.16] - 2026-03-03
 
@@ -277,6 +298,10 @@ No changes to the SDK source. Dependency and build updates only.
 ### Fixed
 
 - Query values, including the email address, are percent-encoded.
+
+## [1.1.x]
+
+Several 1.1.x versions other than 1.1.9 and 1.1.7 are on Maven Central with no changelog entry kept.
 
 ## [1.1.9] - 2024-09-17
 
