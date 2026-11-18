@@ -5,11 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.1.1] - 2026-11-18
 
 ### Fixed
 
-- SDK CI, the publish job, and the test image run on the CVE-2026-114938 builds: Amazon Corretto 21.0.13.1.2 and, in CI, 25.0.5.1.2. A job stops if `java -version` is not one of those builds. Maven in this module still passes `-XX:-UseBASE64Intrinsics`, which turns off the vulnerable x86-64 Base64 decoder on an older JVM. The published library cannot set the flag or the JDK for a caller's process: run Java 21.0.13.1 or newer, or Java 25.0.5.1 or newer, or pass the flag yourself.
+- SDK CI, the publish job, and the test image run on the CVE-2026-114938 builds: Amazon Corretto 21.0.13.1.2 and, in CI, 25.0.5.1.2. A job stops if `java -version` is not one of those builds or a later build of the same major. Maven in this module still passes `-XX:-UseBASE64Intrinsics`, which turns off the vulnerable x86-64 Base64 decoder on an older JVM. The published library cannot set the flag or the JDK for a caller's process: run Java 21.0.13.1 or newer, or Java 25.0.5.1 or newer, or pass the flag yourself.
 
 ## [3.1.0] - 2026-11-14
 
@@ -327,6 +327,7 @@ Several 1.1.x versions other than 1.1.9 and 1.1.7 are on Maven Central with no c
 
 - Initial release, including validation, bulk file, credits, activity, and AI scoring file methods.
 
+[3.1.1]: https://github.com/zerobounce/zero-bounce-java-sdk-setup/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/zerobounce/zero-bounce-java-sdk-setup/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/zerobounce/zero-bounce-java-sdk-setup/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/zerobounce/zero-bounce-java-sdk-setup/compare/v2.2.0...v3.0.0

@@ -42,13 +42,18 @@ jobs:
         run: |
           text=$(java -version 2>&1)
           echo "$text"
-          case "$text" in
-            *Corretto-21.0.13.1.2*|*Corretto-25.0.5.1.2*) ;;
-            *)
-              echo "Expected Amazon Corretto 21.0.13.1.2 or 25.0.5.1.2."
-              exit 1
-              ;;
+          # The fixed Corretto builds are 21.0.13.1.2 and 25.0.5.1.2; any later build of the
+          # same major is accepted, so Corretto's next update does not stop this job.
+          version=$(printf '%s\n' "$text" | grep -o 'Corretto-[0-9][0-9.]*' | head -n 1 | cut -d- -f2)
+          case "$version" in
+            21.*) minimum=21.0.13.1.2 ;;
+            25.*) minimum=25.0.5.1.2 ;;
+            *) minimum= ;;
           esac
+          if [ -z "$minimum" ] || [ "$(printf '%s\n%s\n' "$minimum" "$version" | sort -V | head -n 1)" != "$minimum" ]; then
+            echo "Expected Amazon Corretto 21.0.13.1.2 / 25.0.5.1.2 or a later build of the same major, got '${version:-no Corretto build}'."
+            exit 1
+          fi
 
       - name: Typecheck
         run: cd zero-bounce-sdk && mvn -B -DskipTests compile
