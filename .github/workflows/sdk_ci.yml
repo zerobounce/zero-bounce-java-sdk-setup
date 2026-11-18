@@ -18,14 +18,14 @@ jobs:
     name: Test & Lint (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     env:
-      # CVE-2026-114938. setup-java's Temurin 21 and 25 are still the vulnerable
-      # builds; the flag turns off the Base64 intrinsic on x86-64 and is accepted on ARM.
+      # CVE-2026-114938. The flag stays on even with a patched JDK, and it is accepted on ARM.
       JAVA_TOOL_OPTIONS: -XX:-UseBASE64Intrinsics
     strategy:
       fail-fast: false
       matrix:
         # 21 is the release target (pom.xml) and the JDK publish.yml builds with; 25 is the
-        # newest LTS.
+        # newest LTS. Corretto's current build for each major is the CVE-2026-114938 fix
+        # (21.0.13.1.2 and 25.0.5.1.2). setup-java accepts only the major for Corretto.
         java: [21, 25]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +36,19 @@ jobs:
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ matrix.java }}
-          distribution: 'temurin'
+          distribution: 'corretto'
+
+      - name: Require the CVE-2026-114938 JDK
+        run: |
+          text=$(java -version 2>&1)
+          echo "$text"
+          case "$text" in
+            *Corretto-21.0.13.1.2*|*Corretto-25.0.5.1.2*) ;;
+            *)
+              echo "Expected Amazon Corretto 21.0.13.1.2 or 25.0.5.1.2."
+              exit 1
+              ;;
+          esac
 
       - name: Typecheck
         run: cd zero-bounce-sdk && mvn -B -DskipTests compile

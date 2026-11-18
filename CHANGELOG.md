@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Maven in this module, SDK CI, the publish job, and the test image start the JVM with `-XX:-UseBASE64Intrinsics`. That turns off the x86-64 Base64 decoder CVE-2026-114938 (Java2Shell) corrupts. The published library cannot set the flag for a caller's process: run Java 21.0.13.1 or newer, or Java 25.0.5.1 or newer, or pass the flag yourself.
+- SDK CI, the publish job, and the test image run on the CVE-2026-114938 builds: Amazon Corretto 21.0.13.1.2 and, in CI, 25.0.5.1.2. A job stops if `java -version` is not one of those builds. Maven in this module still passes `-XX:-UseBASE64Intrinsics`, which turns off the vulnerable x86-64 Base64 decoder on an older JVM. The published library cannot set the flag or the JDK for a caller's process: run Java 21.0.13.1 or newer, or Java 25.0.5.1 or newer, or pass the flag yourself.
 
 ## [3.1.0] - 2026-11-14
 
