@@ -12,7 +12,7 @@
 
 This SDK contains methods for interacting easily with ZeroBounce API.
 More information about ZeroBounce you can find in the [official documentation](https://www.zerobounce.net/docs/).\
-**Minimum Java runtime: 21.** The SDK is compiled for Java 21 (class file version 65) and will not load on an older JVM.
+**Minimum Java runtime: 21.** The SDK is compiled for Java 21 (class file version 65) and will not load on an older JVM. Use a build that includes the fix for CVE-2026-114938 (Java2Shell): Java 21.0.13.1 or newer, Java 25.0.5.1 or newer. On an older 21 or 25 build, start the JVM with `-XX:-UseBASE64Intrinsics`. That flag is what `mvn` in this module and the test image already pass. The flaw is in the JVM's Base64 decoder on x86-64, not in this library.
 
 
 ### Installation

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Maven in this module, SDK CI, the publish job, and the test image start the JVM with `-XX:-UseBASE64Intrinsics`. That turns off the x86-64 Base64 decoder CVE-2026-114938 (Java2Shell) corrupts. The published library cannot set the flag for a caller's process: run Java 21.0.13.1 or newer, or Java 25.0.5.1 or newer, or pass the flag yourself.
+
 ## [3.1.0] - 2026-11-14
 
 ### Added

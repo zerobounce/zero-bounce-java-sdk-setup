@@ -75,6 +75,9 @@ jobs:
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     environment: release
+    env:
+      # CVE-2026-114938. The Temurin 21 that setup-java installs is still vulnerable.
+      JAVA_TOOL_OPTIONS: -XX:-UseBASE64Intrinsics
     steps:
       - name: Checkout tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

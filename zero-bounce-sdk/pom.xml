@@ -179,6 +179,7 @@
                     <argLine>
                         @{argLine} -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
                         -Xshare:off
+                        -XX:-UseBASE64Intrinsics
                     </argLine>
                 </configuration>
             </plugin>

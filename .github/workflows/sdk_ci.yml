@@ -17,6 +17,10 @@ jobs:
   lint:
     name: Test & Lint (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    env:
+      # CVE-2026-114938. setup-java's Temurin 21 and 25 are still the vulnerable
+      # builds; the flag turns off the Base64 intrinsic on x86-64 and is accepted on ARM.
+      JAVA_TOOL_OPTIONS: -XX:-UseBASE64Intrinsics
     strategy:
       fail-fast: false
       matrix:
