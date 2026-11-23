@@ -35,8 +35,9 @@ jobs:
           ref: refs/tags/${{ github.event.inputs.tag }}
           persist-credentials: false
       - name: Verify tag exists
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          TAG="${{ github.event.inputs.tag }}"
           if [ -z "$TAG" ]; then
             echo "Error: Tag is required."
             exit 1
@@ -45,7 +46,7 @@ jobs:
             echo "Error: Tag '$TAG' does not exist."
             exit 1
           fi
-          
+
       - name: Verify manifest version matches tag
         env:
           TAG: ${{ github.event.inputs.tag }}
